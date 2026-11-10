@@ -1,6 +1,10 @@
 {
   "name": "ecommerce-monorepo",
   "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
   "scripts": {
     "dev": "concurrently --kill-others --names API,WEB \"npm --prefix apps/api run start:dev\" \"npm --prefix apps/web run dev\""
   },

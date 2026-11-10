@@ -26,7 +26,7 @@ project/
 └── README.md
 ```
 
-Cette arborescence décrit l'organisation du monorepo. Les applications disposent chacune de leurs propres dépendances verrouillées.
+Cette arborescence décrit l'organisation du monorepo. Les dépendances sont déclarées par application, et `apps/api` et `apps/web` sont installés ensemble depuis la racine via npm workspaces.
 
 ## État réel du dépôt
 
@@ -41,13 +41,10 @@ La liste d'avancement plus bas décrit la conception prévue; elle ne signifie p
 cp apps/api/.env.example apps/api/.env
 # → éditer les secrets (JWT, CinetPay, Stripe) avant d'aller plus loin
 
-# 2. Installer les dépendances (à faire une seule fois)
+# 2. Installer les dépendances de toutes les applications (à faire une seule fois)
 npm ci
 cd apps/api
-npm ci
 npm run prisma:generate
-cd ../web
-npm ci
 cd ../..
 ```
 
