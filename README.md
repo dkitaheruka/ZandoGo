@@ -98,3 +98,4 @@ Pour préparer les fichiers statiques utilisés par Caddy dans Compose, exécute
 Les contrôles de rôle côté React sont un confort d'affichage : la vérification qui fait foi est toujours faite par l'API. Les builds ne remplacent pas les tests d'intégration; les services Compose et les flux de paiement réels n'ont pas encore été exécutés dans cet environnement.
 
 Chaque module suivant respecte strictement les règles de gestion validées dans le document d'architecture (rétention 48h, litiges tranchés par le SUPER_ADMIN, commission par catégorie, taux de change manuel).
+# ZandoGo
