@@ -1,0 +1,13 @@
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	@api path /api/*
+	reverse_proxy @api api:3000
+
+	@socketio path /socket.io/*
+	reverse_proxy @socketio api:3000
+
+	root * /srv/web
+	try_files {path} /index.html
+	file_server
+}
