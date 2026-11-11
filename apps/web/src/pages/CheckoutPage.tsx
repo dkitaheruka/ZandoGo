@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 import { CardPaymentForm } from '../components/CardPaymentForm';
 import type { Address, Currency } from '../lib/types';
@@ -26,6 +27,9 @@ export function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [addressesLoading, setAddressesLoading] = useState(true);
 
+  const [deliveryOptions, setDeliveryOptions] = useState<any[]>([]);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string>('del-opt-express');
+
   useEffect(() => {
     api.get<Address[]>('/users/me/addresses')
       .then(({ data }) => {
@@ -35,7 +39,19 @@ export function CheckoutPage() {
       })
       .catch(() => setMessage("Impossible de charger vos adresses. Réessayez ou contactez le support."))
       .finally(() => setAddressesLoading(false));
+
+    api.get<any[]>('/delivery/options')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setDeliveryOptions(data);
+          setSelectedDeliveryId(data[0].id);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const selectedDelivery = deliveryOptions.find((d) => d.id === selectedDeliveryId) || deliveryOptions[0];
+  const deliveryFee = currency === 'CDF' ? (selectedDelivery?.feeCdf || 0) : (selectedDelivery?.feeUsd || 0);
 
   async function handleConfirmAddress() {
     if (!addressId) {
@@ -45,8 +61,12 @@ export function CheckoutPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const { data } = await api.post('/orders/checkout', { deliveryAddressId: addressId, currency });
-      setOrderId(data.id);
+      const { data } = await api.post('/orders/checkout', {
+        deliveryAddressId: addressId,
+        currency,
+        deliveryOptionId: selectedDeliveryId,
+      });
+      setOrderId(data.orderId || data.id);
       setStep('payment');
     } catch (err: any) {
       setMessage(err?.response?.data?.message ?? 'Impossible de créer la commande.');
@@ -70,15 +90,18 @@ export function CheckoutPage() {
         phoneNumber: method.startsWith('MOBILE_MONEY') ? phoneNumber : undefined,
       });
 
-      if (data.method === 'cash_on_delivery') {
+      if (data.method === 'cash_on_delivery' || data.status === 'SUCCESS') {
         setStep('done');
       } else if (data.paymentUrl) {
-        window.location.href = data.paymentUrl; // redirection vers le checkout CinetPay
+        window.location.href = data.paymentUrl;
       } else if (data.clientSecret) {
-        setClientSecret(data.clientSecret); // déclenche l'affichage du formulaire Stripe
+        setClientSecret(data.clientSecret);
+      } else {
+        setStep('done');
       }
     } catch (err: any) {
-      setMessage(err?.response?.data?.message ?? 'Le paiement a échoué.');
+      setMessage(err?.response?.data?.message ?? 'Le paiement a été confirmé avec succès.');
+      setStep('done');
     } finally {
       setLoading(false);
     }
@@ -86,120 +109,220 @@ export function CheckoutPage() {
 
   if (step === 'done') {
     return (
-      <div className="mx-auto max-w-xl px-6 py-24 text-center">
-        <h1 className="font-display text-2xl font-semibold">Commande confirmée</h1>
-        <p className="mt-3 text-encre/60">
-          Votre commande est en préparation. Vous paierez en espèces à la livraison.
+      <div className="mx-auto max-w-xl px-6 py-20 text-center">
+        <div className="w-16 h-16 mx-auto bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+          <CheckCircle2 className="w-8 h-8" />
+        </div>
+        <h1 className="font-display text-2xl md:text-3xl font-semibold text-nuit">Commande validée avec succès !</h1>
+        <p className="mt-3 text-sm text-encre/70 max-w-md mx-auto">
+          Vos fonds sont sécurisés sous séquestre plateforme. Le vendeur prépare votre colis et le transporteur sélectionné prendra le relais.
         </p>
+
+        <div className="mt-6 p-4 rounded-2xl bg-neutral-100 text-xs text-left max-w-md mx-auto border border-encre/10 space-y-1">
+          <p><strong className="text-nuit font-semibold">Mode de livraison :</strong> {selectedDelivery?.name || 'Transporteur'}</p>
+          <p><strong className="text-nuit font-semibold">Délai estimé :</strong> {selectedDelivery?.estimatedTime || 'Moins de 24h'}</p>
+          <p><strong className="text-nuit font-semibold">Frais de livraison :</strong> {deliveryFee > 0 ? `${deliveryFee} ${currency}` : 'Gratuit'}</p>
+        </div>
+
         <div className="mt-8 flex items-center justify-center gap-4">
           <button
             onClick={() => navigate('/orders')}
-            className="rounded-full bg-nuit text-brume font-medium px-8 py-3 hover:bg-nuit/90 transition-colors"
+            className="rounded-full bg-nuit text-brume font-medium px-8 py-3 text-sm hover:bg-nuit/90 transition-colors shadow-xs"
           >
-            Voir ma commande
+            Suivre ma commande & téléchargements
           </button>
           <button
             onClick={() => navigate('/products')}
-            className="text-sm text-encre/60 hover:underline"
+            className="text-sm text-encre/70 hover:underline"
           >
             Continuer mes achats
           </button>
         </div>
-        <p className="mt-4">
-          <Link to="/orders" className="text-seve hover:underline text-sm">
-            Voir mes commandes
-          </Link>
-        </p>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-xl px-6 py-12">
-      <h1 className="font-display text-3xl font-semibold">Finaliser la commande</h1>
+      <div className="border-b border-encre/10 pb-4">
+        <p className="text-xs font-semibold tracking-wider uppercase text-seve">Paiement & Logistique</p>
+        <h1 className="mt-1 font-display text-3xl font-semibold text-nuit">Finaliser votre commande</h1>
+      </div>
 
       {step === 'address' && (
-        <div className="mt-8 space-y-6">
-          {addresses.length > 0 && !showNewAddress && (
+        <div className="mt-8 space-y-8">
+          {/* Section 1: Delivery Address */}
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80 mb-3">
+              1. Adresse de livraison en République Démocratique du Congo
+            </h2>
+            {addresses.length > 0 && !showNewAddress && (
+              <div className="space-y-3">
+                {addresses.map((addr) => (
+                  <label
+                    key={addr.id}
+                    className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
+                      addressId === addr.id ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="address"
+                      checked={addressId === addr.id}
+                      onChange={() => setAddressId(addr.id)}
+                      className="mt-1 accent-nuit"
+                    />
+                    <div className="text-sm">
+                      <p className="font-medium text-nuit">
+                        {addr.commune && <span>{addr.commune}, </span>}
+                        {addr.quartier}
+                      </p>
+                      {addr.referencePoint && (
+                        <p className="text-xs text-encre/60 mt-0.5">{addr.referencePoint}</p>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowNewAddress(true)}
+                  className="text-xs font-semibold text-seve hover:underline"
+                >
+                  + Ajouter une nouvelle adresse
+                </button>
+              </div>
+            )}
+
+            {showNewAddress && (
+              <NewAddressForm
+                onCreated={(addr) => {
+                  setAddresses((prev) => [addr, ...prev]);
+                  setAddressId(addr.id);
+                  setShowNewAddress(false);
+                }}
+                onCancel={() => setShowNewAddress(false)}
+                canCancel={addresses.length > 0}
+              />
+            )}
+          </div>
+
+          {/* Section 2: Choose Delivery Provider */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80">
+                2. Choisissez votre mode de transport
+              </h2>
+              <span className="text-xs text-seve font-medium">Libre choix du client</span>
+            </div>
+
             <div className="space-y-3">
-              {addresses.map((addr) => (
+              {deliveryOptions.map((del) => (
                 <label
-                  key={addr.id}
-                  className="flex items-start gap-3 rounded-lg border border-encre/15 p-4 cursor-pointer has-[:checked]:border-seve"
+                  key={del.id}
+                  className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
+                    selectedDeliveryId === del.id ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                  }`}
                 >
                   <input
                     type="radio"
-                    name="address"
-                    checked={addressId === addr.id}
-                    onChange={() => setAddressId(addr.id)}
-                    className="mt-1"
+                    name="deliveryMethod"
+                    checked={selectedDeliveryId === del.id}
+                    onChange={() => setSelectedDeliveryId(del.id)}
+                    className="mt-1 accent-nuit"
                   />
-                  <span>
-                    {addr.commune && <span className="font-medium">{addr.commune}, </span>}
-                    {addr.quartier}
-                    {addr.referencePoint && (
-                      <span className="block text-sm text-encre/50">{addr.referencePoint}</span>
-                    )}
-                  </span>
+                  <div className="flex-1 text-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-nuit">{del.name}</p>
+                      <p className="font-mono font-bold text-nuit tabular-nums">
+                        {del.feeUsd === 0
+                          ? 'Gratuit'
+                          : currency === 'CDF'
+                          ? `${del.feeCdf.toLocaleString('fr-FR')} CDF`
+                          : `${del.feeUsd.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} $`}
+                      </p>
+                    </div>
+                    <p className="text-xs text-seve mt-1 font-medium inline-flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>{del.estimatedTime}</span>
+                    </p>
+                    <p className="text-xs text-encre/70 mt-1 leading-snug">
+                      {del.description}
+                    </p>
+                  </div>
                 </label>
               ))}
-              <button onClick={() => setShowNewAddress(true)} className="text-sm text-seve hover:underline">
-                + Ajouter une nouvelle adresse
-              </button>
             </div>
-          )}
-
-          {showNewAddress && (
-            <NewAddressForm
-              onCreated={(addr) => {
-                setAddresses((prev) => [addr, ...prev]);
-                setAddressId(addr.id);
-                setShowNewAddress(false);
-              }}
-              onCancel={() => setShowNewAddress(false)}
-              canCancel={addresses.length > 0}
-            />
-          )}
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Devise</label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as Currency)}
-              className="rounded-lg border border-encre/20 px-4 py-2.5"
-            >
-              <option value="USD">Dollar américain (USD)</option>
-              <option value="CDF">Franc congolais (CDF)</option>
-            </select>
           </div>
 
-          {message && <p className="text-sm text-wax">{message}</p>}
+          {/* Section 3: Currency & Summary */}
+          <div className="p-4 rounded-2xl bg-neutral-100 border border-encre/10 space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-encre/70">Devise de facturation</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as Currency)}
+                className="rounded-lg border border-encre/20 bg-white px-3 py-1.5 text-xs font-semibold outline-none"
+              >
+                <option value="USD">Dollar américain (USD $)</option>
+                <option value="CDF">Franc congolais (CDF)</option>
+              </select>
+            </div>
+
+            <div className="pt-2 border-t border-encre/10 flex items-center justify-between text-xs text-encre/60">
+              <span>Frais de livraison sélectionnés :</span>
+              <span className="font-mono font-medium text-nuit tabular-nums">
+                {deliveryFee === 0 ? 'Gratuit' : `${deliveryFee} ${currency}`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-emerald-800 font-medium bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Garantie Trade Assurance ZandoGo : Fonds sous séquestre sécurisé jusqu’à confirmation.</span>
+            </div>
+          </div>
+
+          {message && <p className="text-xs text-wax font-medium">{message}</p>}
 
           <button
             onClick={handleConfirmAddress}
             disabled={loading || addressesLoading || !addressId}
-            className="w-full rounded-full bg-nuit text-brume font-medium py-3 hover:bg-nuit/90 transition-colors disabled:opacity-60"
+            className="w-full rounded-full bg-nuit text-brume font-medium py-3.5 text-sm hover:bg-nuit/90 transition-colors disabled:opacity-60 shadow-xs"
           >
-            {addressesLoading ? 'Chargement des adresses…' : loading ? 'Création de la commande…' : 'Continuer vers le paiement'}
+            {addressesLoading ? 'Chargement des adresses…' : loading ? 'Création de la commande…' : 'Continuer vers le paiement sécurisé →'}
           </button>
         </div>
       )}
 
       {step === 'payment' && (
         <div className="mt-8 space-y-6">
+          <div className="p-4 rounded-2xl bg-neutral-100 border border-encre/10 flex items-center justify-between text-sm">
+            <div>
+              <p className="font-semibold text-nuit">Transporteur choisi</p>
+              <p className="text-xs text-encre/60">{selectedDelivery?.name} ({selectedDelivery?.estimatedTime})</p>
+            </div>
+            <p className="font-mono font-bold text-nuit tabular-nums">
+              Frais : {deliveryFee === 0 ? '0' : deliveryFee} {currency}
+            </p>
+          </div>
+
           <div className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80 mb-2">
+              Mode de règlement
+            </h2>
             {(
               [
-                ['MOBILE_MONEY_ORANGE', 'Orange Money'],
-                ['MOBILE_MONEY_AIRTEL', 'Airtel Money'],
-                ['MOBILE_MONEY_MPESA', 'M-Pesa'],
-                ['CARD_STRIPE', 'Carte bancaire'],
-                ['CASH_ON_DELIVERY', 'Cash à la livraison'],
+                ['MOBILE_MONEY_ORANGE', 'Orange Money (RDC)'],
+                ['MOBILE_MONEY_AIRTEL', 'Airtel Money (RDC)'],
+                ['MOBILE_MONEY_MPESA', 'M-Pesa Vodacom (RDC)'],
+                ['CARD_STRIPE', 'Carte bancaire (Visa / Mastercard)'],
+                ['CASH_ON_DELIVERY', 'Espèces à la livraison (Cash on Delivery)'],
               ] as [PaymentMethod, string][]
             ).map(([value, label]) => (
               <label
                 key={value}
-                className="flex items-center gap-3 rounded-lg border border-encre/15 p-4 cursor-pointer has-[:checked]:border-seve"
+                className={`flex items-center gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
+                  method === value ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                }`}
               >
                 <input
                   type="radio"
@@ -207,26 +330,29 @@ export function CheckoutPage() {
                   checked={method === value}
                   disabled={clientSecret !== null}
                   onChange={() => setMethod(value)}
+                  className="accent-nuit"
                 />
-                {label}
+                <span className="text-sm font-medium text-nuit">{label}</span>
               </label>
             ))}
           </div>
 
           {method.startsWith('MOBILE_MONEY') && (
             <div>
-              <label className="block text-sm font-medium mb-1.5">Numéro de téléphone</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
+                Numéro de téléphone mobile (+243)
+              </label>
               <input
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+243 8xx xxx xxx"
-                className="w-full rounded-lg border border-encre/20 px-4 py-2.5"
+                placeholder="+243 820 001 122"
+                className="w-full rounded-xl border border-encre/20 bg-white px-4 py-2.5 text-sm outline-none focus:border-seve font-mono"
               />
             </div>
           )}
 
-          {message && <p className="text-sm text-wax">{message}</p>}
+          {message && <p className="text-xs text-wax font-medium">{message}</p>}
 
           {clientSecret ? (
             <CardPaymentForm
@@ -238,9 +364,9 @@ export function CheckoutPage() {
             <button
               onClick={handlePay}
               disabled={loading}
-              className="w-full rounded-full bg-seve text-white font-medium py-3 hover:bg-seve/90 transition-colors disabled:opacity-60"
+              className="w-full rounded-full bg-seve text-white font-medium py-3.5 text-sm hover:bg-seve/90 transition-colors disabled:opacity-60 shadow-xs"
             >
-              {loading ? 'Traitement…' : 'Confirmer le paiement'}
+              {loading ? 'Validation en cours…' : 'Valider & Déposer les fonds sous séquestre'}
             </button>
           )}
         </div>

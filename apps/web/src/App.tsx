@@ -23,6 +23,7 @@ import { DisputesPage } from './pages/admin/DisputesPage';
 import { ExchangeRatePage } from './pages/admin/ExchangeRatePage';
 import { AgentsReviewPage } from './pages/admin/AgentsReviewPage';
 import { DeliveryHomePage } from './pages/delivery/DeliveryHomePage';
+import { VendorNegotiationsPage } from './pages/vendor/VendorNegotiationsPage';
 
 export default function App() {
   return (
@@ -54,6 +55,14 @@ export default function App() {
           element={
             <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
               <CreateProductPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendor/:storeId/negotiations"
+          element={
+            <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
+              <VendorNegotiationsPage />
             </RequireAuth>
           }
         />

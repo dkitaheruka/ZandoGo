@@ -26,25 +26,77 @@ export interface ProductImage {
   altText?: string | null;
 }
 
+export type ProductType = 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
+
 export interface ProductVariant {
   id: string;
   sku?: string | null;
+  name?: string;
   attributes?: Record<string, unknown> | null;
   priceOverride?: string | number | null;
   stockQty: number;
+}
+
+export interface PriceTier {
+  minQty: number;
+  maxQty?: number | null;
+  unitPriceUsd: number;
+  unitPriceCdf: number;
+}
+
+export interface NegotiationOffer {
+  id: string;
+  productId: string;
+  productTitle: string;
+  productImage?: string;
+  storeId: string;
+  storeName: string;
+  buyerId: string;
+  buyerName: string;
+  requestedQty: number;
+  requestedPriceUsd: number;
+  agreedPriceUsd?: number | null;
+  currency: Currency;
+  status: 'PENDING_VENDOR_REVIEW' | 'ACCEPTED_BY_VENDOR' | 'REJECTED' | 'CONVERTED_TO_ORDER';
+  notes?: string;
+  destinationCity?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Product {
   id: string;
   title: string;
   description?: string | null;
+  productType: ProductType;
   basePriceUsd: string | number;
   basePriceCdf?: string | number;
   status?: string;
+  minOrderQty?: number;
+  priceTiers?: PriceTier[];
+  stockQty?: number;
+  lowStockThreshold?: number;
+  digitalFileUrl?: string | null;
+  digitalFileName?: string | null;
+  digitalFileSize?: string | null;
+  serviceDuration?: string | null;
+  fulfillmentDetails?: string | null;
   images: ProductImage[];
   variants: ProductVariant[];
-  store: { id?: string; storeName: string; slug: string; ownerId?: string };
+  store: { id?: string; storeName: string; slug: string; ownerId?: string; rating?: number; city?: string; verifiedSupplier?: boolean };
   category?: { id: string; name: string };
+}
+
+export interface DeliveryOption {
+  id: string;
+  providerName: string;
+  code: 'EXPRESS_MOTO' | 'PARTNER_LOGISTICS' | 'CLICK_AND_COLLECT';
+  name: string;
+  estimatedTime: string;
+  feeUsd: number;
+  feeCdf: number;
+  description: string;
+  badgeText?: string;
 }
 
 export interface VendorStore {
@@ -52,8 +104,11 @@ export interface VendorStore {
   storeName: string;
   slug: string;
   description?: string | null;
+  storeType?: 'RETAIL' | 'DIGITAL' | 'SERVICES' | 'LOGISTICS';
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
   fulfillmentMode?: string;
+  balanceUsd?: number;
+  totalOrders?: number;
   createdAt?: string;
 }
 
@@ -90,10 +145,12 @@ export interface DeliveryJob {
 export type OrderStatus =
   | 'PENDING_PAYMENT'
   | 'PAID'
+  | 'ESCROW_HELD'
   | 'PROCESSING'
   | 'SHIPPED'
   | 'OUT_FOR_DELIVERY'
   | 'DELIVERED'
+  | 'COMPLETED'
   | 'CANCELLED'
   | 'REFUNDED'
   | 'DISPUTED';
@@ -102,13 +159,31 @@ export interface Order {
   id: string;
   orderNumber: string;
   status: OrderStatus;
+  isPaid?: boolean;
+  paymentStatus?: 'PAID' | 'UNPAID';
+  escrowStatus?: 'HELD' | 'RELEASED_TO_VENDOR' | 'REFUNDED_TO_BUYER';
   createdAt: string;
   total: string | number;
+  deliveryFee?: number;
   currency: Currency;
+  deliveryOption?: DeliveryOption;
+  hasDigitalItems?: boolean;
+  digitalDownloads?: {
+    productId: string;
+    title: string;
+    downloadUrl: string;
+    fileName: string;
+  }[];
   subOrders: {
     id: string;
     store: { storeName: string };
-    items: { id: string }[];
+    items: {
+      id: string;
+      quantity?: number;
+      productTitle?: string;
+      unitPrice?: number;
+      productType?: ProductType;
+    }[];
   }[];
 }
 
