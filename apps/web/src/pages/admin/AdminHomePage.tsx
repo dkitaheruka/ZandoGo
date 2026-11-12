@@ -158,8 +158,8 @@ export function AdminHomePage() {
 
                       <div className="text-right shrink-0">
                         {p.productType === 'PHYSICAL' ? (
-                          <span className={`font-mono text-xs font-semibold tabular-nums inline-flex items-center gap-1 ${isLow ? 'text-amber-400' : 'text-slate-300'}`}>
-                            {p.stockQty} en stock {isLow && <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />}
+                          <span className={`font-mono text-xs font-semibold tabular-nums inline-flex items-center gap-1 ${isLow ? 'text-cyan-400' : 'text-slate-300'}`}>
+                            {p.stockQty} en stock {isLow && <AlertTriangle className="w-3.5 h-3.5 text-cyan-400" />}
                           </span>
                         ) : p.productType === 'DIGITAL' ? (
                           <span className="text-xs font-mono text-emerald-400">Illimité (PDF)</span>
@@ -177,10 +177,10 @@ export function AdminHomePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Link
                 to="/admin/stores"
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all group"
+                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 transition-all group"
               >
-                <Store className="w-5 h-5 text-amber-500" />
-                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
+                <Store className="w-5 h-5 text-emerald-400" />
+                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-emerald-300 transition-colors">
                   Modération Entreprises
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-1">Activer de nouvelles boutiques ou valider les commissions.</p>
@@ -188,10 +188,10 @@ export function AdminHomePage() {
 
               <Link
                 to="/admin/disputes"
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all group"
+                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 transition-all group"
               >
-                <Scale className="w-5 h-5 text-amber-500" />
-                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
+                <Scale className="w-5 h-5 text-cyan-400" />
+                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-cyan-300 transition-colors">
                   Arbitrage & Séquestres
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-1">Résoudre les réclamations et débloquer les fonds bloqués.</p>
@@ -199,10 +199,10 @@ export function AdminHomePage() {
 
               <Link
                 to="/admin/agents"
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all group"
+                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-emerald-500/50 transition-all group"
               >
-                <Truck className="w-5 h-5 text-amber-500" />
-                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
+                <Truck className="w-5 h-5 text-emerald-400" />
+                <h3 className="mt-2 text-xs font-semibold text-slate-200 group-hover:text-emerald-300 transition-colors">
                   Flotte & Logistique
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-1">Superviser les transporteurs partenaires et coursiers moto.</p>

@@ -62,7 +62,7 @@ export function CartPage() {
         <ShoppingCart className="w-12 h-12 text-slate-300 mx-auto mb-3" />
         <h1 className="font-display text-2xl font-bold text-slate-900">Votre panier ZandoGo</h1>
         <p className="mt-2 text-xs text-slate-500">
-          <Link to="/login" className="text-amber-600 font-semibold hover:underline">
+          <Link to="/login" className="text-emerald-600 font-semibold hover:underline">
             Connectez-vous
           </Link>{' '}
           pour consulter votre panier et finaliser vos achats.
@@ -80,8 +80,8 @@ export function CartPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
-      <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">
-        <ShoppingCart className="w-4 h-4" />
+      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1">
+        <ShoppingCart className="w-4 h-4 text-emerald-600" />
         <span>Panier d'Achats Sécurisé</span>
       </div>
 
@@ -214,7 +214,7 @@ export function CartPage() {
 
             <button
               onClick={() => navigate('/checkout')}
-              className="w-full rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 text-xs transition shadow-xs flex items-center justify-center gap-2"
+              className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs flex items-center justify-center gap-2"
             >
               <span>Continuer vers le paiement sécurisé</span>
               <ArrowRight className="w-4 h-4" />

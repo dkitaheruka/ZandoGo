@@ -8,6 +8,7 @@ import {
   Check,
   FileText,
   Sparkles,
+  Truck,
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -24,11 +25,13 @@ export function ProductDetailPage() {
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle');
   const [contactError, setContactError] = useState<string | null>(null);
 
-  // Negotiation Modal State
+  // Negotiation & Transport Discussion State
   const [negotiationOpen, setNegotiationOpen] = useState(false);
   const [targetPrice, setTargetPrice] = useState<number>(0);
-  const [targetQty, setTargetQty] = useState<number>(10);
+  const [targetQty, setTargetQty] = useState<number>(1);
   const [targetCity, setTargetCity] = useState('Kinshasa');
+  const [targetTransportMode, setTargetTransportMode] = useState('Coursier Express Ville (Rapide)');
+  const [targetDeliveryFee, setTargetDeliveryFee] = useState<number>(3.5);
   const [negotiationNote, setNegotiationNote] = useState('');
   const [negotiationSubmitting, setNegotiationSubmitting] = useState(false);
   const [negotiationSuccess, setNegotiationSuccess] = useState<string | null>(null);
@@ -39,7 +42,8 @@ export function ProductDetailPage() {
       setProduct(data);
       setVariantId(data.variants[0]?.id ?? '');
       const base = Number(data.basePriceUsd);
-      setTargetPrice(Math.round(base * 0.85)); // Default suggested 15% discount for bulk
+      setTargetPrice(base); // Default to current unit price
+      setTargetQty(1);
     });
   }, [id]);
 
@@ -100,18 +104,20 @@ export function ProductDetailPage() {
         storeName: product?.store?.storeName,
         requestedQty: targetQty,
         requestedPriceUsd: targetPrice,
+        transportMode: targetTransportMode,
+        requestedDeliveryFeeUsd: targetDeliveryFee,
         currency: 'USD',
         notes: negotiationNote,
         destinationCity: targetCity,
       });
       setNegotiationSuccess(
-        `Votre proposition de $${targetPrice}/unité pour ${targetQty} unités a été transmise au fournisseur (${product?.store?.storeName}). Vous serez notifié dès acceptation !`,
+        `Proposition envoyée ! $${targetPrice}/unité (${targetQty} pcs) avec transport "${targetTransportMode}" à $${targetDeliveryFee} pour ${targetCity}. Redirection vers la messagerie…`,
       );
       setTimeout(() => {
         setNegotiationOpen(false);
         setNegotiationSuccess(null);
         navigate('/chat');
-      }, 3000);
+      }, 2000);
     } catch {
       setNegotiationSuccess('Erreur lors de l’envoi de la négociation.');
     } finally {
@@ -170,14 +176,19 @@ export function ProductDetailPage() {
             </div>
           </div>
 
-          {/* Alibaba Trade Assurance Card */}
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs space-y-2">
-            <div className="flex items-center gap-2 text-amber-900 font-semibold">
-              <ShieldCheck className="w-4 h-4 text-amber-700" />
-              <span>Garantie Trade Assurance & Séquestre ZandoGo</span>
+          {/* Guarantee & Escrow Card (Noir + Vert + Cyan) */}
+          <div className="rounded-2xl border border-slate-200 bg-[#0B0F19] text-white p-4 text-xs space-y-2 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Protection Séquestre ZandoGo 100%</span>
+              </div>
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
+                Garantie RDC
+              </span>
             </div>
-            <p className="text-amber-800 leading-relaxed text-[11px]">
-              Vos fonds ne sont versés au fournisseur qu’après votre confirmation de livraison ou d'exécution conforme. Remboursement intégral garanti en cas de litige.
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              Fonds bloqués sous séquestre sécurisé. Le vendeur n’est crédité qu’après confirmation de livraison et d'inspection conforme de votre part.
             </p>
           </div>
         </div>
@@ -212,10 +223,10 @@ export function ProductDetailPage() {
                   setContactError('Impossible d’ouvrir le chat.');
                 }
               }}
-              className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-semibold text-xs"
+              className="inline-flex items-center gap-1 text-slate-700 hover:text-emerald-700 font-semibold text-xs transition"
             >
               <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-              <span>Contacter</span>
+              <span>Contacter le vendeur</span>
             </button>
           </div>
           {contactError && (
@@ -229,15 +240,15 @@ export function ProductDetailPage() {
             {product.title}
           </h1>
 
-          {/* Alibaba-Style Tiered Bulk Pricing Table */}
+          {/* Tiered Bulk Pricing Table with Cyan active highlights */}
           {product.priceTiers && product.priceTiers.length > 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
               <div className="flex items-center justify-between mb-3 text-xs">
                 <span className="font-semibold text-slate-900 uppercase tracking-wider text-[11px]">
-                  Grille Tarifaire Dégressive (Vente en Gros & Détail)
+                  Tarifs selon quantité (Vente au détail & prix groupés)
                 </span>
-                <span className="text-[11px] font-mono text-emerald-700 font-medium">
-                  Prix actualisé selon quantité
+                <span className="text-[11px] font-mono text-cyan-700 font-semibold bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                  Prix dynamique appliqué
                 </span>
               </div>
 
@@ -251,7 +262,7 @@ export function ProductDetailPage() {
                       key={idx}
                       className={`p-3 rounded-xl border transition ${
                         isActive
-                          ? 'border-amber-500 bg-amber-50/70 shadow-xs'
+                          ? 'border-cyan-500 bg-cyan-50/70 shadow-xs ring-1 ring-cyan-400/50'
                           : 'border-slate-100 bg-slate-50/50'
                       }`}
                     >
@@ -311,8 +322,8 @@ export function ProductDetailPage() {
               {outOfStock ? (
                 <span className="font-semibold text-rose-600">Rupture de stock temporaire</span>
               ) : isLowStock ? (
-                <span className="font-semibold text-amber-700 font-mono tabular-nums">
-                  Attention : {stockAvailable} unités restantes !
+                <span className="font-semibold text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded-md font-mono tabular-nums">
+                  Dernières {stockAvailable} unités en stock
                 </span>
               ) : (
                 <span className="font-semibold text-emerald-700 font-mono tabular-nums">
@@ -396,7 +407,7 @@ export function ProductDetailPage() {
             </div>
           )}
 
-          {/* Primary Action Buttons: Add to Cart + Price Negotiation (Alibaba feature) */}
+          {/* Primary Action Buttons: Add to Cart + Price & Transport Negotiation */}
           <div className="space-y-3 pt-2">
             <div className="flex flex-col sm:flex-row gap-3">
               {outOfStock ? (
@@ -410,32 +421,32 @@ export function ProductDetailPage() {
                 <button
                   onClick={handleAddToCart}
                   disabled={status === 'adding'}
-                  className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 text-xs transition shadow-xs flex items-center justify-center gap-2"
+                  className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs flex items-center justify-center gap-2"
                 >
                   {status === 'adding' ? (
                     <span>Ajout au panier…</span>
                   ) : status === 'added' ? (
                     <>
-                      <Check className="w-4 h-4 text-slate-950" />
+                      <Check className="w-4 h-4 text-white" />
                       <span>Ajouté au panier !</span>
                     </>
                   ) : (
                     <>
-                      <Package className="w-4 h-4 text-slate-950" />
+                      <Package className="w-4 h-4 text-white" />
                       <span>{isDigital ? 'Acheter & Télécharger' : isService ? 'Commander la prestation' : 'Ajouter au panier'}</span>
                     </>
                   )}
                 </button>
               )}
 
-              {/* Alibaba-style Direct Price Negotiation Button */}
+              {/* Discussion & Negotiation Button (Noir + Cyan) */}
               <button
                 type="button"
                 onClick={() => setNegotiationOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border-2 border-slate-900 hover:bg-slate-900 hover:text-white text-slate-900 font-bold text-xs transition"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-[#0B0F19] hover:bg-slate-900 text-cyan-300 hover:text-cyan-200 border-2 border-cyan-500/40 hover:border-cyan-400 font-bold text-xs transition shadow-xs"
               >
-                <Handshake className="w-4 h-4" />
-                <span>Négocier le prix (Devis B2B)</span>
+                <Handshake className="w-4 h-4 text-cyan-400" />
+                <span>Discuter & Négocier (Prix & Transport)</span>
               </button>
             </div>
 
@@ -446,7 +457,7 @@ export function ProductDetailPage() {
                   <button onClick={() => navigate('/cart')} className="font-semibold text-emerald-900 underline">
                     Voir panier &rarr;
                   </button>
-                  <button onClick={() => navigate('/checkout')} className="font-semibold text-amber-800 underline">
+                  <button onClick={() => navigate('/checkout')} className="font-semibold text-cyan-800 underline">
                     Paiement &rarr;
                   </button>
                 </div>
@@ -456,28 +467,29 @@ export function ProductDetailPage() {
         </div>
       </div>
 
-      {/* Negotiation Modal (Alibaba-inspired custom quote dialogue) */}
+      {/* Discussion & Negotiation Modal (Noir + Cyan + Vert) */}
       {negotiationOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 relative animate-in fade-in">
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 relative animate-in fade-in max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setNegotiationOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">
-              <Handshake className="w-4 h-4" />
-              <span>Négociation Commerciale Directe</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 uppercase tracking-wider mb-2">
+              <span className="px-2.5 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 flex items-center gap-1.5 font-bold text-[10px]">
+                <Handshake className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Négociation Directe Produit & Transport</span>
+              </span>
             </div>
 
             <h3 className="text-lg font-bold text-slate-900 font-display">
-              Proposer un prix convenu au fournisseur
+              Discuter avec {product.store.storeName}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Discutez directement le prix unitaire pour une commande volumineuse ou un partenariat régulier avec{' '}
-              <strong>{product.store.storeName}</strong>.
+              Concluez un accord sur-mesure sur le prix de l’article et le mode d’expédition selon vos besoins.
             </p>
 
             {negotiationSuccess && (
@@ -488,74 +500,136 @@ export function ProductDetailPage() {
             )}
 
             <form onSubmit={handleSendNegotiation} className="mt-5 space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Quantité souhaitée (unités)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={targetQty}
-                  onChange={(e) => setTargetQty(Math.max(1, Number(e.target.value)))}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-bold text-sm outline-none focus:border-amber-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Votre prix unitaire proposé ($ USD)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-2.5 font-mono text-slate-400 font-bold">$</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min={1}
-                    value={targetPrice}
-                    onChange={(e) => setTargetPrice(Number(e.target.value))}
-                    className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-300 font-mono font-bold text-sm outline-none focus:border-amber-500"
-                    required
-                  />
+              {/* Product Price Negotiation Section */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Offre sur le Produit</span>
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    Prix catalogue : ${activeUnitPrice.toFixed(2)}
+                  </span>
                 </div>
-                <span className="text-[11px] text-slate-400 mt-1 block">
-                  Prix catalogue actuel : ${activeUnitPrice.toFixed(2)}
-                </span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Quantité (pièces)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={targetQty}
+                      onChange={(e) => setTargetQty(Math.max(1, Number(e.target.value)))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono font-bold text-xs outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Prix unitaire proposé ($ USD)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 font-mono text-slate-400 font-bold">$</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={1}
+                        value={targetPrice}
+                        onChange={(e) => setTargetPrice(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-300 font-mono font-bold text-xs outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transport & Delivery Negotiation Section */}
+              <div className="p-3.5 rounded-2xl bg-cyan-50/50 border border-cyan-200/80 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>Négociation du Transport / Expédition</span>
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2 py-0.5 rounded">
+                    Toute la RDC
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Ville de destination
+                    </label>
+                    <select
+                      value={targetCity}
+                      onChange={(e) => setTargetCity(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-xs outline-none bg-white focus:border-cyan-500"
+                    >
+                      <option value="Kinshasa">Kinshasa</option>
+                      <option value="Lubumbashi (Haut-Katanga)">Lubumbashi</option>
+                      <option value="Goma (Nord-Kivu)">Goma</option>
+                      <option value="Kisangani (Tshopo)">Kisangani</option>
+                      <option value="Matadi (Kongo-Central)">Matadi</option>
+                      <option value="Bukavu (Sud-Kivu)">Bukavu</option>
+                      <option value="Kolwezi (Lualaba)">Kolwezi</option>
+                      <option value="Kananga (Kasaï-Central)">Kananga</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Frais transport proposés ($ USD)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 font-mono text-slate-400 font-bold">$</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={0}
+                        value={targetDeliveryFee}
+                        onChange={(e) => setTargetDeliveryFee(Math.max(0, Number(e.target.value)))}
+                        className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-300 font-mono font-bold text-xs outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Mode d'acheminement souhaité
+                  </label>
+                  <select
+                    value={targetTransportMode}
+                    onChange={(e) => setTargetTransportMode(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium text-xs outline-none bg-white focus:border-cyan-500"
+                  >
+                    <option value="Coursier Express Ville (Rapide)">Coursier Express Ville (Moto/Voiture)</option>
+                    <option value="Retrait direct en boutique (Gratuit)">Retrait direct en boutique ($0.00)</option>
+                    <option value="Bus / Agence Interurbaine (Fret provincial)">Bus / Agence Interurbaine (Fret inter-provinces)</option>
+                    <option value="Transporteur Fret Fluvial / Cargo">Fret Aérien / Fluvial Fleuve Congo</option>
+                  </select>
+                </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Ville / Province de destination en RDC
-                </label>
-                <select
-                  value={targetCity}
-                  onChange={(e) => setTargetCity(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 font-medium text-xs outline-none bg-white"
-                >
-                  <option value="Kinshasa">Kinshasa</option>
-                  <option value="Lubumbashi (Haut-Katanga)">Lubumbashi (Haut-Katanga)</option>
-                  <option value="Goma (Nord-Kivu)">Goma (Nord-Kivu)</option>
-                  <option value="Kisangani (Tshopo)">Kisangani (Tshopo)</option>
-                  <option value="Matadi (Kongo-Central)">Matadi (Kongo-Central)</option>
-                  <option value="Bukavu (Sud-Kivu)">Bukavu (Sud-Kivu)</option>
-                  <option value="Kolwezi (Lualaba)">Kolwezi (Lualaba)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Message ou conditions au fournisseur
+                  Message ou conditions au vendeur
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={negotiationNote}
                   onChange={(e) => setNegotiationNote(e.target.value)}
-                  placeholder="Ex : Commande récurrente pour atelier textile, livraison par fret MaxiLog souhaitée..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs outline-none focus:border-amber-500"
+                  placeholder="Ex : Besoin urgent pour ce vendredi à Gombe, paiement cash à la livraison ou Mobile Money..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs outline-none focus:border-cyan-500"
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-3">
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setNegotiationOpen(false)}
@@ -566,9 +640,10 @@ export function ProductDetailPage() {
                 <button
                   type="submit"
                   disabled={negotiationSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition shadow-xs disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs disabled:opacity-50 flex items-center gap-2"
                 >
-                  {negotiationSubmitting ? 'Envoi du devis…' : 'Envoyer la proposition de prix'}
+                  <Handshake className="w-4 h-4 text-cyan-200" />
+                  <span>{negotiationSubmitting ? 'Transmission…' : 'Transmettre l’offre & Ouvrir le chat'}</span>
                 </button>
               </div>
             </form>

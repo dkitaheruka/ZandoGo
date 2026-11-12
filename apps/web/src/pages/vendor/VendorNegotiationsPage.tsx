@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   Handshake,
   Check,
   X,
   Clock,
-  MapPin,
   Package,
   DollarSign,
-  ExternalLink,
+  Truck,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
 import { api } from '../../lib/api';
@@ -90,28 +89,30 @@ export function VendorNegotiationsPage() {
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider">
-              <Handshake className="w-4 h-4" />
-              <span>Négociation Commerciale Directe</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 uppercase tracking-wider">
+              <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 flex items-center gap-1.5 font-bold text-[10px]">
+                <Handshake className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Négociation Commerciale Directe</span>
+              </span>
             </div>
-            <h1 className="mt-1 font-display text-2xl font-bold text-slate-900 tracking-tight">
-              Devis & Négociations de Prix B2B
+            <h1 className="mt-2 font-display text-2xl font-extrabold text-slate-950 tracking-tight">
+              Devis & Négociations Produit & Transport
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Concluez des accords de prix personnalisés avec vos clients professionnels et acheteurs en gros dans toute la RDC.
+              Concluez des accords sur-mesure sur le prix et le transport avec vos clients acheteurs dans toute la RDC.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-mono bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-slate-600">
+          <div className="flex items-center gap-2 text-xs font-mono bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-slate-600 shadow-xs">
             <span>Demandes actives :</span>
-            <span className="font-bold text-amber-700 tabular-nums">
+            <span className="font-bold text-cyan-700 tabular-nums">
               {negotiations.filter((n) => n.status === 'PENDING_VENDOR_REVIEW').length} en attente
             </span>
           </div>
         </div>
 
         {notice && (
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
+          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2 animate-in fade-in">
             <Check className="w-4 h-4 shrink-0 text-emerald-600" />
             <span>{notice}</span>
           </div>
@@ -123,11 +124,11 @@ export function VendorNegotiationsPage() {
             Chargement des demandes de négociation…
           </div>
         ) : negotiations.length === 0 ? (
-          <div className="py-16 text-center bg-white border border-slate-200 rounded-2xl p-8">
+          <div className="py-16 text-center bg-white border border-slate-200 rounded-3xl p-8">
             <Handshake className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-slate-800">Aucune négociation de prix en cours</h3>
+            <h3 className="text-sm font-semibold text-slate-800">Aucune négociation en cours</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Lorsque les clients souhaitent négocier le prix de gros d'un article, leur proposition apparaîtra ici.
+              Lorsque les clients souhaitent convenir d'un prix de vente ou d'un mode de transport, leur demande apparaîtra ici.
             </p>
           </div>
         ) : (
@@ -159,37 +160,21 @@ export function VendorNegotiationsPage() {
 
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-slate-900 text-sm">{neg.productTitle}</h3>
-                          <Link
-                            to={`/products/${neg.productId}`}
-                            target="_blank"
-                            className="text-slate-400 hover:text-slate-600"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Link>
+                          <h4 className="font-bold text-sm text-slate-900">{neg.productTitle}</h4>
+                          <span className="text-[10px] font-mono text-slate-400">ID: #{neg.id}</span>
                         </div>
-
-                        <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                          <span className="font-medium text-slate-900">Acheteur : {neg.buyerName}</span>
-                          <span>·</span>
-                          <span className="inline-flex items-center gap-1 text-slate-500">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            {neg.destinationCity || 'RDC'}
-                          </span>
-                          <span>·</span>
-                          <span className="text-slate-400 font-mono">
-                            {new Date(neg.createdAt).toLocaleDateString('fr-FR', {
-                              day: '2-digit',
-                              month: 'short',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Acheteur : <strong className="text-slate-700">{neg.buyerName}</strong> · Destination : <span className="text-cyan-700 font-semibold">{neg.destinationCity || 'Kinshasa'}</span>
+                        </p>
+                        {neg.transportMode && (
+                          <p className="text-xs text-slate-600 mt-0.5 flex items-center gap-1 font-mono">
+                            <Truck className="w-3.5 h-3.5 text-cyan-600" />
+                            <span>Transport proposé : <strong>{neg.transportMode}</strong> (${neg.requestedDeliveryFeeUsd ?? 3.5})</span>
+                          </p>
+                        )}
                         {neg.notes && (
-                          <p className="mt-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 italic">
-                            « {neg.notes} »
+                          <p className="text-xs text-slate-600 italic mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            "{neg.notes}"
                           </p>
                         )}
                       </div>
@@ -198,20 +183,20 @@ export function VendorNegotiationsPage() {
                     {/* Status Badge */}
                     <div>
                       {isPending && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                          <Clock className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-50 text-cyan-900 border border-cyan-200">
+                          <Clock className="w-3 h-3 text-cyan-600" />
                           Proposition en attente
                         </span>
                       )}
                       {isAccepted && (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          <Check className="w-3 h-3" />
-                          Prix convenu & validé
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          Prix & Transport validés
                         </span>
                       )}
                       {isConverted && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">
-                          <Package className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#0B0F19] text-cyan-300 border border-cyan-500/40">
+                          <Package className="w-3 h-3 text-cyan-400" />
                           Commande passée
                         </span>
                       )}
@@ -222,14 +207,14 @@ export function VendorNegotiationsPage() {
                   <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
                     <div className="grid grid-cols-3 gap-6 text-xs">
                       <div>
-                        <span className="block text-[11px] text-slate-400 font-mono">Quantité demandée</span>
+                        <span className="block text-[11px] text-slate-400 font-mono">Quantité</span>
                         <span className="font-bold text-slate-900 font-mono text-sm tabular-nums">
                           {neg.requestedQty} unités
                         </span>
                       </div>
                       <div>
                         <span className="block text-[11px] text-slate-400 font-mono">Prix proposé client</span>
-                        <span className="font-bold text-amber-700 font-mono text-sm tabular-nums">
+                        <span className="font-bold text-cyan-800 font-mono text-sm tabular-nums">
                           ${neg.requestedPriceUsd.toFixed(2)}
                         </span>
                       </div>
@@ -249,7 +234,7 @@ export function VendorNegotiationsPage() {
                             type="button"
                             disabled={busyId === neg.id}
                             onClick={() => handleAcceptDirect(neg)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs transition disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition disabled:opacity-50 shadow-xs"
                           >
                             <Check className="w-3.5 h-3.5" />
                             <span>Accepter à ${neg.requestedPriceUsd}</span>
@@ -261,7 +246,7 @@ export function VendorNegotiationsPage() {
                               setEditingId(neg.id);
                               setProposedPrice(neg.requestedPriceUsd + 2);
                             }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B0F19] hover:bg-slate-900 text-cyan-300 font-bold text-xs transition border border-cyan-500/30"
                           >
                             <DollarSign className="w-3.5 h-3.5" />
                             <span>Contre-proposition</span>
@@ -283,7 +268,7 @@ export function VendorNegotiationsPage() {
                             type="button"
                             disabled={busyId === neg.id}
                             onClick={() => handleSetAgreedPrice(neg)}
-                            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold text-xs rounded transition"
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition"
                           >
                             Confirmer
                           </button>

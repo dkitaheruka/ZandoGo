@@ -40,11 +40,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <div className="h-16 px-4 border-b border-slate-800 flex items-center justify-between">
             {!collapsed && (
               <div className="flex items-center gap-2">
-                <span className="h-8 w-8 rounded-lg bg-amber-500 flex items-center justify-center font-bold text-slate-950 text-xs font-display">
+                <span className="h-8 w-8 rounded-lg bg-emerald-600 flex items-center justify-center font-bold text-white text-xs font-display shadow-xs">
                   ZG
                 </span>
                 <span className="font-display font-bold tracking-tight text-white text-base">
-                  Zando<span className="text-amber-500">Go</span>
+                  Zando<span className="text-cyan-400">Go</span>
                 </span>
               </div>
             )}
@@ -69,11 +69,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                   to={item.to}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
                     active
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                      ? 'bg-emerald-600 text-white font-bold shadow-xs'
                       : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-cyan-400'}`} />
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
@@ -87,14 +87,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             to="/products"
             className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
           >
-            <ShoppingBag className="w-4 h-4 shrink-0" />
+            <ShoppingBag className="w-4 h-4 shrink-0 text-cyan-400" />
             {!collapsed && <span className="truncate">Retour Place de Marché</span>}
           </Link>
           <Link
             to="/vendor"
             className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
           >
-            <Store className="w-4 h-4 shrink-0" />
+            <Store className="w-4 h-4 shrink-0 text-emerald-400" />
             {!collapsed && <span className="truncate">Espace Vendeur Pro</span>}
           </Link>
         </div>
@@ -107,7 +107,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="text-slate-200 font-medium">Console Centrale ZandoGo</span>
             <span aria-hidden="true">/</span>
-            <span className="truncate text-amber-400 font-semibold">Supervision RDC & Séquestre</span>
+            <span className="truncate text-cyan-400 font-semibold">Supervision RDC & Séquestre</span>
           </div>
 
           <div className="flex items-center gap-4">
@@ -117,7 +117,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2 border-l border-slate-800 pl-4 text-xs">
-              <div className="h-7 w-7 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+              <div className="h-7 w-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
                 {user?.fullName?.charAt(0) || 'A'}
               </div>
               <div className="hidden sm:block text-left">

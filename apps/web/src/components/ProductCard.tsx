@@ -72,19 +72,19 @@ export function ProductCard({ product }: { product: Product }) {
               )}
             </div>
 
-            <h2 className="mt-1.5 line-clamp-2 min-h-10 font-semibold text-slate-900 text-xs leading-snug group-hover:text-amber-600 transition-colors">
+            <h2 className="mt-1.5 line-clamp-2 min-h-10 font-bold text-slate-900 text-xs leading-snug group-hover:text-emerald-700 transition-colors">
               {product.title}
             </h2>
           </div>
 
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-baseline justify-between">
             <div>
-              <p className="font-mono text-base font-bold tabular-nums text-slate-900">
+              <p className="font-mono text-base font-extrabold tabular-nums text-slate-950">
                 ${priceUsd.toFixed(2)}
               </p>
               {bestTierPrice ? (
-                <p className="text-[10px] font-mono text-amber-700 font-semibold tabular-nums">
-                  Dès ${bestTierPrice.toFixed(2)} en gros
+                <p className="text-[10px] font-mono text-cyan-800 font-bold tabular-nums bg-cyan-50 px-1.5 py-0.5 rounded mt-0.5 inline-block border border-cyan-200/70">
+                  Dès ${bestTierPrice.toFixed(2)} si lot
                 </p>
               ) : (
                 <p className="text-[10px] font-mono text-slate-400 tabular-nums">
@@ -95,12 +95,12 @@ export function ProductCard({ product }: { product: Product }) {
 
             <div className="text-right text-[11px] text-slate-500 font-mono">
               {product.productType === 'PHYSICAL' && (
-                <span className={isLowStock ? 'text-amber-700 font-bold' : ''}>
+                <span className={isLowStock ? 'text-cyan-800 font-bold bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200' : 'text-slate-600'}>
                   {product.stockQty !== undefined ? `${product.stockQty} en stock` : 'En rayon'}
                 </span>
               )}
-              {product.productType === 'DIGITAL' && <span>Téléchargement</span>}
-              {product.productType === 'SERVICE' && <span>Sur rendez-vous</span>}
+              {product.productType === 'DIGITAL' && <span className="text-cyan-700 font-medium">Téléchargement</span>}
+              {product.productType === 'SERVICE' && <span className="text-emerald-700 font-medium">Prestation</span>}
             </div>
           </div>
         </div>

@@ -152,7 +152,7 @@ export function CreateProductPage() {
               placeholder="ex: Pagne Super Wax Vlisco Original (6 yards)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-amber-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
 
@@ -165,7 +165,7 @@ export function CreateProductPage() {
                 required
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none focus:border-amber-500"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none focus:border-cyan-500"
               >
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -187,7 +187,7 @@ export function CreateProductPage() {
                 placeholder="ex: 65.00"
                 value={basePriceUsd}
                 onChange={(e) => setBasePriceUsd(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-mono font-bold text-slate-900 outline-none focus:border-amber-500"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-mono font-bold text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
               />
             </div>
           </div>
@@ -307,7 +307,7 @@ export function CreateProductPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Détails techniques, composition, garanties, conditions de livraison en RDC..."
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-amber-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
 
@@ -316,7 +316,7 @@ export function CreateProductPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
+            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
           >
             {loading ? 'Publication en cours…' : 'Publier l’offre sur la place de marché ZandoGo'}
           </button>

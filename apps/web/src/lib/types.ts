@@ -56,10 +56,14 @@ export interface NegotiationOffer {
   requestedQty: number;
   requestedPriceUsd: number;
   agreedPriceUsd?: number | null;
+  // Transport & Delivery discussion fields
+  transportMode?: string; // ex: 'Coursier Express Kinshasa', 'Bus Interurbain (Goma/Lshi)', 'Retrait boutique', 'Fret fluvial/aérien'
+  requestedDeliveryFeeUsd?: number;
+  agreedDeliveryFeeUsd?: number | null;
+  destinationCity?: string;
   currency: Currency;
   status: 'PENDING_VENDOR_REVIEW' | 'ACCEPTED_BY_VENDOR' | 'REJECTED' | 'CONVERTED_TO_ORDER';
   notes?: string;
-  destinationCity?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -215,6 +219,12 @@ export interface ChatMessage {
 export interface Conversation {
   id: string;
   type: ConversationType;
+  productId?: string;
+  productTitle?: string;
+  productImage?: string;
+  productPriceUsd?: number;
+  storeName?: string;
+  negotiationOffer?: NegotiationOffer;
   messages: ChatMessage[];
 }
 

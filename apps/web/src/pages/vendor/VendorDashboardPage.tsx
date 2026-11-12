@@ -39,15 +39,15 @@ export function VendorDashboardPage() {
         {/* Welcome Header */}
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider">
-              <Store className="w-4 h-4" />
+            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+              <Store className="w-4 h-4 text-emerald-600" />
               <span>Tableau de Bord Vendeur & Grossiste RDC</span>
             </div>
             <h1 className="mt-1 font-display text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
               Espace Marchand ZandoGo
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Pilotez vos stocks, négociez les prix en gros et suivez vos livraisons sur toute la République.
+              Pilotez vos stocks, négociez les prix en direct et suivez vos livraisons sur toute la République.
             </p>
           </div>
 
@@ -79,7 +79,7 @@ export function VendorDashboardPage() {
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
               <span>Commandes Traitées</span>
-              <Truck className="w-4 h-4 text-amber-600" />
+              <Truck className="w-4 h-4 text-cyan-600" />
             </div>
             <p className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums font-mono">
               142
@@ -91,17 +91,17 @@ export function VendorDashboardPage() {
 
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
             <div className="flex items-center justify-between text-slate-500 text-xs font-medium">
-              <span>Négociations B2B</span>
-              <Handshake className="w-4 h-4 text-indigo-600" />
+              <span>Négociations en Direct</span>
+              <Handshake className="w-4 h-4 text-cyan-600" />
             </div>
-            <p className="mt-2 font-display text-2xl font-bold text-indigo-900 tabular-nums font-mono">
+            <p className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums font-mono">
               2 en cours
             </p>
             <Link
               to={`/vendor/${stores[0]?.id || 'store-1'}/negotiations`}
-              className="mt-1 block text-[11px] text-indigo-600 font-semibold hover:underline"
+              className="mt-1 block text-[11px] text-cyan-700 font-semibold hover:underline"
             >
-              Répondre aux devis &rarr;
+              Répondre aux offres &rarr;
             </Link>
           </div>
 
@@ -113,7 +113,7 @@ export function VendorDashboardPage() {
             <p className="mt-2 font-display text-2xl font-bold text-slate-900 tabular-nums font-mono">
               1 alerte stock
             </p>
-            <span className="mt-1 block text-[11px] text-amber-700 font-medium">
+            <span className="mt-1 block text-[11px] text-cyan-800 font-medium">
               Réapprovisionnement suggéré
             </span>
           </div>
@@ -174,7 +174,7 @@ export function VendorDashboardPage() {
                     <div className="flex items-center gap-3">
                       <Link
                         to={`/vendor/${store.id}/products`}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold text-xs transition"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition shadow-xs"
                       >
                         <Package className="w-3.5 h-3.5" />
                         <span>Gérer les stocks</span>

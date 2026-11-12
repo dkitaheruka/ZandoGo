@@ -78,11 +78,13 @@ export function OrdersListPage() {
       {/* Page Title */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider">
-            <Package className="w-4 h-4" />
-            <span>Gestion des Commandes Acheteur</span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 flex items-center gap-1.5 font-bold text-[10px]">
+              <Package className="w-3.5 h-3.5 text-cyan-600" />
+              <span>Gestion des Commandes Acheteur</span>
+            </span>
           </div>
-          <h1 className="mt-1 font-display text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+          <h1 className="mt-2 font-display text-2xl lg:text-3xl font-extrabold text-slate-950 tracking-tight">
             Vos Commandes sur ZandoGo
           </h1>
           <p className="mt-1 text-xs text-slate-500">
@@ -92,7 +94,7 @@ export function OrdersListPage() {
 
         <Link
           to="/products"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition shadow-xs"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B0F19] hover:bg-slate-900 text-cyan-300 font-semibold text-xs transition shadow-xs border border-cyan-500/30"
         >
           <span>Parcourir le catalogue</span>
           <ArrowRight className="w-3.5 h-3.5" />
@@ -100,7 +102,7 @@ export function OrdersListPage() {
       </div>
 
       {actionMessage && (
-        <div className="mt-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
+        <div className="mt-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{actionMessage}</span>
         </div>
@@ -122,7 +124,7 @@ export function OrdersListPage() {
           onClick={() => setFilterTab('ALL')}
           className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
             filterTab === 'ALL'
-              ? 'bg-slate-900 text-white shadow-xs'
+              ? 'bg-[#0B0F19] text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -134,11 +136,11 @@ export function OrdersListPage() {
           onClick={() => setFilterTab('UNPAID')}
           className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition ${
             filterTab === 'UNPAID'
-              ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-              : 'bg-white text-slate-700 hover:bg-amber-50 border border-slate-200'
+              ? 'bg-[#0B0F19] text-cyan-300 font-bold border border-cyan-400 shadow-xs'
+              : 'bg-white text-slate-700 hover:bg-cyan-50 hover:text-cyan-800 border border-slate-200'
           }`}
         >
-          <Clock className="w-3.5 h-3.5" />
+          <Clock className="w-3.5 h-3.5 text-cyan-500" />
           <span>En attente de paiement ({unpaidCount})</span>
         </button>
 
@@ -202,7 +204,7 @@ export function OrdersListPage() {
               <div
                 key={order.id}
                 className={`rounded-2xl border bg-white p-6 shadow-xs transition hover:shadow-md ${
-                  isUnpaid ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'
+                  isUnpaid ? 'border-cyan-400/80 ring-1 ring-cyan-100' : 'border-slate-200'
                 }`}
               >
                 {/* Header Strip */}
@@ -242,8 +244,8 @@ export function OrdersListPage() {
 
                     {/* Payment / Order Status Badge */}
                     {isUnpaid ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full mt-1">
-                        <Clock className="w-3 h-3 text-amber-600" />
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-900 bg-cyan-50 border border-cyan-200 px-2.5 py-0.5 rounded-full mt-1">
+                        <Clock className="w-3 h-3 text-cyan-600" />
                         <span>Non payée — En attente</span>
                       </span>
                     ) : isCompleted ? (
@@ -312,8 +314,8 @@ export function OrdersListPage() {
                   {/* Trust note */}
                   <div className="text-xs text-slate-500">
                     {isUnpaid ? (
-                      <span className="text-amber-800 font-medium flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="text-cyan-950 font-medium flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-cyan-600" />
                         <span>Réglez cette commande pour démarrer la préparation par le vendeur.</span>
                       </span>
                     ) : (
@@ -332,7 +334,7 @@ export function OrdersListPage() {
                         type="button"
                         disabled={payingOrderId === order.id}
                         onClick={() => handlePayOrder(order.id)}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition shadow-xs disabled:opacity-50"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs disabled:opacity-50"
                       >
                         <CreditCard className="w-4 h-4" />
                         <span>

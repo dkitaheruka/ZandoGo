@@ -57,15 +57,17 @@ export function ProductListPage() {
     <section className="mx-auto max-w-7xl px-6 py-10">
       <div className="flex flex-wrap items-end justify-between gap-6 border-b border-slate-200 pb-8">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider">
-            <Layers className="w-4 h-4" />
-            <span>Place de Marché Universelle ZandoGo</span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 uppercase tracking-wider">
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 flex items-center gap-1.5 font-bold text-[10px]">
+              <Layers className="w-3.5 h-3.5 text-cyan-600" />
+              <span>Place de Marché Universelle ZandoGo</span>
+            </span>
           </div>
-          <h1 className="mt-1 font-display text-3xl md:text-4xl font-bold text-slate-900 tracking-tight">
+          <h1 className="mt-2 font-display text-3xl md:text-4xl font-extrabold text-slate-950 tracking-tight">
             Offres & Catalogues RDC
           </h1>
           <p className="mt-2 text-xs text-slate-500 max-w-xl">
-            Fournisseurs et commerçants vérifiés dans toute la République (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani). Vente au détail et en gros avec paiement sous séquestre garanti.
+            Fournisseurs et commerçants vérifiés dans toute la République (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani). Vente au détail dès 1 pièce et en gros avec transport suivi.
           </p>
         </div>
 
@@ -77,12 +79,12 @@ export function ProductListPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Wax, livre PDF, fibre pro, smartphone..."
-              className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 outline-none focus:border-amber-500 transition shadow-xs"
+              className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition shadow-xs"
             />
           </div>
           <button
             type="submit"
-            className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 transition shadow-xs shrink-0"
+            className="rounded-xl bg-[#0B0F19] px-5 py-2.5 text-xs font-bold text-cyan-300 hover:text-white hover:bg-slate-900 transition shadow-xs shrink-0 border border-cyan-500/30"
           >
             Rechercher
           </button>

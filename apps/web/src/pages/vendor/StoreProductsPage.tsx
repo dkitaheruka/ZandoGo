@@ -89,21 +89,21 @@ export function StoreProductsPage() {
         {/* Top Header */}
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider">
-              <Package className="w-4 h-4" />
-              <span>Gestion d’Inventaire & Tarification B2B</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 uppercase tracking-wider">
+              <Package className="w-4 h-4 text-emerald-600" />
+              <span>Gestion d’Inventaire & Tarification RDC</span>
             </div>
             <h1 className="mt-1 font-display text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
               Catalogue & Stocks en Temps Réel
             </h1>
             <p className="mt-1 text-xs text-slate-500">
-              Contrôlez les quantités en rayon, activez les paliers dégressifs et configurez vos alertes de réapprovisionnement.
+              Contrôlez les quantités en rayon, activez les remises par palier et suivez vos alertes de réapprovisionnement.
             </p>
           </div>
 
           <Link
             to={`/vendor/${storeId}/products/new`}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold text-xs transition shadow-xs"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition shadow-xs"
           >
             <Plus className="w-4 h-4" />
             <span>Ajouter une nouvelle offre</span>
@@ -201,8 +201,8 @@ export function StoreProductsPage() {
                             ${Number(product.basePriceUsd).toFixed(2)}
                           </span>
                           {product.priceTiers && product.priceTiers.length > 1 ? (
-                            <span className="text-[10px] text-amber-700 font-mono block">
-                              Dès ${product.priceTiers[product.priceTiers.length - 1].unitPriceUsd} (gros)
+                            <span className="text-[10px] text-emerald-700 font-mono block">
+                              Dès ${product.priceTiers[product.priceTiers.length - 1].unitPriceUsd} (volume)
                             </span>
                           ) : (
                             <span className="text-[10px] text-slate-400 font-mono block">Tarif unitaire</span>
@@ -225,7 +225,7 @@ export function StoreProductsPage() {
 
                             <span
                               className={`font-mono font-bold tabular-nums px-2 py-0.5 rounded ${
-                                isLow ? 'bg-amber-100 text-amber-900' : 'text-slate-900'
+                                isLow ? 'bg-cyan-100 text-cyan-900' : 'text-slate-900'
                               }`}
                             >
                               {stock} pcs
@@ -242,8 +242,8 @@ export function StoreProductsPage() {
                             </button>
 
                             {isLow && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              <span className="inline-flex items-center gap-1 text-[10px] text-cyan-900 font-semibold bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded">
+                                <AlertTriangle className="w-3 h-3 text-cyan-600" />
                                 <span>Alerte</span>
                               </span>
                             )}
@@ -307,7 +307,7 @@ export function StoreProductsPage() {
             </p>
             <Link
               to={`/vendor/${storeId}/products/new`}
-              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-semibold text-xs hover:bg-amber-600 shadow-xs"
+              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 shadow-xs"
             >
               <Plus className="w-4 h-4" />
               <span>Créer une offre</span>

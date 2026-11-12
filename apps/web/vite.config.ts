@@ -360,13 +360,16 @@ function mockApiPlugin(): Plugin {
       storeName: 'Boutique Victoire Wax',
       buyerId: 'usr-1',
       buyerName: 'David Kitenge',
-      requestedQty: 20,
+      requestedQty: 10,
       requestedPriceUsd: 48,
       agreedPriceUsd: 50,
+      transportMode: 'Coursier Express Kinshasa',
+      requestedDeliveryFeeUsd: 3.0,
+      agreedDeliveryFeeUsd: 3.5,
+      destinationCity: 'Kinshasa (Gombe)',
       currency: 'USD',
       status: 'ACCEPTED_BY_VENDOR',
-      notes: 'Demande pour réassort de boutique à Lubumbashi.',
-      destinationCity: 'Lubumbashi (Haut-Katanga)',
+      notes: 'Commande de 10 pièces avec livraison groupée au bureau.',
       createdAt: '2026-03-09T11:20:00Z',
       updatedAt: '2026-03-09T14:45:00Z',
     },
@@ -379,13 +382,16 @@ function mockApiPlugin(): Plugin {
       storeName: 'Kin Digital Gombe',
       buyerId: 'usr-1',
       buyerName: 'David Kitenge',
-      requestedQty: 5,
+      requestedQty: 2,
       requestedPriceUsd: 340,
       agreedPriceUsd: null,
+      transportMode: 'Bus / Agence Interurbaine (Fret Lubumbashi)',
+      requestedDeliveryFeeUsd: 12.0,
+      agreedDeliveryFeeUsd: null,
+      destinationCity: 'Lubumbashi (Haut-Katanga)',
       currency: 'USD',
       status: 'PENDING_VENDOR_REVIEW',
-      notes: 'Équipement commercial de notre équipe de vente à Goma.',
-      destinationCity: 'Goma (Nord-Kivu)',
+      notes: 'Envoi sécurisé vers Lubumbashi par agence de voyage partenaire.',
       createdAt: '2026-03-10T09:15:00Z',
       updatedAt: '2026-03-10T09:15:00Z',
     },
@@ -749,10 +755,13 @@ function mockApiPlugin(): Plugin {
               requestedQty: Number(body.requestedQty) || 1,
               requestedPriceUsd: Number(body.requestedPriceUsd) || 0,
               agreedPriceUsd: null,
+              transportMode: body.transportMode || 'Coursier Express Kinshasa',
+              requestedDeliveryFeeUsd: body.requestedDeliveryFeeUsd !== undefined ? Number(body.requestedDeliveryFeeUsd) : 3.5,
+              agreedDeliveryFeeUsd: null,
+              destinationCity: body.destinationCity || 'Kinshasa',
               currency: body.currency || 'USD',
               status: 'PENDING_VENDOR_REVIEW',
               notes: body.notes || '',
-              destinationCity: body.destinationCity || 'Kinshasa',
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -768,6 +777,8 @@ function mockApiPlugin(): Plugin {
             const neg = negotiations.find((n) => n.id === negItemMatch[1]);
             if (neg) {
               if (body.agreedPriceUsd !== undefined) neg.agreedPriceUsd = Number(body.agreedPriceUsd);
+              if (body.agreedDeliveryFeeUsd !== undefined) neg.agreedDeliveryFeeUsd = Number(body.agreedDeliveryFeeUsd);
+              if (body.transportMode) neg.transportMode = body.transportMode;
               if (body.status) neg.status = body.status;
               neg.updatedAt = new Date().toISOString();
             }
@@ -790,13 +801,13 @@ function mockApiPlugin(): Plugin {
               variant: {
                 product: {
                   id: foundProd.id,
-                  title: `${foundProd.title} (Tarif Devis Négocié)`,
+                  title: `${foundProd.title} (Tarif Négocié & Transport Convenus)`,
                   images: foundProd.images,
                 },
               },
             });
           }
-          return json({ success: true, message: 'Offre personnalisée validée et transférée dans le panier au tarif négocié.' });
+          return json({ success: true, message: 'Offre personnalisée validée et transférée dans le panier au tarif et conditions négociés.' });
         }
 
         // --- STOCK MANAGEMENT ---

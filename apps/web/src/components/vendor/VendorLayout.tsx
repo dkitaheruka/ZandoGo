@@ -75,12 +75,12 @@ export function VendorLayout({
         {/* Brand Lockup */}
         <div className="h-16 px-6 border-b border-slate-200 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <span className="h-8 w-8 rounded-lg bg-amber-500 text-slate-900 font-bold flex items-center justify-center font-display text-base shadow-xs">
+            <span className="h-8 w-8 rounded-xl bg-emerald-600 text-white font-bold flex items-center justify-center font-display text-base shadow-xs">
               ZG
             </span>
             <div className="leading-none">
-              <span className="font-display font-bold text-lg text-slate-900 tracking-tight">ZandoGo</span>
-              <span className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-600">
+              <span className="font-display font-extrabold text-lg text-slate-950 tracking-tight">ZandoGo</span>
+              <span className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-cyan-700">
                 Espace Vendeur Pro
               </span>
             </div>
@@ -96,7 +96,7 @@ export function VendorLayout({
               className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50/80 transition text-left"
             >
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="h-7 w-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <div className="h-7 w-7 rounded-lg bg-cyan-50 text-cyan-800 flex items-center justify-center shrink-0 border border-cyan-200/60">
                   <Store className="w-4 h-4" />
                 </div>
                 <div className="truncate">
@@ -119,7 +119,7 @@ export function VendorLayout({
                 <Link
                   to="/vendor/new"
                   onClick={() => setStoreMenuOpen(false)}
-                  className="block px-3 py-2 text-amber-700 hover:bg-amber-50 font-semibold border-t border-slate-100"
+                  className="block px-3 py-2 text-cyan-800 hover:bg-cyan-50 font-semibold border-t border-slate-100"
                 >
                   + Ouvrir une nouvelle boutique
                 </Link>
@@ -138,16 +138,16 @@ export function VendorLayout({
                 to={item.href}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition ${
                   item.active
-                    ? 'bg-amber-50 text-amber-900 font-semibold border border-amber-200/80 shadow-xs'
+                    ? 'bg-[#0B0F19] text-white font-bold border border-cyan-500/30 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${item.active ? 'text-amber-700' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 ${item.active ? 'text-cyan-400' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-amber-500 text-slate-900">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500 text-slate-950">
                     {item.badge}
                   </span>
                 )}

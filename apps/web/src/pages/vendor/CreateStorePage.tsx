@@ -113,7 +113,7 @@ export function CreateStorePage() {
                     key={item.type}
                     className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
                       isSelected
-                        ? 'border-amber-500 bg-amber-50/70 shadow-xs'
+                        ? 'border-emerald-600 bg-emerald-50/70 shadow-xs'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
@@ -131,7 +131,7 @@ export function CreateStorePage() {
                     />
                     <div
                       className={`p-2 rounded-lg shrink-0 ${
-                        isSelected ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-500'
+                        isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -156,7 +156,7 @@ export function CreateStorePage() {
               placeholder="ex: Congo Textile & Distribution"
               value={storeName}
               onChange={(e) => handleNameChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-amber-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
 
@@ -164,7 +164,7 @@ export function CreateStorePage() {
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
               Identifiant d’accès (slug boutique) *
             </label>
-            <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs focus-within:border-amber-500">
+            <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500">
               <span className="text-slate-400 font-mono text-xs">zandogo.cd/</span>
               <input
                 required
@@ -184,7 +184,7 @@ export function CreateStorePage() {
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Présentez votre entreprise, vos stocks et vos conditions de livraison en RDC..."
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs text-slate-900 outline-none focus:border-amber-500 resize-none"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 resize-none"
             />
           </div>
 
@@ -195,7 +195,7 @@ export function CreateStorePage() {
             <select
               value={fulfillmentMode}
               onChange={(e) => setFulfillmentMode(e.target.value as any)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-500"
+              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-cyan-500"
             >
               <option value="PLATFORM_DELIVERY">Expédition par les transporteurs agréés ZandoGo</option>
               <option value="SELF_SHIP">Expédition directe par la flotte propre du vendeur</option>
@@ -209,7 +209,7 @@ export function CreateStorePage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
+            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
           >
             {loading ? 'Création en cours…' : 'Enregistrer mon espace marchand'}
           </button>
