@@ -294,12 +294,35 @@ export class WalletsService {
   async requestPayout(user: AuthenticatedUser, dto: RequestPayoutDto) {
     const wallet = await this.assertOwnership(user, dto.walletId);
 
+    if (wallet.ownerType === 'VENDOR') {
+      const store = await this.prisma.vendorStore.findUnique({ where: { id: wallet.ownerId } });
+      if (store?.payoutBlocked) {
+        throw new ForbiddenException(
+          store.payoutBlockReason ||
+            'Retraits bloqués par l’administration suite à un litige pertinent en cours.',
+        );
+      }
+
+      const blockingDispute = await this.prisma.dispute.findFirst({
+        where: {
+          payoutFrozen: true,
+          status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+          order: { subOrders: { some: { storeId: wallet.ownerId } } },
+        },
+        include: { order: { select: { orderNumber: true } } },
+      });
+
+      if (blockingDispute) {
+        throw new ForbiddenException(
+          `Retraits bloqués en raison du litige pertinent sur la commande ${blockingDispute.order.orderNumber}.`,
+        );
+      }
+    }
+
     const availableBalance = await this.prisma.walletTransaction.aggregate({
       where: { walletId: wallet.id, status: 'AVAILABLE' },
       _sum: { amount: true },
     });
-    // Note : en pratique on soustrairait aussi les DEBIT déjà appliqués et les
-    // payoutRequests en cours ; simplifié ici pour rester lisible dans ce squelette.
 
     const balance = Number(availableBalance._sum.amount ?? 0);
     if (dto.amount > balance) {

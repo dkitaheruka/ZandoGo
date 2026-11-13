@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Package,
   CreditCard,
@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Printer,
   Search,
+  MessageSquare,
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -21,6 +22,7 @@ import { useStore } from '../lib/store-context';
 import type { Order } from '../lib/types';
 
 export function OrdersListPage() {
+  const navigate = useNavigate();
   const { formatPrimaryPrice, exchangeRate } = useStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +35,7 @@ export function OrdersListPage() {
   // Dispute modal state
   const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
   const [disputeReason, setDisputeReason] = useState('PRODUCT_NOT_RECEIVED');
+  const [disputeSeverity, setDisputeSeverity] = useState<'MEDIUM' | 'HIGH'>('MEDIUM');
   const [disputeDescription, setDisputeDescription] = useState('');
   const [disputeSending, setDisputeSending] = useState(false);
 
@@ -57,13 +60,34 @@ export function OrdersListPage() {
     setPayingOrderId(orderId);
     setActionMessage(null);
     try {
-      await api.post(`/orders/${orderId}/pay`);
-      setActionMessage('Paiement validé avec succès ! Les fonds sont désormais sécurisés sous séquestre ZandoGo.');
+      const { data } = await api.post(`/orders/${orderId}/pay`);
+      setActionMessage(
+        data?.message ||
+          'Paiement validé via MaishaPay RDC ! Notification SMS Africa’s Talking envoyée et séquestre activé.',
+      );
       load();
     } catch {
       setActionMessage('Erreur lors du règlement de la commande.');
     } finally {
       setPayingOrderId(null);
+    }
+  }
+
+  async function handleDiscussDelivery(order: Order) {
+    try {
+      const { data } = await api.post<{ id: string }>('/chat/conversations', {
+        type: 'CUSTOMER_DELIVERY',
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        storeId: 'store-logistics',
+        storeName: 'Patrick Bolamba · Coursier Moto (Avant paiement)',
+        productTitle: `Livraison ${order.orderNumber}`,
+        productImage: '/src/assets/images/express_courier_moto_1794397998233.jpg',
+        productPriceUsd: order.deliveryFee ?? 6.5,
+      });
+      navigate('/chat', { state: { conversationId: data.id } });
+    } catch {
+      navigate('/chat');
     }
   }
 
@@ -86,12 +110,15 @@ export function OrdersListPage() {
         orderId: disputeOrder.id,
         orderNumber: disputeOrder.orderNumber,
         reasonCategory: disputeReason,
+        severity: disputeSeverity,
         description: disputeDescription.trim(),
       });
       setDisputeOrder(null);
       setDisputeDescription('');
       setActionMessage(
-        `Litige enregistré pour ${disputeOrder.orderNumber}. Les fonds sont gelés sous séquestre et l’équipe d’arbitrage statuera sous 48h.`,
+        disputeSeverity === 'HIGH'
+          ? `Litige critique enregistré pour ${disputeOrder.orderNumber}. Le séquestre et les retraits du vendeur sont gelés le temps de l’arbitrage.`
+          : `Litige enregistré pour ${disputeOrder.orderNumber}. Les fonds sont gelés sous séquestre et l’équipe d’arbitrage statuera sous 48h.`,
       );
       load();
     } finally {
@@ -268,7 +295,7 @@ export function OrdersListPage() {
                   isDisputed
                     ? 'border-wax/50 ring-1 ring-wax/15'
                     : isUnpaid
-                    ? 'border-safran/60 ring-1 ring-safran/20'
+                    ? 'border-safran/50 ring-1 ring-safran/20'
                     : 'border-encre/10'
                 }`}
               >
@@ -311,8 +338,8 @@ export function OrdersListPage() {
                         <span>Litige en cours d’arbitrage</span>
                       </span>
                     ) : isUnpaid ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-encre bg-safran/20 border border-safran/40 px-2.5 py-0.5 rounded-full mt-1">
-                        <Clock className="w-3 h-3 text-safran" />
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-nuit bg-safran/20 border border-safran/40 px-2.5 py-0.5 rounded-full mt-1">
+                        <Clock className="w-3 h-3 text-nuit" />
                         <span>Non payée — En attente</span>
                       </span>
                     ) : isCompleted ? (
@@ -358,24 +385,37 @@ export function OrdersListPage() {
 
                 {/* Digital Download Attachment */}
                 {order.digitalDownloads && order.digitalDownloads.length > 0 && !isUnpaid && (
-                  <div className="p-3.5 rounded-card bg-safran/15 border border-safran/35 flex flex-wrap items-center justify-between gap-3 my-2">
+                  <div className="p-3.5 rounded-card bg-safran/15 border border-safran/40 flex flex-wrap items-center justify-between gap-3 my-2">
                     <div className="flex items-center gap-2 text-xs">
                       <FileText className="w-4 h-4 text-seve shrink-0" />
                       <div>
-                        <p className="font-display font-semibold text-nuit">Document PDF prêt à être téléchargé :</p>
+                        <p className="font-display font-semibold text-nuit">
+                          Livre / PDF débloqué (aucune livraison requise) :
+                        </p>
                         <p className="text-encre/80">{order.digitalDownloads[0].title}</p>
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <a
+                      href={order.digitalDownloads[0].downloadUrl}
+                      download={order.digitalDownloads[0].fileName}
                       onClick={() =>
-                        setActionMessage(`Téléchargement sécurisé démarré : ${order.digitalDownloads?.[0]?.fileName}`)
+                        setActionMessage(`Téléchargement du fichier PDF démarré : ${order.digitalDownloads?.[0]?.fileName}`)
                       }
                       className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-semibold transition"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Télécharger ({order.digitalDownloads[0].fileName})</span>
-                    </button>
+                    </a>
+                  </div>
+                )}
+
+                {order.maishaPayRef && (
+                  <div className="text-[11px] font-mono text-encre/60 flex flex-wrap items-center gap-3 pb-2">
+                    <span>
+                      MaishaPay Réf : <strong className="text-nuit">{order.maishaPayRef}</strong>
+                    </span>
+                    <span>·</span>
+                    <span className="text-seve">SMS Africa’s Talking envoyé ✓</span>
                   </div>
                 )}
 
@@ -385,12 +425,12 @@ export function OrdersListPage() {
                     {isUnpaid ? (
                       <span className="text-encre font-medium flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 text-safran" />
-                        <span>Réglez cette commande pour démarrer l’expédition.</span>
+                        <span>Négociez la livraison avec le livreur ou réglez via MaishaPay.</span>
                       </span>
                     ) : (
                       <span className="text-seve font-medium flex items-center gap-1.5">
                         <ShieldCheck className="w-3.5 h-3.5 text-seve" />
-                        <span>Fonds sécurisés par ZandoGo jusqu’à validation.</span>
+                        <span>Fonds sécurisés via MaishaPay jusqu’à validation.</span>
                       </span>
                     )}
                   </div>
@@ -405,6 +445,17 @@ export function OrdersListPage() {
                       <span>Reçu / Facture</span>
                     </button>
 
+                    {isUnpaid && !order.noDeliveryNeeded && (
+                      <button
+                        type="button"
+                        onClick={() => handleDiscussDelivery(order)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card border border-seve/40 bg-seve/5 hover:bg-seve/10 text-seve text-xs font-display font-bold transition"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Discuter livraison + Maps</span>
+                      </button>
+                    )}
+
                     {isUnpaid && (
                       <button
                         type="button"
@@ -413,7 +464,7 @@ export function OrdersListPage() {
                         className="inline-flex items-center gap-2 px-5 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition shadow-xs disabled:opacity-50"
                       >
                         <CreditCard className="w-4 h-4" />
-                        <span>{payingOrderId === order.id ? 'Paiement…' : 'Payer maintenant'}</span>
+                        <span>{payingOrderId === order.id ? 'MaishaPay…' : 'Payer via MaishaPay'}</span>
                       </button>
                     )}
 
@@ -486,6 +537,18 @@ export function OrdersListPage() {
                 <option value="PRODUCT_DAMAGED">Article endommagé ou défectueux</option>
                 <option value="WRONG_ITEM">Article reçu non conforme à la commande</option>
                 <option value="OTHER">Autre problème commercial</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-encre/80 mb-1">Gravité du litige</label>
+              <select
+                value={disputeSeverity}
+                onChange={(e) => setDisputeSeverity(e.target.value as 'MEDIUM' | 'HIGH')}
+                className="w-full rounded-card border border-encre/20 bg-brume/40 px-3.5 py-2 text-xs text-nuit outline-none focus:border-wax"
+              >
+                <option value="MEDIUM">Standard — Examen sous séquestre (48h)</option>
+                <option value="HIGH">Critique — Litige pertinent demandant blocage des retraits vendeur</option>
               </select>
             </div>
 

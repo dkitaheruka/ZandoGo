@@ -100,7 +100,7 @@ export function CompareDrawer() {
                   return (
                     <td key={p.id} className="py-3 px-3">
                       {best ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-safran/25 border border-safran/40 font-display font-bold text-nuit tabular-nums">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-safran/20 border border-safran/40 font-display font-bold text-nuit tabular-nums">
                           {formatPrimaryPrice(best.unitPriceUsd)} (dès {best.minQty} pcs)
                         </span>
                       ) : (

@@ -21,6 +21,7 @@ import { KycReviewPage } from './pages/admin/KycReviewPage';
 import { StoresReviewPage } from './pages/admin/StoresReviewPage';
 import { DisputesPage } from './pages/admin/DisputesPage';
 import { ExchangeRatePage } from './pages/admin/ExchangeRatePage';
+import { PricingSettingsPage } from './pages/admin/PricingSettingsPage';
 import { AgentsReviewPage } from './pages/admin/AgentsReviewPage';
 import { DeliveryHomePage } from './pages/delivery/DeliveryHomePage';
 import { VendorNegotiationsPage } from './pages/vendor/VendorNegotiationsPage';
@@ -106,6 +107,14 @@ export default function App() {
           element={
             <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
               <DisputesPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/pricing"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <PricingSettingsPage />
             </RequireAuth>
           }
         />

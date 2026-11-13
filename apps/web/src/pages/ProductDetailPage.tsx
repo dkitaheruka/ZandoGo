@@ -15,6 +15,9 @@ import {
   Star,
   Calculator,
   ShoppingCart,
+  Navigation,
+  BadgeCheck,
+  Megaphone,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -28,6 +31,13 @@ const CITY_SHIPPING_BASE: Record<string, { label: string; expressUsd: number; fr
   Matadi: { label: 'Matadi (Kongo-Central)', expressUsd: 10, freightUsd: 6 },
   Kisangani: { label: 'Kisangani (Tshopo)', expressUsd: 16, freightUsd: 10 },
 };
+
+const KINSHASA_KM_PRESETS = [
+  { label: 'Gombe ↔ Lingwala', km: 4 },
+  { label: 'Victoire ↔ Limete', km: 7 },
+  { label: 'Gombe ↔ Ngaliema', km: 9 },
+  { label: 'Aéroport Ndjili ↔ Gombe', km: 22 },
+];
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -78,7 +88,9 @@ export function ProductDetailPage() {
       setVariantId(data.variants[0]?.id ?? '');
       const base = Number(data.basePriceUsd);
       setTargetPrice(base);
-      setTargetQty(1);
+      const defaultQty = data.pricingUnit === 'KM' ? Math.max(4, data.minOrderQty || 4) : 1;
+      setQuantity(defaultQty);
+      setTargetQty(defaultQty);
     });
     api
       .get<ProductReview[]>(`/products/${id}/reviews`)
@@ -92,10 +104,15 @@ export function ProductDetailPage() {
 
   const selectedVariant = product.variants.find((v) => v.id === variantId) || product.variants[0];
 
+  const isPhysical = product.productType === 'PHYSICAL';
+  const isDigital = product.productType === 'DIGITAL';
+  const isService = product.productType === 'SERVICE';
+  const isKm = product.pricingUnit === 'KM';
+
   // Dynamic Volume Tiered Pricing Calculation
   const baseUnitPrice = Number(selectedVariant?.priceOverride ?? product.basePriceUsd);
   let activeUnitPrice = baseUnitPrice;
-  if (product.priceTiers && product.priceTiers.length > 0) {
+  if (product.priceTiers && product.priceTiers.length > 0 && selectedVariant?.id === product.variants[0]?.id) {
     const matchedTier = product.priceTiers
       .slice()
       .reverse()
@@ -105,21 +122,19 @@ export function ProductDetailPage() {
     }
   }
 
-  const isPhysical = product.productType === 'PHYSICAL';
-  const isDigital = product.productType === 'DIGITAL';
-  const isService = product.productType === 'SERVICE';
   const stockAvailable = selectedVariant?.stockQty ?? product.stockQty ?? 0;
   const outOfStock = isPhysical && stockAvailable <= 0;
   const isLowStock = isPhysical && stockAvailable > 0 && stockAvailable <= (product.lowStockThreshold || 5);
 
   const cityCfg = CITY_SHIPPING_BASE[simCity] || CITY_SHIPPING_BASE.Kinshasa;
-  const simShippingUsd = isDigital
-    ? 0
-    : simPickup === 'PICKUP'
-    ? 0
-    : simPickup === 'FREIGHT'
-    ? cityCfg.freightUsd || cityCfg.expressUsd
-    : cityCfg.expressUsd;
+  const simShippingUsd =
+    isDigital || isKm
+      ? 0
+      : simPickup === 'PICKUP'
+      ? 0
+      : simPickup === 'FREIGHT'
+      ? cityCfg.freightUsd || cityCfg.expressUsd
+      : cityCfg.expressUsd;
   const simTotalUsd = activeUnitPrice * quantity + simShippingUsd;
   const unitSavingsUsd = Math.max(0, baseUnitPrice - activeUnitPrice);
   const totalSavingsUsd = unitSavingsUsd * quantity;
@@ -130,6 +145,38 @@ export function ProductDetailPage() {
     reviews.length > 0
       ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
       : product.rating ?? product.store.rating ?? 4.9;
+
+  // Color & Size extractions for variant picker
+  const distinctColors = Array.from(
+    new Map(
+      product.variants
+        .filter((v) => v.attributes?.color)
+        .map((v) => [String(v.attributes?.color), String(v.attributes?.colorHex || '#172320')]),
+    ).entries(),
+  );
+  const distinctSizes = Array.from(
+    new Set(product.variants.map((v) => v.attributes?.size).filter((s): s is string => Boolean(s))),
+  );
+  const selectedColor = selectedVariant?.attributes?.color ? String(selectedVariant.attributes.color) : null;
+  const selectedSize = selectedVariant?.attributes?.size ? String(selectedVariant.attributes.size) : null;
+
+  function pickByColor(colorName: string) {
+    if (!product) return;
+    const exact = product.variants.find(
+      (v) => v.attributes?.color === colorName && (!selectedSize || v.attributes?.size === selectedSize),
+    );
+    const fallback = product.variants.find((v) => v.attributes?.color === colorName);
+    if (exact || fallback) setVariantId((exact || fallback)!.id);
+  }
+
+  function pickBySize(sizeVal: string) {
+    if (!product) return;
+    const exact = product.variants.find(
+      (v) => v.attributes?.size === sizeVal && (!selectedColor || v.attributes?.color === selectedColor),
+    );
+    const fallback = product.variants.find((v) => v.attributes?.size === sizeVal);
+    if (exact || fallback) setVariantId((exact || fallback)!.id);
+  }
 
   async function handleAddToCart() {
     if (!user) {
@@ -361,12 +408,24 @@ export function ProductDetailPage() {
         <div className="space-y-6">
           {/* Supplier Lockup */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-encre/10 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-display font-bold text-nuit">{product.store.storeName}</span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-seve/10 text-seve border border-seve/25 font-semibold text-[10px]">
-                <ShieldCheck className="w-3 h-3 text-seve" />
-                <span>Fournisseur Agréé</span>
-              </span>
+              {product.store.isCertified ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-seve/10 text-seve border border-seve/30 font-display font-bold text-[10px]">
+                  <BadgeCheck className="w-3.5 h-3.5 text-seve" />
+                  <span>Vendeur Certifié ZandoGo</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-encre/5 text-encre/65 border border-encre/15 font-medium text-[10px]">
+                  <span>Boutique standard</span>
+                </span>
+              )}
+              {product.isSponsored && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-safran text-nuit font-display font-bold text-[10px]">
+                  <Megaphone className="w-3 h-3" />
+                  <span>Annonce Sponsorisée</span>
+                </span>
+              )}
               <span className="text-encre/50">· {product.store.city || 'Kinshasa (RDC)'}</span>
             </div>
 
@@ -427,10 +486,10 @@ export function ProductDetailPage() {
             <div className="rounded-card border border-encre/10 bg-white p-4 shadow-xs">
               <div className="flex items-center justify-between mb-3 text-xs">
                 <span className="font-display font-semibold text-nuit uppercase tracking-wider text-[11px]">
-                  Tarifs selon quantité (Vente au détail & gros)
+                  {isKm ? 'Tarifs dégressifs selon distance (en km)' : 'Tarifs selon quantité (Vente au détail & gros)'}
                 </span>
-                <span className="text-[11px] font-display text-encre font-semibold bg-safran/20 px-2.5 py-0.5 rounded-md border border-safran/40">
-                  Prix dynamique appliqué
+                <span className="text-[11px] font-display text-nuit font-semibold bg-safran/20 px-2.5 py-0.5 rounded-md border border-safran/40">
+                  {isKm ? 'Évaluation au km' : 'Prix dynamique appliqué'}
                 </span>
               </div>
 
@@ -439,6 +498,7 @@ export function ProductDetailPage() {
                   const isActive =
                     quantity >= tier.minQty &&
                     (tier.maxQty === null || tier.maxQty === undefined || quantity <= tier.maxQty);
+                  const unitLbl = isKm ? 'km' : 'pcs';
                   return (
                     <button
                       type="button"
@@ -451,10 +511,10 @@ export function ProductDetailPage() {
                       }`}
                     >
                       <p className="text-[11px] font-sans text-encre/60">
-                        {tier.maxQty ? `${tier.minQty} - ${tier.maxQty} pcs` : `${tier.minQty}+ pcs`}
+                        {tier.maxQty ? `${tier.minQty} - ${tier.maxQty} ${unitLbl}` : `${tier.minQty}+ ${unitLbl}`}
                       </p>
                       <p className="text-base font-display font-bold text-nuit mt-1 tabular-nums">
-                        {formatPrimaryPrice(tier.unitPriceUsd)}
+                        {formatPrimaryPrice(tier.unitPriceUsd)}{isKm ? '/km' : ''}
                       </p>
                       <span className="text-[10px] text-encre/50 font-mono tabular-nums">
                         {formatSecondaryPrice(tier.unitPriceUsd)}
@@ -467,7 +527,7 @@ export function ProductDetailPage() {
           ) : (
             <div className="p-4 rounded-card bg-white border border-encre/10 flex items-baseline gap-3">
               <span className="font-display text-3xl font-extrabold text-nuit tabular-nums">
-                {formatPrimaryPrice(activeUnitPrice)}
+                {formatPrimaryPrice(activeUnitPrice)}{isKm ? ' / km' : ''}
               </span>
               <span className="text-xs font-mono text-encre/60 tabular-nums">
                 ({formatSecondaryPrice(activeUnitPrice)})
@@ -477,22 +537,22 @@ export function ProductDetailPage() {
 
           {/* Offering Meta Modules */}
           {isDigital && (
-            <div className="p-4 rounded-card bg-safran/15 border border-safran/35 text-xs text-encre">
+            <div className="p-4 rounded-card bg-safran/15 border border-safran/40 text-xs text-encre">
               <p className="font-display font-semibold text-nuit uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-seve" />
-                <span>Téléchargement Numérique Garanti</span>
+                <span>Téléchargement Numérique Direct · Aucune livraison requise ($0)</span>
               </p>
               <p className="text-encre/80 mt-1 leading-relaxed">
-                Fichier PDF ({product.digitalFileSize || '18 Mo'}). Dès validation du paiement, le lien de téléchargement s’active instantanément dans votre espace commandes.
+                Livre / Document PDF ({product.digitalFileSize || '18 Mo'}). Juste après validation du paiement MaishaPay, votre lien de téléchargement direct est activé et transmis par SMS Africa’s Talking.
               </p>
             </div>
           )}
 
           {isService && (
-            <div className="p-4 rounded-card bg-safran/15 border border-safran/35 text-xs text-encre">
+            <div className="p-4 rounded-card bg-safran/15 border border-safran/40 text-xs text-encre">
               <p className="font-display font-semibold text-nuit uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-seve" />
-                <span>Prestation & Mise en Service</span>
+                {isKm ? <Navigation className="w-4 h-4 text-seve" /> : <Sparkles className="w-4 h-4 text-seve" />}
+                <span>{isKm ? 'Prestation Transport Évaluée au Kilomètre' : 'Prestation & Mise en Service'}</span>
               </p>
               <p className="text-encre/80 mt-1 leading-relaxed">
                 {product.serviceDuration || 'Intervention sous 24h'}. {product.fulfillmentDetails || 'Prise de contact téléphonique du technicien dans les 2 heures.'}
@@ -502,7 +562,7 @@ export function ProductDetailPage() {
 
           {isPhysical && (
             <div className="p-3.5 rounded-card bg-white border border-encre/10 text-xs flex items-center justify-between">
-              <span className="text-encre/70 font-medium">Stock entrepôt :</span>
+              <span className="text-encre/70 font-medium">Stock entrepôt ({selectedVariant?.sku || 'STD'}) :</span>
               {outOfStock ? (
                 <span className="font-semibold text-wax">Rupture de stock temporaire</span>
               ) : isLowStock ? (
@@ -523,72 +583,192 @@ export function ProductDetailPage() {
             </p>
           )}
 
-          {/* Variants Selector */}
-          {product.variants.length > 1 && (
-            <div>
-              <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/60 mb-2">
-                Modèle / Option
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {product.variants.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => setVariantId(v.id)}
-                    className={`px-3.5 py-2 rounded-card text-xs font-medium border transition ${
-                      variantId === v.id
-                        ? 'border-nuit bg-nuit text-brume font-display font-bold shadow-xs'
-                        : 'border-encre/15 bg-white text-encre/80 hover:border-seve'
-                    }`}
-                  >
-                    {v.name || v.sku}
-                  </button>
-                ))}
-              </div>
+          {/* Colors + Sizes + Variants Selector */}
+          {(distinctColors.length > 0 || distinctSizes.length > 0 || product.variants.length > 1) && (
+            <div className="p-4 rounded-card bg-white border border-encre/10 space-y-4">
+              {distinctColors.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-display font-semibold uppercase tracking-wider text-encre/60">Couleur</span>
+                    <span className="font-semibold text-nuit">{selectedColor}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {distinctColors.map(([colorName, hex]) => {
+                      const active = selectedColor === colorName;
+                      return (
+                        <button
+                          key={colorName}
+                          type="button"
+                          onClick={() => pickByColor(colorName)}
+                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-card text-xs font-medium border transition ${
+                            active
+                              ? 'border-nuit bg-nuit text-brume font-bold shadow-xs'
+                              : 'border-encre/15 bg-brume/40 text-encre hover:border-seve'
+                          }`}
+                        >
+                          <span
+                            className="h-3.5 w-3.5 rounded-full border border-white/40 shadow-2xs shrink-0"
+                            style={{ backgroundColor: hex }}
+                          />
+                          <span>{colorName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {distinctSizes.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-display font-semibold uppercase tracking-wider text-encre/60">
+                      Taille / Format
+                    </span>
+                    <span className="font-semibold text-nuit">{selectedSize}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {distinctSizes.map((sizeVal) => {
+                      const active = selectedSize === sizeVal;
+                      return (
+                        <button
+                          key={sizeVal}
+                          type="button"
+                          onClick={() => pickBySize(sizeVal)}
+                          className={`px-3.5 py-1.5 rounded-card text-xs font-bold border transition ${
+                            active
+                              ? 'border-seve bg-seve text-brume shadow-xs'
+                              : 'border-encre/15 bg-white text-encre hover:border-seve'
+                          }`}
+                        >
+                          {sizeVal}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {distinctColors.length === 0 && distinctSizes.length === 0 && product.variants.length > 1 && (
+                <div>
+                  <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/60 mb-2">
+                    Option / Formule
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {product.variants.map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setVariantId(v.id)}
+                        className={`px-3.5 py-2 rounded-card text-xs font-medium border transition ${
+                          variantId === v.id
+                            ? 'border-nuit bg-nuit text-brume font-display font-bold shadow-xs'
+                            : 'border-encre/15 bg-white text-encre/80 hover:border-seve'
+                        }`}
+                      >
+                        {v.name || v.sku}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Quantity Selector + Total */}
-          {isPhysical && (
-            <div className="flex items-center justify-between p-3.5 rounded-card bg-white border border-encre/10">
-              <div className="flex items-center gap-3">
-                <label htmlFor="qty-input" className="text-xs font-semibold text-encre/80">
-                  Quantité commandée :
+          {/* Distance Calculator (when pricingUnit === 'KM') OR Standard Quantity Selector */}
+          {isKm ? (
+            <div className="p-4 rounded-card bg-white border border-seve/30 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between text-xs">
+                <label htmlFor="km-input" className="font-display font-bold text-nuit flex items-center gap-1.5">
+                  <Navigation className="w-4 h-4 text-seve" />
+                  <span>Distance estimée du trajet (en km) :</span>
                 </label>
-                <div className="flex items-center border border-encre/20 rounded-lg bg-brume/50 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="px-2.5 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs"
-                  >
-                    -
-                  </button>
-                  <input
-                    id="qty-input"
-                    type="number"
-                    min={1}
-                    max={stockAvailable || 999}
-                    value={quantity}
-                    onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-                    className="w-12 text-center text-xs font-display font-bold outline-none bg-transparent text-encre"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="px-2.5 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[11px] text-encre/50 block font-sans">Sous-total estimé</span>
-                <span className="font-display text-base font-bold text-nuit tabular-nums">
-                  {formatPrimaryPrice(activeUnitPrice * quantity)}
+                <span className="font-mono text-seve font-bold">
+                  {formatPrimaryPrice(activeUnitPrice)} / km
                 </span>
               </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {KINSHASA_KM_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setQuantity(preset.km)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] border transition ${
+                      quantity === preset.km
+                        ? 'bg-nuit text-safran border-nuit font-bold'
+                        : 'bg-brume/60 text-encre/80 border-encre/15 hover:border-seve'
+                    }`}
+                  >
+                    {preset.label} ({preset.km} km)
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between gap-4 pt-1">
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    id="km-input"
+                    type="range"
+                    min={1}
+                    max={45}
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                    className="w-full accent-seve"
+                  />
+                  <span className="font-display font-extrabold text-sm text-nuit w-16 text-right tabular-nums">
+                    {quantity} km
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-encre/50 block">Coût course ({quantity} km)</span>
+                  <span className="font-display text-base font-extrabold text-nuit tabular-nums">
+                    {formatPrimaryPrice(activeUnitPrice * quantity)}
+                  </span>
+                </div>
+              </div>
             </div>
+          ) : (
+            isPhysical && (
+              <div className="flex items-center justify-between p-3.5 rounded-card bg-white border border-encre/10">
+                <div className="flex items-center gap-3">
+                  <label htmlFor="qty-input" className="text-xs font-semibold text-encre/80">
+                    Quantité commandée :
+                  </label>
+                  <div className="flex items-center border border-encre/20 rounded-lg bg-brume/50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      className="px-2.5 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs"
+                    >
+                      -
+                    </button>
+                    <input
+                      id="qty-input"
+                      type="number"
+                      min={1}
+                      max={stockAvailable || 999}
+                      value={quantity}
+                      onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                      className="w-12 text-center text-xs font-display font-bold outline-none bg-transparent text-encre"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuantity(quantity + 1)}
+                      className="px-2.5 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[11px] text-encre/50 block font-sans">Sous-total estimé</span>
+                  <span className="font-display text-base font-bold text-nuit tabular-nums">
+                    {formatPrimaryPrice(activeUnitPrice * quantity)}
+                  </span>
+                </div>
+              </div>
+            )
           )}
 
           {/* Primary Action Buttons */}

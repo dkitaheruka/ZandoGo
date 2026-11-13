@@ -81,7 +81,7 @@ export function KycReviewPage() {
           </span>
         </div>
 
-        {docError && <p className="text-xs text-safran bg-safran/10 p-3 rounded-card border border-safran/20 font-display">{docError}</p>}
+        {docError && <p className="text-xs text-safran bg-safran/15 p-3 rounded-card border border-safran/30 font-display">{docError}</p>}
         {listError && <p className="text-xs text-wax bg-wax/10 p-3 rounded-card border border-wax/20 font-display">{listError}</p>}
 
         {loading ? (

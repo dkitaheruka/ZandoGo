@@ -7,7 +7,7 @@ type Coords = { lat: number; lng: number };
 
 const STATUS_LABEL: Record<DeliveryJob['status'], { label: string; className: string }> = {
   AWAITING_ASSIGNMENT: { label: "En attente d'assignation", className: 'bg-encre/10 text-encre/70' },
-  ASSIGNED: { label: 'À récupérer', className: 'bg-safran/25 text-nuit' },
+  ASSIGNED: { label: 'À récupérer', className: 'bg-safran/20 text-nuit' },
   PICKED_UP: { label: 'Colis récupéré', className: 'bg-seve/15 text-seve' },
   IN_TRANSIT: { label: 'En route', className: 'bg-seve/15 text-seve' },
   DELIVERED: { label: 'Livrée', className: 'bg-seve text-white' },
@@ -42,6 +42,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   const [proofType, setProofType] = useState<ProofType>('OTP_CODE');
   const [fileUrl, setFileUrl] = useState('');
   const [otp, setOtp] = useState('');
+  const [counterFee, setCounterFee] = useState(String(job.negotiatedFeeUsd ?? job.estimatedFee));
 
   const isActive = ACTIVE_STATUSES.includes(job.status);
   const order = job.subOrder.order;
@@ -81,6 +82,22 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   function describeError(err: any, fallback: string) {
     const apiMessage = err?.response?.data?.message;
     return Array.isArray(apiMessage) ? apiMessage.join(' ') : (apiMessage ?? err?.message ?? fallback);
+  }
+
+  async function handleNegotiateFee(action: 'ACCEPT' | 'COUNTER') {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/delivery/deliveries/${job.id}/negotiate`, {
+        action,
+        feeUsd: action === 'ACCEPT' ? Number(job.negotiatedFeeUsd ?? job.estimatedFee) : Number(counterFee),
+      });
+      onChanged();
+    } catch (err) {
+      setError(describeError(err, 'Impossible de mettre à jour le tarif.'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function changeStatus(next: 'PICKED_UP' | 'IN_TRANSIT' | 'FAILED') {
@@ -139,27 +156,66 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
         )}
         <p className="text-encre/60">
           Course : {Number(job.estimatedFee).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} $
-          {job.distanceKm !== undefined && ` · ${job.distanceKm.toFixed(1)} km à vol d'oiseau`}
+          {job.distanceKm !== undefined && ` · ${job.distanceKm.toFixed(1)} km (Google Maps)`}
         </p>
-        <p className="flex gap-4">
+        <p className="flex flex-wrap gap-4 text-xs font-semibold">
           <a
             href={mapsUrl(job.pickupLat, job.pickupLng)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-seve hover:underline"
           >
-            Point de retrait
+            Point de retrait (Maps) ↗
           </a>
           <a
-            href={mapsUrl(job.dropoffLat, job.dropoffLng)}
+            href={job.clientGoogleMapsUrl || mapsUrl(job.dropoffLat, job.dropoffLng)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-seve hover:underline"
           >
-            Point de livraison
+            Localisation client Google Maps ↗
           </a>
         </p>
       </div>
+
+      {(job.feeNegotiationStatus === 'PENDING_DRIVER' || job.feeNegotiationStatus === 'COUNTERED') && (
+        <div className="mt-4 rounded-card border border-seve/30 bg-seve/5 p-3.5 text-xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-display font-bold text-nuit">
+              Proposition tarif livraison (avant paiement)
+            </span>
+            <span className="font-mono font-bold text-seve">
+              Proposé : ${Number(job.negotiatedFeeUsd ?? job.estimatedFee).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleNegotiateFee('ACCEPT')}
+              className="px-3.5 py-1.5 rounded-card bg-seve text-white font-display font-bold hover:bg-seve/90 transition"
+            >
+              Accepter ${Number(job.negotiatedFeeUsd ?? job.estimatedFee).toFixed(2)}
+            </button>
+            <input
+              type="number"
+              step="0.5"
+              min="1"
+              value={counterFee}
+              onChange={(e) => setCounterFee(e.target.value)}
+              className="w-20 rounded-card border border-encre/20 bg-white px-2.5 py-1.5 font-mono font-bold text-nuit"
+            />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => handleNegotiateFee('COUNTER')}
+              className="px-3.5 py-1.5 rounded-card bg-nuit text-brume font-display font-bold hover:bg-nuit/90 transition"
+            >
+              Contre-offre ($)
+            </button>
+          </div>
+        </div>
+      )}
 
       {cashDue && (
         <div className="mt-4 rounded-card border-l-4 border-safran bg-safran/15 px-4 py-3 text-sm">

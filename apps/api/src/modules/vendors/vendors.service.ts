@@ -8,6 +8,9 @@ import {
 import { RoleName, StoreStatus, Currency } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { FinanceService } from '../finance/finance.service';
+import { MaishaPayService } from '../payments/maishapay.service';
+import { AfricasTalkingSmsService } from '../realtime/africastalking-sms.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { CreateStoreDto } from './dto/create-store.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
@@ -20,19 +23,35 @@ export class VendorsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsGateway,
+    private readonly finance: FinanceService,
+    private readonly maishaPay: MaishaPayService,
+    private readonly sms: AfricasTalkingSmsService,
   ) {}
 
   /**
-   * Un CUSTOMER (ou tout utilisateur) peut demander l'ouverture d'une boutique.
-   * La boutique naît en PENDING : elle n'apparaît jamais dans le catalogue
-   * public tant qu'un ADMIN ne l'a pas explicitement approuvée (voir reviewStore).
-   * Le rôle VENDOR_OWNER est attribué immédiatement, mais scope au store créé,
-   * ce qui permet au vendeur de compléter son profil/KYC avant validation.
+   * Un vendeur achète une ou plusieurs boutiques en payant les frais configurés
+   * par l'administrateur dans la console (jamais codés en dur), via MaishaPay RDC.
    */
   async createStore(user: AuthenticatedUser, dto: CreateStoreDto) {
     const existingSlug = await this.prisma.vendorStore.findUnique({ where: { slug: dto.slug } });
     if (existingSlug) {
       throw new ConflictException('Ce slug de boutique est déjà utilisé');
+    }
+
+    const pricing = await this.finance.getPlatformPricing();
+    const creationFeeUsd = pricing.storeCreationFeeUsd;
+    let maishaPayRef: string | undefined;
+
+    if (creationFeeUsd > 0) {
+      const payment = await this.maishaPay.initiatePayment({
+        orderId: `store-${dto.slug}-${Date.now()}`,
+        amount: creationFeeUsd,
+        currency: 'USD',
+        methodCode: dto.paymentMethod ?? 'MOBILE_MONEY_MPESA',
+        customerPhone: dto.customerPhone,
+        description: `Achat boutique ZandoGo : ${dto.storeName}`,
+      });
+      maishaPayRef = payment.providerReference;
     }
 
     const store = await this.prisma.$transaction(async (tx) => {
@@ -43,6 +62,7 @@ export class VendorsService {
           slug: dto.slug,
           description: dto.description,
           fulfillmentMode: dto.fulfillmentMode ?? 'SELF_SHIP',
+          commissionRate: pricing.defaultCommissionPercent,
           status: StoreStatus.PENDING,
         },
       });
@@ -54,15 +74,30 @@ export class VendorsService {
       return created;
     });
 
+    if (dto.customerPhone) {
+      await this.sms
+        .sendSms(
+          dto.customerPhone,
+          `ZandoGo RDC : Boutique "${store.storeName}" achetée (${creationFeeUsd}$ via MaishaPay ${maishaPayRef ?? ''}).`,
+        )
+        .catch(() => {});
+    }
+
     await this.audit.log({
       actorUserId: user.id,
       action: 'vendor_store.create',
       entityType: 'VendorStore',
       entityId: store.id,
-      afterState: { storeName: store.storeName, slug: store.slug, status: store.status },
+      afterState: {
+        storeName: store.storeName,
+        slug: store.slug,
+        status: store.status,
+        feePaidUsd: creationFeeUsd,
+        maishaPayRef,
+      },
     });
 
-    return store;
+    return { ...store, creationFeeUsd, maishaPayRef };
   }
 
   async getMyStores(user: AuthenticatedUser) {
@@ -78,11 +113,6 @@ export class VendorsService {
     });
   }
 
-  /**
-   * Consultation publique : seules les boutiques ACTIVE sont visibles par
-   * un tiers. Le propriétaire ou un admin voient toujours leur propre boutique
-   * quel que soit son statut (utile pour suivre une demande en attente).
-   */
   async getStoreById(storeId: string, requester?: AuthenticatedUser) {
     const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
     if (!store) {
@@ -98,7 +128,6 @@ export class VendorsService {
       throw new NotFoundException('Boutique introuvable');
     }
 
-    // La commission négociée est confidentielle : réservée au propriétaire et aux admins.
     if (!isOwner && !isAdmin) {
       const { commissionRate: _hidden, ...publicStore } = store;
       return publicStore;
@@ -107,12 +136,6 @@ export class VendorsService {
     return store;
   }
 
-  /**
-   * Mise à jour par le propriétaire uniquement — vérification de scope
-   * explicite en plus du RolesGuard (défense en profondeur : un VENDOR_OWNER
-   * ne doit jamais pouvoir modifier la boutique d'un autre vendeur, même
-   * en forgeant l'ID dans l'URL).
-   */
   async updateStore(user: AuthenticatedUser, storeId: string, dto: UpdateStoreDto) {
     const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
     if (!store) {
@@ -139,12 +162,133 @@ export class VendorsService {
     return updated;
   }
 
-  /**
-   * Décision admin : approbation, suspension, ou ajustement de commission
-   * négociée. L'activation crée automatiquement les wallets USD et CDF du
-   * vendeur (idempotent) — un vendeur ne peut recevoir aucun paiement tant
-   * que ces wallets n'existent pas.
-   */
+  async subscribeMonthlyAd(user: AuthenticatedUser, storeId: string, plan: string) {
+    const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    if (store.ownerId !== user.id) {
+      throw new ForbiddenException("Vous n'êtes pas propriétaire de cette boutique");
+    }
+
+    const pricing = await this.finance.getPlatformPricing();
+    const normalizedPlan = plan === 'ESSENTIAL_29' ? 'ESSENTIAL_29' : 'PRO_CAROUSEL_59';
+    const feeUsd =
+      normalizedPlan === 'ESSENTIAL_29'
+        ? pricing.adEssentialMonthlyFeeUsd
+        : pricing.adProCarouselMonthlyFeeUsd;
+
+    const payment = await this.maishaPay.initiatePayment({
+      orderId: `ad-${storeId}-${Date.now()}`,
+      amount: feeUsd,
+      currency: 'USD',
+      methodCode: 'MOBILE_MONEY_MPESA',
+      description: `Publicité mensuelle ZandoGo (${normalizedPlan})`,
+    });
+
+    const until = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const updated = await this.prisma.vendorStore.update({
+      where: { id: storeId },
+      data: {
+        hasMonthlyAd: true,
+        monthlyAdPlan: normalizedPlan,
+        monthlyAdUntil: until,
+      },
+    });
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'vendor_store.subscribe_ad',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { plan: normalizedPlan, feeUsd, maishaPayRef: payment.providerReference },
+    });
+
+    return { store: updated, maishaPayRef: payment.providerReference, feeUsd, plan: normalizedPlan };
+  }
+
+  async subscribeCertification(user: AuthenticatedUser, storeId: string, billing: string) {
+    const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    if (store.ownerId !== user.id) {
+      throw new ForbiddenException("Vous n'êtes pas propriétaire de cette boutique");
+    }
+
+    const pricing = await this.finance.getPlatformPricing();
+    const isQuarterly = billing === 'QUARTERLY';
+    const feeUsd = isQuarterly
+      ? pricing.certificationQuarterlyFeeUsd
+      : pricing.certificationMonthlyFeeUsd;
+    const days = isQuarterly ? 90 : 30;
+
+    const payment = await this.maishaPay.initiatePayment({
+      orderId: `cert-${storeId}-${Date.now()}`,
+      amount: feeUsd,
+      currency: 'USD',
+      methodCode: 'MOBILE_MONEY_MPESA',
+      description: `Certification Vendeur ZandoGo (${isQuarterly ? 'Trimestrielle' : 'Mensuelle'})`,
+    });
+
+    const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const updated = await this.prisma.vendorStore.update({
+      where: { id: storeId },
+      data: {
+        isCertified: true,
+        certifiedUntil: until,
+      },
+    });
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'vendor_store.subscribe_certification',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { billing, feeUsd, maishaPayRef: payment.providerReference },
+    });
+
+    return { store: updated, maishaPayRef: payment.providerReference, feeUsd };
+  }
+
+  async setPayoutBlock(
+    admin: AuthenticatedUser,
+    storeId: string,
+    blocked: boolean,
+    reason?: string,
+  ) {
+    const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+
+    const updated = await this.prisma.vendorStore.update({
+      where: { id: storeId },
+      data: {
+        payoutBlocked: blocked,
+        payoutBlockReason: blocked
+          ? reason || 'Retraits bloqués suite à un litige client pertinent en cours d’examen.'
+          : null,
+      },
+    });
+
+    await this.notifications.notifyUser({
+      userId: store.ownerId,
+      type: blocked ? 'vendor_store.payout_blocked' : 'vendor_store.payout_unblocked',
+      title: blocked
+        ? 'Retraits temporairement bloqués sur votre boutique'
+        : 'Retraits débloqués sur votre boutique',
+      body:
+        updated.payoutBlockReason ??
+        'Vos demandes de retrait Mobile Money / banque sont de nouveau autorisées.',
+      data: { storeId, payoutBlocked: blocked },
+    });
+
+    await this.audit.log({
+      actorUserId: admin.id,
+      action: blocked ? 'vendor_store.payout_block' : 'vendor_store.payout_unblock',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { payoutBlocked: blocked, payoutBlockReason: updated.payoutBlockReason },
+    });
+
+    return updated;
+  }
+
   async reviewStore(admin: AuthenticatedUser, storeId: string, dto: ReviewStoreDto) {
     const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
     if (!store) {

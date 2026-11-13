@@ -9,6 +9,8 @@ import {
   Clock,
   Package,
   ShieldCheck,
+  Lock,
+  AlertTriangle,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
 import { api } from '../../lib/api';
@@ -37,6 +39,7 @@ export function VendorOrdersPage() {
   const [wallet, setWallet] = useState<WalletSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
 
   // Payout form
   const [payoutAmount, setPayoutAmount] = useState('');
@@ -49,7 +52,7 @@ export function VendorOrdersPage() {
     Promise.all([
       api.get<VendorStore>(`/vendors/stores/${storeId}`).catch(() => ({ data: null })),
       api.get<VendorOrderRow[]>(`/vendors/stores/${storeId}/orders`).catch(() => ({ data: [] })),
-      api.get<WalletSummary>('/wallets/mine').catch(() => ({ data: null })),
+      api.get<WalletSummary>(`/wallets/mine?storeId=${storeId}`).catch(() => ({ data: null })),
     ])
       .then(([stRes, ordRes, walRes]) => {
         if (stRes.data) setStore(stRes.data);
@@ -62,6 +65,12 @@ export function VendorOrdersPage() {
   useEffect(() => {
     loadAll();
   }, [storeId]);
+
+  const isPayoutBlocked = Boolean(wallet?.payoutBlocked || store?.payoutBlocked);
+  const blockReason =
+    wallet?.payoutBlockReason ||
+    store?.payoutBlockReason ||
+    'Les retraits sont temporairement suspendus par l’administration suite à un litige client pertinent.';
 
   async function updateSubOrderStatus(subOrderId: string, nextStatus: 'PROCESSING' | 'SHIPPED') {
     await api.patch(`/vendors/stores/${storeId}/orders/${subOrderId}/status`, { status: nextStatus });
@@ -79,8 +88,11 @@ export function VendorOrdersPage() {
     const amount = Number(payoutAmount);
     if (!amount || amount <= 0) return;
     setPayoutSending(true);
+    setPayoutError(null);
+    setNotice(null);
     try {
       await api.post('/wallets/payout', {
+        storeId,
         amountUsd: amount,
         method: payoutMethod,
         destination: payoutDestination,
@@ -88,22 +100,27 @@ export function VendorOrdersPage() {
       setPayoutAmount('');
       setNotice(`Demande de retrait de $${amount.toFixed(2)} envoyée vers ${payoutMethod}.`);
       loadAll();
+    } catch (err: any) {
+      setPayoutError(
+        err?.response?.data?.message ||
+          'Retrait refusé : vos retraits sont actuellement bloqués en raison d’un litige ouvert.',
+      );
     } finally {
       setPayoutSending(false);
     }
   }
 
   return (
-    <VendorLayout storeId={storeId} storeName={store?.storeName || 'Boutique Victoire Wax'}>
+    <VendorLayout storeId={storeId} storeName={store?.storeName}>
       <div className="max-w-6xl space-y-8">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-encre/10 pb-5">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-seve uppercase tracking-wider font-display">
-              <ShoppingBag className="w-4 h-4 text-seve" />
+            <div className="flex items-center gap-2 text-xs font-semibold text-nuit uppercase tracking-wider font-display">
+              <ShoppingBag className="w-4 h-4 text-safran" />
               <span>Expéditions & Trésorerie Marchande</span>
             </div>
             <h1 className="mt-1 font-display text-2xl lg:text-3xl font-bold text-nuit tracking-tight">
-              Commandes, Expéditions & Retraits
+              Commandes, Expéditions & Retraits — {store?.storeName || 'Boutique'}
             </h1>
             <p className="mt-1 text-xs text-encre/70">
               Préparez vos colis, confiez-les aux transporteurs ZandoGo et encaissez vos ventes débloquées par Mobile Money.
@@ -111,10 +128,40 @@ export function VendorOrdersPage() {
           </div>
         </div>
 
+        {isPayoutBlocked && (
+          <div className="p-4 rounded-card bg-wax/10 border border-wax/40 text-xs text-wax space-y-2" role="alert">
+            <div className="flex items-center gap-2 font-display font-bold text-sm">
+              <Lock className="w-4 h-4 shrink-0" />
+              <span>Retraits Mobile Money temporairement bloqués par l’administration</span>
+            </div>
+            <p className="text-encre/85">{blockReason}</p>
+            {wallet?.blockingDisputes && wallet.blockingDisputes.length > 0 && (
+              <div className="pt-1 flex flex-wrap gap-2">
+                {wallet.blockingDisputes.map((bd) => (
+                  <span
+                    key={bd.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-white border border-wax/30 text-[11px] font-mono text-wax"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>{bd.orderNumber} : {bd.reason}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {notice && (
           <div className="p-3.5 rounded-card bg-seve/10 border border-seve/25 text-xs font-medium text-seve flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{notice}</span>
+          </div>
+        )}
+
+        {payoutError && (
+          <div className="p-3.5 rounded-card bg-wax/10 border border-wax/30 text-xs font-medium text-wax flex items-center gap-2">
+            <Lock className="w-4 h-4 shrink-0" />
+            <span>{payoutError}</span>
           </div>
         )}
 
@@ -126,23 +173,30 @@ export function VendorOrdersPage() {
                 <Wallet className="w-4 h-4" />
                 <span>Portefeuille Boutique</span>
               </span>
-              <span className="inline-flex items-center gap-1 text-[11px] text-seve font-semibold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Séquestre Automatique
-              </span>
+              {isPayoutBlocked ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-wax font-semibold">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Retraits Gelés</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] text-seve font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Séquestre Automatique</span>
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                 <span className="text-[11px] text-brume/60 block">Disponible au retrait</span>
                 <p className="font-display text-2xl font-extrabold text-seve mt-1 tabular-nums">
-                  ${(wallet?.availableBalanceUsd ?? 1840.5).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+                  ${(wallet?.availableBalanceUsd ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                 <span className="text-[11px] text-brume/60 block">En cours sous séquestre</span>
                 <p className="font-display text-2xl font-extrabold text-safran mt-1 tabular-nums">
-                  ${(wallet?.lockedEscrowUsd ?? 91.5).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+                  ${(wallet?.lockedEscrowUsd ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
                 </p>
               </div>
             </div>
@@ -175,18 +229,20 @@ export function VendorOrdersPage() {
                   type="number"
                   min={10}
                   step="0.5"
+                  disabled={isPayoutBlocked}
                   placeholder="ex: 250"
                   value={payoutAmount}
                   onChange={(e) => setPayoutAmount(e.target.value)}
-                  className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 font-display font-bold text-nuit outline-none focus:border-seve"
+                  className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 font-display font-bold text-nuit outline-none focus:border-safran disabled:opacity-50"
                 />
               </div>
               <div>
                 <label className="block font-semibold text-encre/70 mb-1">Canal de versement</label>
                 <select
                   value={payoutMethod}
+                  disabled={isPayoutBlocked}
                   onChange={(e) => setPayoutMethod(e.target.value)}
-                  className="w-full rounded-card border border-encre/20 bg-brume/30 px-3 py-2 text-nuit outline-none focus:border-seve"
+                  className="w-full rounded-card border border-encre/20 bg-brume/30 px-3 py-2 text-nuit outline-none focus:border-safran disabled:opacity-50"
                 >
                   <option value="M-Pesa Vodacom (+243)">M-Pesa Vodacom</option>
                   <option value="Orange Money RDC">Orange Money RDC</option>
@@ -200,19 +256,30 @@ export function VendorOrdersPage() {
               <label className="block font-semibold text-encre/70 mb-1">Numéro ou IBAN bénéficiaire</label>
               <input
                 required
+                disabled={isPayoutBlocked}
                 value={payoutDestination}
                 onChange={(e) => setPayoutDestination(e.target.value)}
-                className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 font-mono text-nuit outline-none focus:border-seve"
+                className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 font-mono text-nuit outline-none focus:border-safran disabled:opacity-50"
               />
             </div>
 
             <button
               type="submit"
-              disabled={payoutSending || !payoutAmount}
-              className="w-full rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold py-2.5 text-xs transition inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+              disabled={isPayoutBlocked || payoutSending || !payoutAmount}
+              className={`w-full rounded-card font-display font-bold py-2.5 text-xs transition inline-flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                isPayoutBlocked
+                  ? 'bg-wax/20 text-wax cursor-not-allowed'
+                  : 'bg-safran hover:bg-safran/90 text-nuit'
+              }`}
             >
-              <ArrowUpRight className="w-4 h-4" />
-              <span>{payoutSending ? 'Traitement…' : 'Initier le retrait sécurisé'}</span>
+              {isPayoutBlocked ? <Lock className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+              <span>
+                {isPayoutBlocked
+                  ? 'Retraits bloqués suite à un litige'
+                  : payoutSending
+                  ? 'Traitement…'
+                  : 'Initier le retrait sécurisé'}
+              </span>
             </button>
           </form>
         </div>
@@ -247,7 +314,7 @@ export function VendorOrdersPage() {
                           Payée (Séquestre)
                         </span>
                       ) : (
-                        <span className="text-[10px] font-semibold text-encre/70 bg-safran/25 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <span className="text-[10px] font-semibold text-nuit bg-safran/20 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           En attente paiement
                         </span>

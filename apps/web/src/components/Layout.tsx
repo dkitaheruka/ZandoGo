@@ -364,29 +364,34 @@ export function Layout({ children }: { children: ReactNode }) {
 
         {/* Secondary Category Navigation Strip */}
         <div className="border-t border-encre/5 bg-white/70">
-          <div className="mx-auto max-w-7xl px-6 h-10 flex items-center gap-6 text-xs font-medium text-encre/70 overflow-x-auto">
+          <div className="mx-auto max-w-7xl px-6 h-10 flex items-center gap-5 text-xs font-medium text-encre/70 overflow-x-auto">
             <Link to="/products" className="font-semibold text-nuit hover:text-seve whitespace-nowrap flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-seve" />
-              <span>Toutes les catégories</span>
+              <span>Tout voir</span>
             </Link>
-            <Link to="/products?type=PHYSICAL" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
-              <Package className="w-3.5 h-3.5 text-seve" />
-              <span>Biens physiques & Stocks</span>
+            <Link to="/products?audience=WOMEN" className="hover:text-seve whitespace-nowrap">
+              Habits Femme
+            </Link>
+            <Link to="/products?audience=MEN" className="hover:text-seve whitespace-nowrap">
+              Habits Homme
+            </Link>
+            <Link to="/products?category=cat-1" className="hover:text-seve whitespace-nowrap">
+              Électronique
             </Link>
             <Link to="/products?type=DIGITAL" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-encre/60" />
-              <span>Numériques & PDF</span>
+              <span>Livres PDF (0$ livr.)</span>
+            </Link>
+            <Link to="/products?category=cat-6" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <Truck className="w-3.5 h-3.5 text-safran" />
+              <span>Transport (au km)</span>
             </Link>
             <Link to="/products?type=SERVICE" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-safran" />
-              <span>Services & Prestations</span>
-            </Link>
-            <Link to="/orders" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
-              <Truck className="w-3.5 h-3.5 text-seve" />
-              <span>Suivi livraison & Fret</span>
+              <Sparkles className="w-3.5 h-3.5 text-seve" />
+              <span>Services</span>
             </Link>
             <Link to="/chat" className="text-seve font-semibold hover:underline whitespace-nowrap ml-auto">
-              Discuter d'un produit ou de la livraison &rarr;
+              Négocier livraison & Localisation Maps &rarr;
             </Link>
           </div>
         </div>
@@ -441,10 +446,10 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <div>
             <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
-              Moyens de Règlement
+              Agrégateur & Notifications SMS
             </h4>
             <p className="text-brume/65 mb-2">
-              Orange Money, Airtel Money, M-Pesa Vodacom, Cartes Visa / Mastercard ou espèces à la livraison.
+              Paiements gérés via l’agrégateur <strong>MaishaPay RDC</strong> (Orange Money, Airtel Money, M-Pesa Vodacom, Cartes Visa / Mastercard). Notifications temps réel par SMS via l’API <strong>Africa’s Talking</strong>.
             </p>
             <span className="font-mono text-brume/40 block text-[10px]">
               © {new Date().getFullYear()} ZandoGo RDC. Tous droits réservés.

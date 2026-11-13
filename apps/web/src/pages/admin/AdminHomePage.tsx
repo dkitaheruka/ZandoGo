@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Store, Scale, Truck } from 'lucide-react';
+import { AlertTriangle, Scale, Truck, SlidersHorizontal } from 'lucide-react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { api } from '../../lib/api';
 import { useStore } from '../../lib/store-context';
-import type { Order, Product, VendorStore } from '../../lib/types';
+import type { Order, PlatformPricing, Product, VendorStore } from '../../lib/types';
 
 export function AdminHomePage() {
   const { exchangeRate } = useStore();
   const [stores, setStores] = useState<VendorStore[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [pricing, setPricing] = useState<PlatformPricing | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,10 +19,12 @@ export function AdminHomePage() {
       api.get<VendorStore[]>('/vendors/stores/mine').catch(() => ({ data: [] })),
       api.get<Order[]>('/orders').catch(() => ({ data: [] })),
       api.get<Product[]>('/products').catch(() => ({ data: [] })),
-    ]).then(([storesRes, ordersRes, prodsRes]) => {
+      api.get<PlatformPricing>('/platform/pricing').catch(() => ({ data: null })),
+    ]).then(([storesRes, ordersRes, prodsRes, pricingRes]) => {
       setStores(storesRes.data || []);
       setOrders(ordersRes.data || []);
       setProducts(prodsRes.data || []);
+      if (pricingRes.data) setPricing(pricingRes.data);
       setLoading(false);
     });
   }, []);
@@ -50,16 +53,23 @@ export function AdminHomePage() {
         {/* Page Title & Quick Actions */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase font-display font-semibold tracking-wider text-seve">Vue d’ensemble de la plateforme</p>
+            <p className="text-xs uppercase font-display font-semibold tracking-wider text-safran">Vue d’ensemble de la plateforme</p>
             <h1 className="mt-1 font-display text-2xl lg:text-3xl font-bold text-white tracking-tight">
               Tableau de bord Administrateur ZandoGo
             </h1>
             <p className="mt-1 text-xs text-brume/70">
-              Surveillance en direct des flux transactionnels, stocks critiques et prestataires de toute la RDC.
+              Surveillance en direct des flux transactionnels, tarifications vendeurs, litiges et prestataires de toute la RDC.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/admin/pricing"
+              className="px-3.5 py-2 rounded-card bg-safran/20 hover:bg-safran/30 text-xs font-semibold text-safran border border-safran/40 transition-colors font-display inline-flex items-center gap-1.5"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Tarifs Vendeurs ({pricing ? `$${pricing.storeCreationFeeUsd} boutique` : 'Configurer'})</span>
+            </Link>
             <Link
               to="/admin/exchange-rate"
               className="px-3.5 py-2 rounded-card bg-white/10 hover:bg-white/15 text-xs font-semibold text-brume border border-white/10 transition-colors font-display"
@@ -112,7 +122,7 @@ export function AdminHomePage() {
               {stores.length} {stores.length > 1 ? 'boutiques' : 'boutique'}
             </p>
             <p className="mt-1 text-[11px] text-brume/60 truncate">
-              Retail · Digital · Télécom · Logistique
+              Prix boutique : ${pricing?.storeCreationFeeUsd ?? 25} · Comm. {pricing?.defaultCommissionPercent ?? 5}%
             </p>
           </div>
 
@@ -178,14 +188,14 @@ export function AdminHomePage() {
             {/* Quick Management Shortcuts */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Link
-                to="/admin/stores"
-                className="p-4 rounded-card bg-nuit/60 border border-white/10 hover:border-seve transition-all group"
+                to="/admin/pricing"
+                className="p-4 rounded-card bg-nuit/60 border border-white/10 hover:border-safran transition-all group"
               >
-                <Store className="w-5 h-5 text-seve" />
-                <h3 className="mt-2 text-xs font-display font-semibold text-brume group-hover:text-seve transition-colors">
-                  Modération Entreprises
+                <SlidersHorizontal className="w-5 h-5 text-safran" />
+                <h3 className="mt-2 text-xs font-display font-semibold text-brume group-hover:text-safran transition-colors">
+                  Tarifs & Commissions
                 </h3>
-                <p className="text-[11px] text-brume/60 mt-1">Activer de nouvelles boutiques ou valider les commissions.</p>
+                <p className="text-[11px] text-brume/60 mt-1">Fixer les prix des boutiques, certifications et publicités.</p>
               </Link>
 
               <Link
@@ -194,9 +204,9 @@ export function AdminHomePage() {
               >
                 <Scale className="w-5 h-5 text-safran" />
                 <h3 className="mt-2 text-xs font-display font-semibold text-brume group-hover:text-safran transition-colors">
-                  Arbitrage & Séquestres
+                  Arbitrage & Gel Retraits
                 </h3>
-                <p className="text-[11px] text-brume/60 mt-1">Résoudre les réclamations et débloquer les fonds bloqués.</p>
+                <p className="text-[11px] text-brume/60 mt-1">Bloquer les retraits vendeur en cas de litige critique et arbitrer.</p>
               </Link>
 
               <Link

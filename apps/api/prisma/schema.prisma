@@ -296,18 +296,25 @@ model KycDocument {
 // ----------------------------------------------------------------------------
 
 model VendorStore {
-  id               String          @id @default(uuid())
-  ownerId          String
-  storeName        String
-  slug             String          @unique
-  description      String?
-  logoUrl          String?
-  bannerUrl        String?
-  status           StoreStatus     @default(PENDING)
-  commissionRate   Decimal?        @db.Decimal(5, 2) // override négocié ; NULL = règle par catégorie
-  fulfillmentMode  FulfillmentMode @default(SELF_SHIP)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                 String          @id @default(uuid())
+  ownerId            String
+  storeName          String
+  slug               String          @unique
+  description        String?
+  logoUrl            String?
+  bannerUrl          String?
+  status             StoreStatus     @default(PENDING)
+  commissionRate     Decimal?        @db.Decimal(5, 2) // override négocié ; NULL = règle par catégorie
+  fulfillmentMode    FulfillmentMode @default(SELF_SHIP)
+  payoutBlocked      Boolean         @default(false)
+  payoutBlockReason  String?
+  isCertified        Boolean         @default(false)
+  certifiedUntil     DateTime?
+  hasMonthlyAd       Boolean         @default(false)
+  monthlyAdPlan      String?
+  monthlyAdUntil     DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   owner       User          @relation("StoreOwner", fields: [ownerId], references: [id])
   products    Product[]
@@ -690,6 +697,8 @@ model Dispute {
   orderItemId      String?
   raisedByUserId   String
   reasonCategory   DisputeReason
+  severity         String        @default("MEDIUM")
+  payoutFrozen     Boolean       @default(false)
   description      String
   evidenceUrls     Json?
   status           DisputeStatus @default(OPEN)

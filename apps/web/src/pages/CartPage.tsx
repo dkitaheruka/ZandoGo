@@ -81,6 +81,7 @@ export function CartPage() {
 
   const items = cart?.items ?? [];
   const total = items.reduce((sum, item) => sum + Number(item.unitPriceSnapshot) * item.quantity, 0);
+  const onlyDigital = items.length > 0 && items.every((item) => item.variant?.product?.productType === 'DIGITAL');
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -117,72 +118,89 @@ export function CartPage() {
         <div className="mt-8 grid md:grid-cols-[1.5fr_1fr] gap-8 items-start">
           {/* Items list */}
           <div className="space-y-3">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-4 rounded-card border border-encre/10 bg-white p-4 shadow-xs"
-              >
-                <div className="h-20 w-20 bg-brume rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
-                  {item.variant?.product?.images[0] ? (
-                    <img
-                      src={item.variant.product.images[0].url}
-                      alt={item.variant.product.title}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Package className="w-8 h-8 text-encre/25" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-xs text-nuit truncate">
-                    {item.variant?.product?.title}
-                  </p>
-                  <p className="font-display text-sm font-bold text-nuit mt-1 tabular-nums">
-                    {formatPrimaryPrice(item.unitPriceSnapshot)}
-                  </p>
-                  <span className="text-[10px] text-encre/50 font-mono tabular-nums">
-                    {formatSecondaryPrice(item.unitPriceSnapshot)}
-                  </span>
-                </div>
-
-                <div className="flex items-center border border-encre/20 rounded-lg bg-brume/50 overflow-hidden">
-                  <button
-                    type="button"
-                    disabled={busy || item.quantity <= 1}
-                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                    className="px-2 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs disabled:opacity-40"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    disabled={busy}
-                    onChange={(e) => updateQuantity(item.id, Number(e.target.value))}
-                    className="w-10 text-center text-xs font-display font-bold outline-none bg-transparent text-encre"
-                  />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                    className="px-2 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs disabled:opacity-40"
-                  >
-                    +
-                  </button>
-                </div>
-
-                <button
-                  disabled={busy}
-                  onClick={() => removeItem(item.id)}
-                  className="p-2 text-encre/40 hover:text-wax hover:bg-wax/10 rounded-lg transition"
-                  title="Retirer l'article"
+            {items.map((item) => {
+              const isKm = item.variant?.product?.pricingUnit === 'KM';
+              const attrs = item.variant?.attributes;
+              const attrParts = [attrs?.size, attrs?.color, attrs?.capacity].filter(Boolean);
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-4 rounded-card border border-encre/10 bg-white p-4 shadow-xs"
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+                  <div className="h-20 w-20 bg-brume rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
+                    {item.variant?.product?.images[0] ? (
+                      <img
+                        src={item.variant.product.images[0].url}
+                        alt={item.variant.product.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Package className="w-8 h-8 text-encre/25" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-xs text-nuit truncate">
+                      {item.variant?.product?.title}
+                    </p>
+                    {(attrParts.length > 0 || item.variant?.name) && (
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-encre/65">
+                        {attrs?.colorHex && (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full border border-encre/20"
+                            style={{ backgroundColor: String(attrs.colorHex) }}
+                          />
+                        )}
+                        <span>{attrParts.length > 0 ? attrParts.join(' · ') : item.variant?.name}</span>
+                      </div>
+                    )}
+                    <p className="font-display text-sm font-bold text-nuit mt-1 tabular-nums">
+                      {formatPrimaryPrice(item.unitPriceSnapshot)}
+                      {isKm && <span className="text-[11px] font-semibold text-seve"> / km</span>}
+                    </p>
+                    <span className="text-[10px] text-encre/50 font-mono tabular-nums">
+                      {formatSecondaryPrice(item.unitPriceSnapshot)}{isKm ? ' / km' : ''} · {isKm ? `${item.quantity} km` : `Qté ${item.quantity}`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center border border-encre/20 rounded-lg bg-brume/50 overflow-hidden">
+                    <button
+                      type="button"
+                      disabled={busy || item.quantity <= 1}
+                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                      className="px-2 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs disabled:opacity-40"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      value={item.quantity}
+                      disabled={busy}
+                      onChange={(e) => updateQuantity(item.id, Number(e.target.value))}
+                      className="w-10 text-center text-xs font-display font-bold outline-none bg-transparent text-encre"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                      className="px-2 py-1 text-encre/70 hover:bg-encre/10 font-bold text-xs disabled:opacity-40"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    disabled={busy}
+                    onClick={() => removeItem(item.id)}
+                    className="p-2 text-encre/40 hover:text-wax hover:bg-wax/10 rounded-lg transition"
+                    title="Retirer l'article"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
           {/* Order Summary Box */}
@@ -199,8 +217,10 @@ export function CartPage() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Estimation transport RDC :</span>
-                <span className="font-sans text-encre/50">Calculé à l'étape suivante</span>
+                <span>Livraison / Transport :</span>
+                <span className={`font-sans ${onlyDigital ? 'text-seve font-semibold' : 'text-encre/50'}`}>
+                  {onlyDigital ? 'Aucune livraison (PDF immédiat · $0)' : 'Négociable à l’étape suivante'}
+                </span>
               </div>
             </div>
 

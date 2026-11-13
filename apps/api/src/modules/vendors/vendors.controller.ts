@@ -65,6 +65,39 @@ export class VendorsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Patch(':id/payout-block')
+  setPayoutBlock(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { blocked: boolean; reason?: string },
+  ) {
+    return this.vendors.setPayoutBlock(admin, id, Boolean(body.blocked), body.reason);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER)
+  @Post(':id/subscribe-ad')
+  subscribeAd(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { plan?: string },
+  ) {
+    return this.vendors.subscribeMonthlyAd(user, id, body.plan ?? 'PRO_CAROUSEL_59');
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER)
+  @Post(':id/subscribe-certification')
+  subscribeCertification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { billing?: string },
+  ) {
+    return this.vendors.subscribeCertification(user, id, body.billing ?? 'MONTHLY');
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF)
   @Post(':storeId/products')
   createProduct(

@@ -41,6 +41,17 @@ export class DisputesController {
     return this.disputesService.listOpenDisputes();
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
+  @Patch(':id/payout-block')
+  setPayoutBlock(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { blocked: boolean; reason?: string },
+  ) {
+    return this.disputesService.setStorePayoutFreeze(admin, id, Boolean(body.blocked), body.reason);
+  }
+
   /** Résolution : réservée au SUPER_ADMIN (vérifié une seconde fois dans le service) */
   @UseGuards(RolesGuard)
   @Roles(RoleName.SUPER_ADMIN)

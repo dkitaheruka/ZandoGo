@@ -1,5 +1,5 @@
 import { DisputeReason } from '@prisma/client';
-import { ArrayMaxSize, IsArray, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEnum, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class OpenDisputeDto {
   @IsUUID()
@@ -11,6 +11,10 @@ export class OpenDisputeDto {
 
   @IsEnum(DisputeReason)
   reasonCategory: DisputeReason;
+
+  @IsOptional()
+  @IsIn(['LOW', 'MEDIUM', 'HIGH'])
+  severity?: 'LOW' | 'MEDIUM' | 'HIGH';
 
   @IsString()
   @MinLength(10)

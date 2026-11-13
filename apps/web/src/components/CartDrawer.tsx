@@ -141,77 +141,87 @@ export function CartDrawer() {
               </button>
             </div>
           ) : (
-            items.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-card bg-white border border-encre/10 p-3.5 flex gap-3 shadow-xs"
-              >
-                <div className="h-16 w-16 rounded-xl bg-brume overflow-hidden shrink-0 flex items-center justify-center">
-                  {item.variant?.product?.images?.[0] ? (
-                    <img
-                      src={item.variant.product.images[0].url}
-                      alt={item.variant.product.title}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Package className="w-6 h-6 text-encre/25" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <Link
-                    to={item.variant?.product?.id ? `/products/${item.variant.product.id}` : '/products'}
-                    onClick={closeCart}
-                    className="font-bold text-xs text-nuit hover:text-seve line-clamp-2 leading-snug"
-                  >
-                    {item.variant?.product?.title}
-                  </Link>
-
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <span className="font-display text-sm font-bold text-nuit tabular-nums">
-                      {formatPrimaryPrice(item.unitPriceSnapshot)}
-                    </span>
-                    <span className="text-[10px] font-mono text-encre/45 tabular-nums">
-                      {formatSecondaryPrice(item.unitPriceSnapshot)}
-                    </span>
+            items.map((item) => {
+              const isKm = item.variant?.product?.pricingUnit === 'KM';
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-card bg-white border border-encre/10 p-3.5 flex gap-3 shadow-xs"
+                >
+                  <div className="h-16 w-16 rounded-xl bg-brume overflow-hidden shrink-0 flex items-center justify-center">
+                    {item.variant?.product?.images?.[0] ? (
+                      <img
+                        src={item.variant.product.images[0].url}
+                        alt={item.variant.product.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Package className="w-6 h-6 text-encre/25" />
+                    )}
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between">
-                    <div className="inline-flex items-center border border-encre/15 rounded-lg bg-brume/60">
-                      <button
-                        type="button"
-                        disabled={busyId === item.id || item.quantity <= 1}
-                        onClick={() => updateQty(item.id, item.quantity - 1)}
-                        className="p-1.5 text-encre/70 hover:text-nuit disabled:opacity-35"
-                        aria-label="Diminuer la quantité"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="px-2.5 text-xs font-display font-bold tabular-nums">{item.quantity}</span>
+                  <div className="flex-1 min-w-0">
+                    <Link
+                      to={item.variant?.product?.id ? `/products/${item.variant.product.id}` : '/products'}
+                      onClick={closeCart}
+                      className="font-bold text-xs text-nuit hover:text-seve line-clamp-2 leading-snug"
+                    >
+                      {item.variant?.product?.title}
+                    </Link>
+
+                    {item.variant?.name && (
+                      <p className="text-[10px] text-encre/60 mt-0.5 truncate">{item.variant.name}</p>
+                    )}
+
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <span className="font-display text-sm font-bold text-nuit tabular-nums">
+                        {formatPrimaryPrice(item.unitPriceSnapshot)}
+                        {isKm ? ' / km' : ''}
+                      </span>
+                      <span className="text-[10px] font-mono text-encre/45 tabular-nums">
+                        {formatSecondaryPrice(item.unitPriceSnapshot)}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="inline-flex items-center border border-encre/15 rounded-lg bg-brume/60">
+                        <button
+                          type="button"
+                          disabled={busyId === item.id || item.quantity <= 1}
+                          onClick={() => updateQty(item.id, item.quantity - 1)}
+                          className="p-1.5 text-encre/70 hover:text-nuit disabled:opacity-35"
+                          aria-label="Diminuer la quantité"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="px-2.5 text-xs font-display font-bold tabular-nums">
+                          {item.quantity}{isKm ? ' km' : ''}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busyId === item.id}
+                          onClick={() => updateQty(item.id, item.quantity + 1)}
+                          className="p-1.5 text-encre/70 hover:text-nuit disabled:opacity-35"
+                          aria-label="Augmenter la quantité"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         disabled={busyId === item.id}
-                        onClick={() => updateQty(item.id, item.quantity + 1)}
-                        className="p-1.5 text-encre/70 hover:text-nuit disabled:opacity-35"
-                        aria-label="Augmenter la quantité"
+                        onClick={() => removeItem(item.id)}
+                        className="p-1.5 rounded-lg text-encre/40 hover:text-wax hover:bg-wax/10 transition"
+                        title="Supprimer"
                       >
-                        <Plus className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-
-                    <button
-                      type="button"
-                      disabled={busyId === item.id}
-                      onClick={() => removeItem(item.id)}
-                      className="p-1.5 rounded-lg text-encre/40 hover:text-wax hover:bg-wax/10 transition"
-                      title="Supprimer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

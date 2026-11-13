@@ -7,12 +7,15 @@ import { useStore } from '../lib/store-context';
 import type { Product } from '../lib/types';
 
 type TypeFilter = 'ALL' | 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
+type AudienceFilter = 'ALL' | 'WOMEN' | 'MEN' | 'PRO';
 type SortKey = 'RELEVANCE' | 'PRICE_ASC' | 'PRICE_DESC' | 'RATING';
 
 export function ProductListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
   const urlType = (searchParams.get('type')?.toUpperCase() || 'ALL') as TypeFilter;
+  const urlCategory = searchParams.get('category') || 'ALL';
+  const urlAudience = (searchParams.get('audience')?.toUpperCase() || 'ALL') as AudienceFilter;
   const urlFavorites = searchParams.get('favorites') === '1';
 
   const { wishlistIds, compareProducts, setCompareOpen } = useStore();
@@ -23,7 +26,10 @@ export function ProductListPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(
     ['ALL', 'PHYSICAL', 'DIGITAL', 'SERVICE'].includes(urlType) ? urlType : 'ALL',
   );
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<string>(urlCategory);
+  const [audienceFilter, setAudienceFilter] = useState<AudienceFilter>(
+    ['ALL', 'WOMEN', 'MEN', 'PRO'].includes(urlAudience) ? urlAudience : 'ALL',
+  );
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<SortKey>('RELEVANCE');
   const [favoritesOnly, setFavoritesOnly] = useState<boolean>(urlFavorites);
@@ -41,6 +47,16 @@ export function ProductListPage() {
       setTypeFilter(urlType);
     }
   }, [urlType]);
+
+  useEffect(() => {
+    setSelectedCategory(urlCategory);
+  }, [urlCategory]);
+
+  useEffect(() => {
+    if (['ALL', 'WOMEN', 'MEN', 'PRO'].includes(urlAudience)) {
+      setAudienceFilter(urlAudience);
+    }
+  }, [urlAudience]);
 
   useEffect(() => {
     setFavoritesOnly(urlFavorites);
@@ -91,6 +107,22 @@ export function ProductListPage() {
     setSearchParams(next);
   }
 
+  function handleSelectCategory(catId: string) {
+    setSelectedCategory(catId);
+    const next = new URLSearchParams(searchParams);
+    if (catId === 'ALL') next.delete('category');
+    else next.set('category', catId);
+    setSearchParams(next);
+  }
+
+  function handleSelectAudience(aud: AudienceFilter) {
+    setAudienceFilter(aud);
+    const next = new URLSearchParams(searchParams);
+    if (aud === 'ALL') next.delete('audience');
+    else next.set('audience', aud);
+    setSearchParams(next);
+  }
+
   const cities = Array.from(
     new Set(products.map((p) => p.store.city).filter((c): c is string => Boolean(c))),
   );
@@ -99,6 +131,7 @@ export function ProductListPage() {
     .filter((p) => {
       if (typeFilter !== 'ALL' && p.productType !== typeFilter) return false;
       if (selectedCategory !== 'ALL' && p.category?.id !== selectedCategory) return false;
+      if (audienceFilter !== 'ALL' && p.audience !== audienceFilter) return false;
       if (selectedCity !== 'ALL' && p.store.city !== selectedCity) return false;
       if (favoritesOnly && !wishlistIds.includes(p.id)) return false;
       return true;
@@ -107,8 +140,10 @@ export function ProductListPage() {
     .sort((a, b) => {
       if (sortBy === 'PRICE_ASC') return Number(a.basePriceUsd) - Number(b.basePriceUsd);
       if (sortBy === 'PRICE_DESC') return Number(b.basePriceUsd) - Number(a.basePriceUsd);
+      const adDiff = (b.isSponsored ? 1 : 0) - (a.isSponsored ? 1 : 0);
+      if (adDiff !== 0) return adDiff;
       if (sortBy === 'RATING') return (b.rating ?? b.store.rating ?? 0) - (a.rating ?? a.store.rating ?? 0);
-      return 0;
+      return (b.store.isCertified ? 1 : 0) - (a.store.isCertified ? 1 : 0);
     });
 
   return (
@@ -240,39 +275,73 @@ export function ProductListPage() {
           </div>
         </div>
 
-        {/* Category Pills */}
-        {categories.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory('ALL')}
-              className={`px-3 py-1 rounded-full border whitespace-nowrap transition ${
-                selectedCategory === 'ALL'
-                  ? 'bg-nuit text-brume border-nuit font-semibold'
-                  : 'bg-white text-encre/70 border-encre/15 hover:border-seve'
-              }`}
-            >
-              Toutes catégories
-            </button>
-            {categories.map((cat) => (
+        {/* Category Pills + Segment (Femme / Homme / Pro) */}
+        <div className="space-y-2.5">
+          {categories.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
               <button
-                key={cat.id}
                 type="button"
-                onClick={() => setSelectedCategory(cat.id)}
+                onClick={() => handleSelectCategory('ALL')}
                 className={`px-3 py-1 rounded-full border whitespace-nowrap transition ${
-                  selectedCategory === cat.id
+                  selectedCategory === 'ALL'
                     ? 'bg-nuit text-brume border-nuit font-semibold'
                     : 'bg-white text-encre/70 border-encre/15 hover:border-seve'
                 }`}
               >
-                {cat.name}
+                Toutes catégories
               </button>
-            ))}
-            <span className="ml-auto text-xs text-encre/60 font-mono tabular-nums whitespace-nowrap pl-2">
-              {filteredProducts.length} résultat{filteredProducts.length > 1 ? 's' : ''}
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleSelectCategory(cat.id)}
+                  className={`px-3 py-1 rounded-full border whitespace-nowrap transition ${
+                    selectedCategory === cat.id
+                      ? 'bg-nuit text-brume border-nuit font-semibold'
+                      : 'bg-white text-encre/70 border-encre/15 hover:border-seve'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+              <span className="ml-auto text-xs text-encre/60 font-mono tabular-nums whitespace-nowrap pl-2">
+                {filteredProducts.length} résultat{filteredProducts.length > 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
+          {/* Segment / Audience filter */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-encre/55 font-semibold uppercase tracking-wider mr-1">Segment :</span>
+              {(
+                [
+                  ['ALL', 'Tous segments'],
+                  ['WOMEN', 'Mode & Habits Femme'],
+                  ['MEN', 'Mode & Habits Homme'],
+                  ['PRO', 'Services, Livres & Entreprises'],
+                ] as [AudienceFilter, string][]
+              ).map(([val, label]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => handleSelectAudience(val)}
+                  className={`px-2.5 py-1 rounded-card border transition font-medium ${
+                    audienceFilter === val
+                      ? 'bg-seve text-brume border-seve font-semibold'
+                      : 'bg-white text-encre/75 border-encre/15 hover:border-seve/50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <span className="text-[11px] text-encre/60 font-medium">
+              Les produits des vendeurs en publicité mensuelle (« Sponsorisé ») s’affichent en premier · Sceau « Vendeur Certifié » sur les boutiques certifiées
             </span>
           </div>
-        )}
+        </div>
       </div>
 
       {error && (
@@ -308,6 +377,7 @@ export function ProductListPage() {
                 setQuery('');
                 setTypeFilter('ALL');
                 setSelectedCategory('ALL');
+                setAudienceFilter('ALL');
                 setSelectedCity('ALL');
                 setFavoritesOnly(false);
                 setSearchParams(new URLSearchParams());

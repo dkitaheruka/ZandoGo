@@ -28,11 +28,20 @@ export interface ProductImage {
 
 export type ProductType = 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
 
+export type PricingUnit = 'UNIT' | 'KM' | 'HOUR' | 'FLAT';
+export type AudienceSegment = 'WOMEN' | 'MEN' | 'UNISEX' | 'PRO';
+
 export interface ProductVariant {
   id: string;
   sku?: string | null;
   name?: string;
-  attributes?: Record<string, unknown> | null;
+  attributes?: {
+    size?: string;
+    color?: string;
+    colorHex?: string;
+    capacity?: string;
+    [key: string]: unknown;
+  } | null;
   priceOverride?: string | number | null;
   stockQty: number;
 }
@@ -56,8 +65,7 @@ export interface NegotiationOffer {
   requestedQty: number;
   requestedPriceUsd: number;
   agreedPriceUsd?: number | null;
-  // Transport & Delivery discussion fields
-  transportMode?: string; // ex: 'Coursier Express Kinshasa', 'Bus Interurbain (Goma/Lshi)', 'Retrait boutique', 'Fret fluvial/aérien'
+  transportMode?: string;
   requestedDeliveryFeeUsd?: number;
   agreedDeliveryFeeUsd?: number | null;
   destinationCity?: string;
@@ -73,6 +81,11 @@ export interface Product {
   title: string;
   description?: string | null;
   productType: ProductType;
+  pricingUnit?: PricingUnit;
+  audience?: AudienceSegment;
+  isSponsored?: boolean;
+  monthlyAdPlan?: 'NONE' | 'ESSENTIAL_29' | 'PRO_CAROUSEL_59';
+  adExpiresAt?: string | null;
   basePriceUsd: string | number;
   basePriceCdf?: string | number;
   status?: string;
@@ -87,7 +100,17 @@ export interface Product {
   fulfillmentDetails?: string | null;
   images: ProductImage[];
   variants: ProductVariant[];
-  store: { id?: string; storeName: string; slug: string; ownerId?: string; rating?: number; city?: string; verifiedSupplier?: boolean };
+  store: {
+    id?: string;
+    storeName: string;
+    slug: string;
+    ownerId?: string;
+    rating?: number;
+    city?: string;
+    verifiedSupplier?: boolean;
+    isCertified?: boolean;
+    hasMonthlyAd?: boolean;
+  };
   category?: { id: string; name: string };
   rating?: number;
   reviewCount?: number;
@@ -105,6 +128,16 @@ export interface DeliveryOption {
   badgeText?: string;
 }
 
+export interface PlatformPricing {
+  storeCreationFeeUsd: number;
+  certificationMonthlyFeeUsd: number;
+  certificationQuarterlyFeeUsd: number;
+  adEssentialMonthlyFeeUsd: number;
+  adProCarouselMonthlyFeeUsd: number;
+  defaultCommissionPercent: number;
+  updatedAt?: string;
+}
+
 export interface VendorStore {
   id: string;
   storeName: string;
@@ -113,8 +146,21 @@ export interface VendorStore {
   storeType?: 'RETAIL' | 'DIGITAL' | 'SERVICES' | 'LOGISTICS';
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
   fulfillmentMode?: string;
+  commissionRate?: number;
   balanceUsd?: number;
   totalOrders?: number;
+  payoutBlocked?: boolean;
+  payoutBlockReason?: string | null;
+  creationFeePaidUsd?: number;
+  maishaPayRef?: string;
+  isCertified?: boolean;
+  certificationStatus?: 'NONE' | 'ACTIVE' | 'EXPIRED';
+  certificationFeeUsd?: number;
+  certifiedUntil?: string | null;
+  hasMonthlyAd?: boolean;
+  monthlyAdPlan?: 'NONE' | 'ESSENTIAL_29' | 'PRO_CAROUSEL_59';
+  monthlyAdFeeUsd?: number;
+  monthlyAdUntil?: string | null;
   createdAt?: string;
 }
 
@@ -122,6 +168,8 @@ export interface AppNotification {
   id: string;
   title: string;
   body: string;
+  channel?: 'IN_APP' | 'SMS_AFRICASTALKING';
+  smsRecipient?: string;
   isRead: boolean;
   createdAt: string;
 }
@@ -130,11 +178,14 @@ export interface DeliveryJob {
   id: string;
   status: 'AWAITING_ASSIGNMENT' | 'ASSIGNED' | 'PICKED_UP' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED';
   estimatedFee: string | number;
+  negotiatedFeeUsd?: number;
+  feeNegotiationStatus?: 'NONE' | 'PENDING_DRIVER' | 'COUNTERED' | 'AGREED';
   distanceKm?: number;
   pickupLat: number;
   pickupLng: number;
   dropoffLat: number;
   dropoffLng: number;
+  clientGoogleMapsUrl?: string;
   otpCode?: string;
   agent?: { id?: string; vehicleType?: string; user: { fullName: string; phone?: string } } | null;
   trackingPings?: { lat: number; lng: number; recordedAt: string }[];
@@ -164,16 +215,29 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'DISPUTED';
 
+export interface SmsDispatchRecord {
+  id: string;
+  provider: 'AFRICASTALKING';
+  to: string;
+  message: string;
+  sentAt: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
   status: OrderStatus;
   isPaid?: boolean;
   paymentStatus?: 'PAID' | 'UNPAID';
+  paymentGateway?: 'MAISHAPAY' | 'CASH_ON_DELIVERY';
+  maishaPayRef?: string;
   escrowStatus?: 'HELD' | 'RELEASED_TO_VENDOR' | 'REFUNDED_TO_BUYER';
   createdAt: string;
   total: string | number;
   deliveryFee?: number;
+  noDeliveryNeeded?: boolean;
+  deliveryNegotiationStatus?: 'NONE' | 'PENDING_DRIVER' | 'COUNTERED' | 'AGREED';
+  deliveryAddress?: Address;
   currency: Currency;
   deliveryOption?: DeliveryOption;
   hasDigitalItems?: boolean;
@@ -183,6 +247,7 @@ export interface Order {
     downloadUrl: string;
     fileName: string;
   }[];
+  smsDispatches?: SmsDispatchRecord[];
   subOrders: {
     id: string;
     store: { storeName: string };
@@ -192,6 +257,8 @@ export interface Order {
       productTitle?: string;
       unitPrice?: number;
       productType?: ProductType;
+      pricingUnit?: PricingUnit;
+      variantName?: string;
     }[];
   }[];
 }
@@ -205,10 +272,12 @@ export interface Cart {
     variant: {
       id?: string;
       name?: string;
+      attributes?: { size?: string; color?: string; colorHex?: string; [key: string]: unknown } | null;
       product: {
         id?: string;
         title: string;
         productType?: ProductType;
+        pricingUnit?: PricingUnit;
         images: ProductImage[];
       };
     };
@@ -217,22 +286,54 @@ export interface Cart {
 
 export type ConversationType = 'CUSTOMER_VENDOR' | 'CUSTOMER_DELIVERY' | 'SUPPORT';
 
+export interface SharedLocation {
+  lat: number;
+  lng: number;
+  label?: string;
+  googleMapsUrl: string;
+  distanceKm?: number;
+}
+
+export interface DeliveryFeeProposal {
+  feeUsd: number;
+  originalFeeUsd?: number;
+  distanceKm?: number;
+  status: 'PROPOSED' | 'COUNTERED' | 'ACCEPTED';
+  proposedBy: 'CUSTOMER' | 'DRIVER';
+  orderId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   content: string;
+  location?: SharedLocation;
+  deliveryProposal?: DeliveryFeeProposal;
   createdAt: string;
 }
 
 export interface Conversation {
   id: string;
   type: ConversationType;
+  orderId?: string;
+  orderNumber?: string;
   productId?: string;
   productTitle?: string;
   productImage?: string;
   productPriceUsd?: number;
   storeName?: string;
+  distanceKm?: number;
+  clientLocation?: SharedLocation;
+  deliveryNegotiation?: {
+    orderId?: string;
+    originalFeeUsd: number;
+    proposedFeeUsd: number;
+    agreedFeeUsd?: number | null;
+    status: 'NONE' | 'PENDING_DRIVER' | 'COUNTERED' | 'AGREED';
+    proposedBy?: 'CUSTOMER' | 'DRIVER';
+    distanceKm?: number;
+  };
   negotiationOffer?: NegotiationOffer;
   messages: ChatMessage[];
 }
@@ -267,10 +368,14 @@ export interface PayoutRequestRecord {
 
 export interface WalletSummary {
   storeId?: string;
+  storeName?: string;
   availableBalanceUsd: number;
   lockedEscrowUsd: number;
   totalEarnedUsd: number;
   currency: Currency;
+  payoutBlocked?: boolean;
+  payoutBlockReason?: string | null;
+  blockingDisputes?: { id: string; orderNumber: string; reason: string }[];
   payouts: PayoutRequestRecord[];
 }
 
@@ -286,4 +391,5 @@ export interface ExchangeRatePayload {
   updatedAt: string;
   history?: ExchangeRateHistoryItem[];
 }
+
 

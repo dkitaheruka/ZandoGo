@@ -7,6 +7,7 @@ import {
   Scale,
   Truck,
   ArrowLeftRight,
+  SlidersHorizontal,
   ShoppingBag,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ const ADMIN_NAV = [
   { to: '/admin/kyc', label: 'Vérifications KYC', icon: ShieldCheck },
   { to: '/admin/disputes', label: 'Litiges & Séquestres', icon: Scale },
   { to: '/admin/agents', label: 'Transporteurs & Coursiers', icon: Truck },
+  { to: '/admin/pricing', label: 'Tarifs & Commissions', icon: SlidersHorizontal },
   { to: '/admin/exchange-rate', label: 'Taux de change USD/CDF', icon: ArrowLeftRight },
 ];
 

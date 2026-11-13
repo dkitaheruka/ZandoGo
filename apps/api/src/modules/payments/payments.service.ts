@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CinetPayService } from './cinetpay.service';
+import { MaishaPayService } from './maishapay.service';
 import { StripeService } from './stripe.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 
@@ -21,6 +22,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly cinetpay: CinetPayService,
+    private readonly maishapay: MaishaPayService,
     private readonly stripe: StripeService,
     private readonly config: ConfigService,
   ) {}
@@ -71,7 +73,7 @@ export class PaymentsService {
       return { method: 'cash_on_delivery', message: 'Commande confirmée, paiement à la livraison' };
     }
 
-    // --- Mobile Money via CinetPay ---
+    // --- Mobile Money via MaishaPay (agrégateur principal RDC) ou CinetPay ---
     if (
       dto.methodCode === 'MOBILE_MONEY_ORANGE' ||
       dto.methodCode === 'MOBILE_MONEY_AIRTEL' ||
@@ -82,6 +84,40 @@ export class PaymentsService {
       }
 
       const appUrl = this.config.get<string>('APP_URL');
+      const useMaishaPay = Boolean(this.config.get<string>('MAISHAPAY_API_KEY'));
+
+      if (useMaishaPay) {
+        const provider =
+          dto.methodCode === 'MOBILE_MONEY_AIRTEL'
+            ? 'AIRTEL'
+            : dto.methodCode === 'MOBILE_MONEY_ORANGE'
+            ? 'ORANGE'
+            : 'MPESA';
+        const mpRes = await this.maishapay.initiateMobileMoneyPayment({
+          transactionReference: transaction.id,
+          amount: Number(order.total),
+          currency: order.currency as 'USD' | 'CDF',
+          provider,
+          customerPhone: dto.phoneNumber,
+          customerName: user.email || 'Client ZandoGo',
+          callbackUrl: `${appUrl}/api/payments/webhooks/maishapay`,
+        });
+        await this.prisma.paymentTransaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: 'PENDING',
+            providerReference: mpRes.transactionId || `MP-${transaction.id}`,
+            rawProviderPayload: mpRes as any,
+          },
+        });
+        return {
+          method: dto.methodCode,
+          aggregator: 'MAISHAPAY',
+          maishaPayRef: mpRes.transactionId,
+          paymentUrl: mpRes.paymentPageUrl,
+        };
+      }
+
       const result = await this.cinetpay.initiatePayment({
         transactionId: transaction.id,
         amount: Number(order.total),
@@ -104,11 +140,34 @@ export class PaymentsService {
       return { method: dto.methodCode, paymentUrl: result.data?.payment_url };
     }
 
-    // --- Carte bancaire via Stripe ---
+    // --- Carte bancaire via MaishaPay ou Stripe ---
     if (dto.methodCode === 'CARD_STRIPE') {
+      const useMaishaPay = Boolean(this.config.get<string>('MAISHAPAY_API_KEY'));
+      if (useMaishaPay) {
+        const appUrl = this.config.get<string>('APP_URL');
+        const mpCard = await this.maishapay.initiateCardPayment({
+          transactionReference: transaction.id,
+          amount: Number(order.total),
+          currency: order.currency as 'USD' | 'CDF',
+          customerName: user.email || 'Client ZandoGo',
+          customerEmail: user.email || 'client@zandogo.cd',
+          callbackUrl: `${appUrl}/api/payments/webhooks/maishapay`,
+        });
+        await this.prisma.paymentTransaction.update({
+          where: { id: transaction.id },
+          data: { status: 'PENDING', providerReference: mpCard.transactionId },
+        });
+        return {
+          method: 'card_maishapay',
+          aggregator: 'MAISHAPAY',
+          maishaPayRef: mpCard.transactionId,
+          paymentUrl: mpCard.paymentPageUrl,
+        };
+      }
+
       const intent = await this.stripe.createPaymentIntent({
         amount: Number(order.total),
-        currency: 'usd', // Stripe ne supporte pas le CDF : forcer USD pour ce moyen
+        currency: 'usd',
         orderId: order.id,
       });
 

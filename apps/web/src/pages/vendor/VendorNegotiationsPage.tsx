@@ -183,8 +183,8 @@ export function VendorNegotiationsPage() {
                     {/* Status Badge */}
                     <div>
                       {isPending && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-card text-xs font-semibold bg-safran/20 text-encre border border-safran/40 font-display">
-                          <Clock className="w-3 h-3 text-encre" />
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-card text-xs font-semibold bg-safran/20 text-nuit border border-safran/40 font-display">
+                          <Clock className="w-3 h-3 text-nuit" />
                           Proposition en attente
                         </span>
                       )}
@@ -246,7 +246,7 @@ export function VendorNegotiationsPage() {
                               setEditingId(neg.id);
                               setProposedPrice(neg.requestedPriceUsd + 2);
                             }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card bg-nuit hover:bg-nuit/90 text-safran font-display font-bold text-xs transition border border-safran/30"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card bg-nuit hover:bg-nuit/90 text-safran font-display font-bold text-xs transition border border-safran/35"
                           >
                             <DollarSign className="w-3.5 h-3.5" />
                             <span>Contre-proposition</span>

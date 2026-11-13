@@ -9,6 +9,9 @@ import {
   ArrowRight,
   Truck,
   ExternalLink,
+  MapPin,
+  Navigation,
+  X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -19,6 +22,24 @@ interface EnrichedConversation extends Conversation {
   city?: string;
   storeId?: string;
   negotiationId?: string;
+}
+
+const KINSHASA_ZONES = [
+  { label: 'Gombe · Boulevard 30 Juin', lat: -4.3015, lng: 15.3052 },
+  { label: 'Ngaliema · Macampagne', lat: -4.3412, lng: 15.2654 },
+  { label: 'Limete · 7ème Rue Industrielle', lat: -4.3592, lng: 15.3442 },
+  { label: 'Kalamu · Rond-Point Victoire', lat: -4.3376, lng: 15.3081 },
+  { label: 'Matete · Marché Central', lat: -4.3845, lng: 15.3612 },
+];
+
+function extractGoogleMapsCoords(raw: string): { lat: number; lng: number } | null {
+  const atMatch = raw.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atMatch) return { lat: Number(atMatch[1]), lng: Number(atMatch[2]) };
+  const qMatch = raw.match(/[?&](?:q|query|ll)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (qMatch) return { lat: Number(qMatch[1]), lng: Number(qMatch[2]) };
+  const plainMatch = raw.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if (plainMatch) return { lat: Number(plainMatch[1]), lng: Number(plainMatch[2]) };
+  return null;
 }
 
 export function ChatPage() {
@@ -35,9 +56,16 @@ export function ChatPage() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [acceptingNotice, setAcceptingNotice] = useState<string | null>(null);
+
+  // Google Maps Sharing & Delivery Fee Negotiation inside Chat
+  const [mapsModalOpen, setMapsModalOpen] = useState(false);
+  const [mapsUrlInput, setMapsUrlInput] = useState('');
+  const [deliveryOfferInput, setDeliveryOfferInput] = useState('5');
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  function loadAll() {
     api
       .get<NegotiationOffer[]>('/negotiations')
       .then(({ data }) => setNegotiations(data || []))
@@ -49,16 +77,23 @@ export function ChatPage() {
         if (data && data.length > 0) {
           setConversations(data);
           const requested = requestedId && data.find((c) => c.id === requestedId);
-          setActiveId(requested ? requested.id : data[0].id);
+          setActiveId((prev) => (requested ? requested.id : prev || data[0].id));
         }
       })
       .catch(() => {});
+  }
+
+  useEffect(() => {
+    loadAll();
   }, [requestedId]);
 
   useEffect(() => {
     const activeConv = conversations.find((c) => c.id === activeId);
     if (activeConv) {
       setMessages(activeConv.messages || []);
+      if (activeConv.deliveryNegotiation) {
+        setDeliveryOfferInput(String(activeConv.deliveryNegotiation.proposedFeeUsd));
+      }
     }
   }, [activeId, conversations]);
 
@@ -105,13 +140,78 @@ export function ChatPage() {
     }
   }
 
+  async function handleSendLocation(coords: { lat: number; lng: number }, label: string, customUrl?: string) {
+    if (!activeId) return;
+    setDeliveryBusy(true);
+    try {
+      const googleMapsUrl =
+        customUrl && customUrl.startsWith('http')
+          ? customUrl
+          : `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
+      const { data } = await api.post(`/chat/conversations/${activeId}/location`, {
+        lat: coords.lat,
+        lng: coords.lng,
+        label,
+        googleMapsUrl,
+      });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeId
+            ? {
+                ...c,
+                clientLocation: data.location,
+                distanceKm: data.distanceKm,
+                messages: [...(c.messages || []), data.message],
+              }
+            : c,
+        ),
+      );
+      setMapsModalOpen(false);
+      setMapsUrlInput('');
+      setAcceptingNotice(`Position Google Maps partagée (${data.distanceKm} km calculés jusqu’au point de livraison).`);
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function handleDeliveryOffer(action: 'PROPOSE' | 'ACCEPT') {
+    if (!activeId) return;
+    const feeUsd = Math.max(0, Number(deliveryOfferInput) || 0);
+    setDeliveryBusy(true);
+    try {
+      const { data } = await api.post(`/chat/conversations/${activeId}/delivery-offer`, {
+        action,
+        feeUsd,
+      });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeId
+            ? {
+                ...c,
+                deliveryNegotiation: data.deliveryNegotiation,
+                messages: [...(c.messages || []), data.message],
+              }
+            : c,
+        ),
+      );
+      setAcceptingNotice(
+        action === 'ACCEPT'
+          ? `Tarif livraison validé à $${feeUsd.toFixed(2)} ! Vous pouvez maintenant payer la commande.`
+          : `Offre de $${feeUsd.toFixed(2)} envoyée au livreur.`,
+      );
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
   const activeConv = conversations.find((c) => c.id === activeId);
   const activeNegotiation =
     negotiations.find((n) => n.id === activeConv?.negotiationId) ||
     negotiations.find(
       (n) =>
-        (activeConv?.productId && n.productId === activeConv.productId) ||
-        (activeConv?.storeId && n.storeId === activeConv.storeId),
+        activeConv?.type === 'CUSTOMER_VENDOR' &&
+        ((activeConv?.productId && n.productId === activeConv.productId) ||
+          (activeConv?.storeId && n.storeId === activeConv.storeId)),
     );
 
   const initials = (activeConv?.storeName || 'ZG')
@@ -133,16 +233,16 @@ export function ChatPage() {
             </span>
           </div>
           <h1 className="mt-2 font-display text-2xl lg:text-3xl font-extrabold text-nuit tracking-tight">
-            Échanges Vendeurs & Transporteurs
+            Échanges Vendeurs & Livreurs
           </h1>
           <p className="mt-1 text-xs text-encre/60">
-            Discutez directement le prix de l’article, convenez du moyen de transport et validez vos commandes en toute transparence.
+            Discutez le prix du produit ou négociez le tarif avec votre livreur avant de payer en envoyant votre localisation Google Maps.
           </p>
         </div>
 
         <div className="flex items-center gap-2 text-xs font-mono bg-nuit text-brume px-3.5 py-2 rounded-card border border-white/10 shadow-xs">
           <ShieldCheck className="w-3.5 h-3.5 text-safran" />
-          <span className="text-safran font-semibold">Séquestre ZandoGo Actif</span>
+          <span className="text-safran font-semibold">Séquestre MaishaPay Actif</span>
         </div>
       </div>
 
@@ -154,7 +254,7 @@ export function ChatPage() {
       )}
 
       {/* Main Chat & Negotiation Box */}
-      <div className="mt-6 grid md:grid-cols-[310px_1fr] border border-encre/10 bg-white rounded-card overflow-hidden shadow-sm h-[38rem]">
+      <div className="mt-6 grid md:grid-cols-[310px_1fr] border border-encre/10 bg-white rounded-card overflow-hidden shadow-sm h-[42rem]">
         {/* Left: Conversations list */}
         <div className="border-r border-encre/10 flex flex-col bg-brume/50">
           <div className="p-3.5 border-b border-encre/10 text-xs font-display font-bold text-nuit uppercase tracking-wider flex items-center justify-between">
@@ -198,12 +298,12 @@ export function ChatPage() {
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                           active
-                            ? 'bg-seve/20 text-safran border border-safran/30'
+                            ? 'bg-safran/20 text-safran border border-safran/35'
                             : 'bg-seve/10 text-seve border border-seve/25'
                         }`}
                       >
                         {isDelivery ? <Truck className="w-3 h-3" /> : <Handshake className="w-3 h-3" />}
-                        <span>{isDelivery ? 'Coursier en route' : 'Devis & Prix'}</span>
+                        <span>{isDelivery ? 'Livreur · Tarif & Maps' : 'Devis & Prix'}</span>
                       </span>
                       {c.city && (
                         <span className={`text-[10px] font-sans truncate ${active ? 'text-brume/60' : 'text-encre/50'}`}>
@@ -233,14 +333,25 @@ export function ChatPage() {
                   <span className="h-1.5 w-1.5 rounded-full bg-seve" />
                   <span>
                     {activeConv?.type === 'CUSTOMER_DELIVERY'
-                      ? 'Coursier certifié · En course'
+                      ? `Coursier certifié · ${activeConv.distanceKm ? `${activeConv.distanceKm} km` : 'GPS prêt'}`
                       : 'Vendeur Vérifié RDC · En ligne'}
                   </span>
                 </p>
               </div>
             </div>
 
-            <span className="text-[10px] font-mono text-encre/40 uppercase">#{activeId || 'CONV'}</span>
+            {activeConv?.type === 'CUSTOMER_DELIVERY' ? (
+              <button
+                type="button"
+                onClick={() => setMapsModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-seve/10 hover:bg-seve/20 text-seve border border-seve/30 text-xs font-display font-bold transition"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>Partager Google Maps</span>
+              </button>
+            ) : (
+              <span className="text-[10px] font-mono text-encre/40 uppercase">#{activeId || 'CONV'}</span>
+            )}
           </div>
 
           {/* Product Anchor Banner */}
@@ -282,8 +393,88 @@ export function ChatPage() {
             </div>
           )}
 
-          {/* Negotiation Card if tied to active conversation */}
-          {activeNegotiation && (
+          {/* Delivery Fee Negotiation Card (BEFORE PAYMENT) */}
+          {activeConv?.type === 'CUSTOMER_DELIVERY' && activeConv.deliveryNegotiation && (
+            <div className="m-4 p-4 rounded-card bg-nuit text-brume border border-white/10 shrink-0 shadow-lg space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-safran/20 text-safran border border-safran/35 flex items-center gap-1">
+                    <Handshake className="w-3 h-3" />
+                    <span>
+                      {activeConv.deliveryNegotiation.status === 'AGREED'
+                        ? 'Tarif livraison convenu ✓'
+                        : activeConv.deliveryNegotiation.status === 'COUNTERED'
+                        ? 'Contre-proposition du livreur'
+                        : 'Discussion tarif livraison (avant paiement)'}
+                    </span>
+                  </span>
+                  {activeConv.distanceKm && (
+                    <span className="text-[11px] font-mono text-brume/70">
+                      Distance GPS : {activeConv.distanceKm} km
+                    </span>
+                  )}
+                </div>
+
+                {activeConv.clientLocation && (
+                    <a
+                      href={activeConv.clientLocation.googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-safran hover:underline"
+                    >
+                      <MapPin className="w-3 h-3" />
+                      <span>Voir point Google Maps ↗</span>
+                    </a>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1 border-t border-white/10">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-brume/70">Proposer / ajuster :</span>
+                    <div className="relative w-24">
+                      <span className="absolute left-2.5 top-1.5 font-mono text-safran font-bold">$</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="1"
+                        value={deliveryOfferInput}
+                        onChange={(e) => setDeliveryOfferInput(e.target.value)}
+                        className="w-full pl-6 pr-2 py-1 rounded-lg bg-white/10 border border-white/20 text-xs font-display font-bold text-brume outline-none focus:border-safran"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={deliveryBusy}
+                      onClick={() => handleDeliveryOffer('PROPOSE')}
+                      className="px-3 py-1.5 rounded-lg bg-safran text-nuit font-display font-bold text-xs hover:bg-safran/90 transition"
+                    >
+                    Proposer
+                  </button>
+                  {activeConv.deliveryNegotiation.status !== 'AGREED' && (
+                    <button
+                      type="button"
+                      disabled={deliveryBusy}
+                      onClick={() => handleDeliveryOffer('ACCEPT')}
+                      className="px-3 py-1.5 rounded-lg bg-seve text-brume font-display font-bold text-xs hover:bg-seve/90 transition"
+                    >
+                      Valider ce tarif
+                    </button>
+                  )}
+                </div>
+
+                <Link
+                  to="/orders"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white text-nuit font-display font-bold text-xs hover:bg-brume transition"
+                >
+                  <span>Payer la commande</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Negotiation Card if tied to vendor conversation */}
+          {activeNegotiation && activeConv?.type === 'CUSTOMER_VENDOR' && (
             <div className="m-4 p-4 rounded-card bg-nuit text-brume border border-white/10 shrink-0 shadow-lg">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
@@ -360,13 +551,49 @@ export function ChatPage() {
               return (
                 <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[75%] px-4 py-2.5 rounded-card text-xs leading-relaxed ${
+                    className={`max-w-[78%] px-4 py-2.5 rounded-card text-xs leading-relaxed space-y-2 ${
                       mine
                         ? 'bg-seve text-brume rounded-br-none shadow-xs font-sans'
                         : 'bg-white text-encre border border-encre/10 rounded-bl-none shadow-xs font-sans'
                     }`}
                   >
                     <p>{m.content}</p>
+
+                    {m.location && (
+                      <a
+                        href={m.location.googleMapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`block p-2.5 rounded-lg border text-[11px] transition ${
+                          mine
+                            ? 'bg-nuit/35 border-white/20 text-safran hover:bg-nuit/50'
+                            : 'bg-brume border-seve/30 text-seve hover:bg-seve/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 font-display font-bold">
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 shrink-0" />
+                            <span>{m.location.label || 'Point Google Maps'}</span>
+                          </span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </div>
+                        <span className="block font-mono text-[10px] opacity-80 mt-0.5">
+                          GPS : {m.location.lat.toFixed(4)}, {m.location.lng.toFixed(4)}
+                          {m.location.distanceKm ? ` · Distance ${m.location.distanceKm} km` : ''}
+                        </span>
+                      </a>
+                    )}
+
+                    {m.deliveryProposal && (
+                      <div
+                        className={`p-2 rounded-lg text-[11px] font-mono ${
+                          mine ? 'bg-white/10 text-brume' : 'bg-safran/20 text-nuit border border-safran/40'
+                        }`}
+                      >
+                        Tarif course proposé : <strong>${m.deliveryProposal.feeUsd.toFixed(2)}</strong>
+                      </div>
+                    )}
+
                     <span
                       className={`block text-[9px] font-mono mt-1 ${
                         mine ? 'text-brume/70 text-right' : 'text-encre/40'
@@ -386,11 +613,21 @@ export function ChatPage() {
 
           {/* Input Bar */}
           <form onSubmit={handleSend} className="p-3 border-t border-encre/10 bg-white flex items-center gap-2">
+            {activeConv?.type === 'CUSTOMER_DELIVERY' && (
+              <button
+                type="button"
+                onClick={() => setMapsModalOpen(true)}
+                className="p-2.5 rounded-card border border-encre/15 text-seve hover:bg-seve/10 transition shrink-0"
+                title="Envoyer ma localisation Google Maps"
+              >
+                <MapPin className="w-4 h-4" />
+              </button>
+            )}
             <input
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Écrire votre message (quantité, livraison, délai…)..."
+              placeholder="Écrire votre message (tarif course, repères, délai…)..."
               className="flex-1 px-4 py-2.5 rounded-card border border-encre/20 text-xs text-encre outline-none focus:border-seve focus:ring-1 focus:ring-seve bg-white placeholder-encre/40"
             />
             <button
@@ -404,6 +641,96 @@ export function ChatPage() {
           </form>
         </div>
       </div>
+
+      {/* Share Google Maps Modal */}
+      {mapsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-nuit/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-2xl border border-encre/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display font-bold text-base text-nuit flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-seve" />
+                <span>Envoyer ma localisation Google Maps</span>
+              </h3>
+              <button type="button" onClick={() => setMapsModalOpen(false)} className="text-encre/40 hover:text-nuit">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-encre/65">
+              Permettez au livreur de voir votre position exacte sur Google Maps et de convenir d’un prix juste selon le kilométrage réel.
+            </p>
+
+            <button
+              type="button"
+              disabled={deliveryBusy}
+              onClick={() => {
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) =>
+                      handleSendLocation(
+                        { lat: pos.coords.latitude, lng: pos.coords.longitude },
+                        'Ma position GPS en direct',
+                      ),
+                    () => handleSendLocation({ lat: -4.325, lng: 15.322 }, 'Position Kinshasa Centre'),
+                    { timeout: 5000 },
+                  );
+                } else {
+                  handleSendLocation({ lat: -4.325, lng: 15.322 }, 'Position Kinshasa Centre');
+                }
+              }}
+              className="w-full py-2.5 px-4 rounded-card bg-seve text-brume font-display font-bold text-xs hover:bg-seve/90 transition flex items-center justify-center gap-2"
+            >
+              <Navigation className="w-4 h-4" />
+              <span>Utiliser ma position GPS actuelle</span>
+            </button>
+
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-encre/60">
+                Ou sélectionner un repère Kinshasa :
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {KINSHASA_ZONES.map((z) => (
+                  <button
+                    key={z.label}
+                    type="button"
+                    disabled={deliveryBusy}
+                    onClick={() => handleSendLocation({ lat: z.lat, lng: z.lng }, z.label)}
+                    className="px-2.5 py-1 rounded-full border border-encre/15 bg-brume/60 hover:border-seve text-[11px] font-medium text-nuit transition"
+                  >
+                    {z.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-encre/10 space-y-2">
+              <label className="block text-[11px] font-semibold text-encre/75">
+                Ou coller un lien Google Maps partagé :
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={mapsUrlInput}
+                  onChange={(e) => setMapsUrlInput(e.target.value)}
+                  placeholder="https://www.google.com/maps/@-4.331,15.312,15z"
+                  className="flex-1 rounded-card border border-encre/20 px-3 py-2 text-xs outline-none focus:border-seve"
+                />
+                <button
+                  type="button"
+                  disabled={!mapsUrlInput.trim() || deliveryBusy}
+                  onClick={() => {
+                    const parsed = extractGoogleMapsCoords(mapsUrlInput.trim()) || { lat: -4.329, lng: 15.314 };
+                    handleSendLocation(parsed, 'Lien Google Maps client', mapsUrlInput.trim());
+                  }}
+                  className="px-4 py-2 rounded-card bg-nuit text-brume text-xs font-display font-bold disabled:opacity-40"
+                >
+                  Envoyer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

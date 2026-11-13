@@ -64,6 +64,7 @@ export class DisputesService {
 
     const openedAt = new Date();
     const slaDeadline = new Date(openedAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
+    const isCritical = dto.severity === 'HIGH';
 
     const dispute = await this.prisma.$transaction(async (tx) => {
       const created = await tx.dispute.create({
@@ -72,6 +73,8 @@ export class DisputesService {
           orderItemId: dto.orderItemId,
           raisedByUserId: user.id,
           reasonCategory: dto.reasonCategory,
+          severity: dto.severity ?? 'MEDIUM',
+          payoutFrozen: isCritical,
           description: dto.description,
           evidenceUrls: dto.evidenceUrls,
           status: DisputeStatus.OPEN,
@@ -81,6 +84,17 @@ export class DisputesService {
       });
 
       await tx.order.update({ where: { id: dto.orderId }, data: { status: 'DISPUTED' } });
+
+      if (isCritical && order.subOrders.length > 0) {
+        const storeIds = order.subOrders.map((s) => s.storeId);
+        await tx.vendorStore.updateMany({
+          where: { id: { in: storeIds } },
+          data: {
+            payoutBlocked: true,
+            payoutBlockReason: `Retraits bloqués automatiquement : litige pertinent sur la commande ${order.orderNumber}.`,
+          },
+        });
+      }
 
       return created;
     });
@@ -92,7 +106,13 @@ export class DisputesService {
       action: 'dispute.open',
       entityType: 'Dispute',
       entityId: dispute.id,
-      afterState: { orderId: dto.orderId, reasonCategory: dto.reasonCategory, slaDeadline },
+      afterState: {
+        orderId: dto.orderId,
+        reasonCategory: dto.reasonCategory,
+        severity: dispute.severity,
+        payoutFrozen: dispute.payoutFrozen,
+        slaDeadline,
+      },
     });
 
     return dispute;
@@ -133,7 +153,7 @@ export class DisputesService {
   }
 
   async getDispute(user: AuthenticatedUser, disputeId: string) {
-    const dispute = await this.getDisputeForUser(user, disputeId);
+    await this.getDisputeForUser(user, disputeId);
     return this.prisma.dispute.findUnique({
       where: { id: disputeId },
       include: { messages: { orderBy: { sentAt: 'asc' } }, order: true },
@@ -145,15 +165,66 @@ export class DisputesService {
     return this.prisma.dispute.findMany({
       where: { status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] } },
       orderBy: { slaDeadline: 'asc' },
-      include: { order: { select: { orderNumber: true, total: true, currency: true } } },
+      include: {
+        order: {
+          select: {
+            orderNumber: true,
+            total: true,
+            currency: true,
+            subOrders: {
+              include: { store: { select: { id: true, storeName: true, payoutBlocked: true } } },
+            },
+          },
+        },
+      },
     });
   }
 
-  /**
-   * Seul un SUPER_ADMIN peut trancher un litige — jamais un ADMIN simple,
-   * jamais le vendeur, jamais automatiquement. C'est la règle de gestion
-   * la plus stricte du système car elle touche directement à l'argent.
-   */
+  async setStorePayoutFreeze(
+    admin: AuthenticatedUser,
+    disputeId: string,
+    blocked: boolean,
+    reason?: string,
+  ) {
+    const dispute = await this.prisma.dispute.findUnique({
+      where: { id: disputeId },
+      include: { order: { include: { subOrders: true } } },
+    });
+    if (!dispute) throw new NotFoundException('Litige introuvable');
+
+    const storeIds = Array.from(new Set(dispute.order.subOrders.map((s) => s.storeId)));
+    const blockReason =
+      reason ||
+      `Retraits vendeur bloqués suite au litige pertinent sur la commande ${dispute.order.orderNumber}.`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dispute.update({
+        where: { id: disputeId },
+        data: { payoutFrozen: blocked },
+      });
+
+      if (storeIds.length > 0) {
+        await tx.vendorStore.updateMany({
+          where: { id: { in: storeIds } },
+          data: {
+            payoutBlocked: blocked,
+            payoutBlockReason: blocked ? blockReason : null,
+          },
+        });
+      }
+    });
+
+    await this.audit.log({
+      actorUserId: admin.id,
+      action: blocked ? 'dispute.payout_freeze' : 'dispute.payout_unfreeze',
+      entityType: 'Dispute',
+      entityId: disputeId,
+      afterState: { storeIds, payoutFrozen: blocked, reason: blockReason },
+    });
+
+    return { disputeId, storeIds, payoutBlocked: blocked, reason: blocked ? blockReason : null };
+  }
+
   async resolveDispute(admin: AuthenticatedUser, disputeId: string, dto: ResolveDisputeDto) {
     const isSuperAdmin = admin.roles.some((r) => r.role === RoleName.SUPER_ADMIN);
     if (!isSuperAdmin) {
@@ -175,10 +246,6 @@ export class DisputesService {
       throw new BadRequestException('amountRefunded est requis pour une résolution partielle');
     }
 
-    // Si le litige vise un article précis, on remonte à sa sous-commande
-    // (donc à SON vendeur). Sans article ciblé, on retombe sur la première
-    // sous-commande : simplification MVP, à raffiner pour une commande
-    // multi-vendeur où le litige concerne toute la commande.
     let subOrder = dispute.order.subOrders[0];
     if (dispute.orderItemId) {
       const item = await this.prisma.orderItem.findUnique({ where: { id: dispute.orderItemId } });
@@ -191,6 +258,7 @@ export class DisputesService {
         where: { id: disputeId },
         data: {
           status: dto.status,
+          payoutFrozen: false,
           resolutionNote: dto.resolutionNote,
           resolvedByAdminId: admin.id,
           resolvedAt: new Date(),
@@ -200,6 +268,23 @@ export class DisputesService {
       const newOrderStatus =
         dto.status === DisputeStatus.RESOLVED_RELEASE ? 'DELIVERED' : 'REFUNDED';
       await tx.order.update({ where: { id: dispute.orderId }, data: { status: newOrderStatus } });
+
+      if (subOrder) {
+        const remainingFrozen = await tx.dispute.count({
+          where: {
+            id: { not: disputeId },
+            payoutFrozen: true,
+            status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+            order: { subOrders: { some: { storeId: subOrder.storeId } } },
+          },
+        });
+        if (remainingFrozen === 0) {
+          await tx.vendorStore.update({
+            where: { id: subOrder.storeId },
+            data: { payoutBlocked: false, payoutBlockReason: null },
+          });
+        }
+      }
     });
 
     if (dto.status === DisputeStatus.RESOLVED_RELEASE) {
@@ -212,9 +297,6 @@ export class DisputesService {
     }
 
     if (dto.status === DisputeStatus.RESOLVED_PARTIAL && dto.amountRefunded !== undefined) {
-      // Remboursement partiel : on annule la part vendeur proportionnelle,
-      // la commission plateforme n'est pas touchée sur un litige partiel
-      // (règle simple par défaut, ajustable si vous préférez un autre partage).
       await this.wallets.reverseOrderFunds(subOrder.id, dto.amountRefunded, 0);
     }
 

@@ -18,6 +18,21 @@ export class CreateStoreDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  storeType?: string;
+
+  @IsOptional()
   @IsEnum(FulfillmentMode)
   fulfillmentMode?: FulfillmentMode;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  customerPhone?: string;
 }

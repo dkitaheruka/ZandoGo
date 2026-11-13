@@ -23,4 +23,9 @@ export class WalletsController {
   requestPayout(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
     return this.wallets.requestPayout(user, dto);
   }
+
+  @Post('payout')
+  requestPayoutAlias(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
+    return this.wallets.requestPayout(user, dto);
+  }
 }

@@ -382,7 +382,7 @@ export function OrderTrackingPage() {
                   <KeyRound className="w-4 h-4" />
                   <span>Code de Remise Sécurisée (OTP)</span>
                 </span>
-                <span className="font-mono text-xl font-extrabold tracking-widest text-safran bg-white/10 px-3 py-1 rounded-lg border border-safran/30">
+                <span className="font-mono text-xl font-extrabold tracking-widest text-safran bg-white/10 px-3 py-1 rounded-lg border border-safran/35">
                   {delivery.otpCode}
                 </span>
               </div>
