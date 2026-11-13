@@ -60,23 +60,23 @@ export function CreateStorePage() {
         <div>
           <Link
             to="/vendor"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 mb-3"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-encre/60 hover:text-nuit mb-3"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Revenir à mes boutiques</span>
           </Link>
-          <h1 className="font-display text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+          <h1 className="font-display text-2xl lg:text-3xl font-bold text-nuit tracking-tight">
             Créer un Espace Entreprise sur ZandoGo
           </h1>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-encre/70">
             Activez votre boutique pour vendre des biens matériels, des fichiers PDF, des services télécoms ou du transport dans toute la RDC.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+        <form onSubmit={handleSubmit} className="bg-white border border-encre/10 rounded-card p-6 shadow-xs space-y-6">
           {/* Business Type Selection */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-2">
               Typologie de votre activité commerciale *
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -111,10 +111,10 @@ export function CreateStorePage() {
                 return (
                   <label
                     key={item.type}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition flex items-start gap-3 ${
+                    className={`p-3.5 rounded-card border cursor-pointer transition flex items-start gap-3 ${
                       isSelected
-                        ? 'border-emerald-600 bg-emerald-50/70 shadow-xs'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
+                        ? 'border-seve bg-seve/10 shadow-xs'
+                        : 'border-encre/10 bg-white hover:border-seve/30'
                     }`}
                   >
                     <input
@@ -131,14 +131,14 @@ export function CreateStorePage() {
                     />
                     <div
                       className={`p-2 rounded-lg shrink-0 ${
-                        isSelected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
+                        isSelected ? 'bg-seve text-brume' : 'bg-brume text-encre/60'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-slate-900">{item.label}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                      <p className="text-xs font-bold text-nuit">{item.label}</p>
+                      <p className="text-[11px] text-encre/60 mt-0.5">{item.desc}</p>
                     </div>
                   </label>
                 );
@@ -147,7 +147,7 @@ export function CreateStorePage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Nom commercial de l’espace *
             </label>
             <input
@@ -156,27 +156,27 @@ export function CreateStorePage() {
               placeholder="ex: Congo Textile & Distribution"
               value={storeName}
               onChange={(e) => handleNameChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre outline-none focus:border-seve"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Identifiant d’accès (slug boutique) *
             </label>
-            <div className="flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500">
-              <span className="text-slate-400 font-mono text-xs">zandogo.cd/</span>
+            <div className="flex items-center rounded-card border border-encre/20 bg-brume/30 px-4 py-2 text-xs focus-within:border-seve">
+              <span className="text-encre/50 font-mono text-xs">zandogo.cd/</span>
               <input
                 required
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
-                className="flex-1 outline-none ml-1 font-mono text-xs text-slate-900"
+                className="flex-1 outline-none ml-1 font-mono text-xs text-encre bg-transparent"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Présentation & Conditions de vente
             </label>
             <textarea
@@ -184,18 +184,18 @@ export function CreateStorePage() {
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="Présentez votre entreprise, vos stocks et vos conditions de livraison en RDC..."
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 resize-none"
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2 text-xs text-encre outline-none focus:border-seve resize-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Mode de distribution par défaut
             </label>
             <select
               value={fulfillmentMode}
               onChange={(e) => setFulfillmentMode(e.target.value as any)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-cyan-500"
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs font-semibold text-encre outline-none focus:border-seve"
             >
               <option value="PLATFORM_DELIVERY">Expédition par les transporteurs agréés ZandoGo</option>
               <option value="SELF_SHIP">Expédition directe par la flotte propre du vendeur</option>
@@ -204,12 +204,12 @@ export function CreateStorePage() {
             </select>
           </div>
 
-          {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+          {error && <p className="text-xs text-wax font-medium">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
+            className="w-full rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
           >
             {loading ? 'Création en cours…' : 'Enregistrer mon espace marchand'}
           </button>

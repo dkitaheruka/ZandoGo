@@ -34,57 +34,59 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-6 py-20">
-      <h1 className="font-display text-3xl font-semibold">Se connecter</h1>
-      <p className="mt-2 text-encre/60">Retrouvez vos commandes et votre suivi de livraison.</p>
+    <div className="mx-auto max-w-md px-6 py-16">
+      <div className="rounded-card bg-white border border-encre/10 p-8 shadow-xs">
+        <h1 className="font-display text-3xl font-bold text-nuit">Se connecter</h1>
+        <p className="mt-2 text-xs text-encre/60">Retrouvez vos commandes et vos échanges sur ZandoGo.</p>
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-        <div>
-          <label className="block text-sm font-medium mb-1.5" htmlFor="identifier">
-            Email ou téléphone
-          </label>
-          <input
-            id="identifier"
-            type="text"
-            required
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            className="w-full rounded-lg border border-encre/20 px-4 py-2.5 focus:border-seve focus:ring-1 focus:ring-seve outline-none"
-            placeholder="vous@exemple.com ou +243..."
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-xs">
+          <div>
+            <label className="block font-semibold text-encre/80 mb-1.5" htmlFor="identifier">
+              Email ou téléphone (+243)
+            </label>
+            <input
+              id="identifier"
+              type="text"
+              required
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 focus:border-seve focus:ring-1 focus:ring-seve outline-none text-encre"
+              placeholder="vous@exemple.com ou +243..."
+            />
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-1.5" htmlFor="password">
-            Mot de passe
-          </label>
-          <input
-            id="password"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-encre/20 px-4 py-2.5 focus:border-seve focus:ring-1 focus:ring-seve outline-none"
-          />
-        </div>
+          <div>
+            <label className="block font-semibold text-encre/80 mb-1.5" htmlFor="password">
+              Mot de passe
+            </label>
+            <input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 focus:border-seve focus:ring-1 focus:ring-seve outline-none text-encre"
+            />
+          </div>
 
-        {error && <p className="text-sm text-wax">{error}</p>}
+          {error && <p className="text-xs text-wax font-medium">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-full bg-nuit text-brume font-medium py-3 hover:bg-nuit/90 transition-colors disabled:opacity-60"
-        >
-          {loading ? 'Connexion…' : 'Se connecter'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-card bg-seve text-brume font-display font-bold py-3.5 hover:bg-seve/90 transition shadow-xs disabled:opacity-60 text-xs mt-2"
+          >
+            {loading ? 'Connexion…' : 'Se connecter'}
+          </button>
+        </form>
 
-      <p className="mt-6 text-sm text-encre/60">
-        Pas encore de compte ?{' '}
-        <Link to="/register" className="text-seve hover:underline">
-          Créer un compte
-        </Link>
-      </p>
+        <p className="mt-6 text-xs text-encre/60 text-center">
+          Pas encore de compte ?{' '}
+          <Link to="/register" className="text-seve font-semibold hover:underline">
+            Créer un compte
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

@@ -24,6 +24,8 @@ import { ExchangeRatePage } from './pages/admin/ExchangeRatePage';
 import { AgentsReviewPage } from './pages/admin/AgentsReviewPage';
 import { DeliveryHomePage } from './pages/delivery/DeliveryHomePage';
 import { VendorNegotiationsPage } from './pages/vendor/VendorNegotiationsPage';
+import { VendorOrdersPage } from './pages/vendor/VendorOrdersPage';
+import { ProfilePage } from './pages/ProfilePage';
 
 export default function App() {
   return (
@@ -40,6 +42,7 @@ export default function App() {
         <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/orders/:orderId/tracking" element={<RequireAuth><OrderTrackingPage /></RequireAuth>} />
         <Route path="/kyc" element={<RequireAuth><KycPage /></RequireAuth>} />
+        <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/vendor" element={<RequireAuth><VendorDashboardPage /></RequireAuth>} />
         <Route path="/vendor/new" element={<RequireAuth><CreateStorePage /></RequireAuth>} />
         <Route
@@ -63,6 +66,14 @@ export default function App() {
           element={
             <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
               <VendorNegotiationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendor/:storeId/orders"
+          element={
+            <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
+              <VendorOrdersPage />
             </RequireAuth>
           }
         />

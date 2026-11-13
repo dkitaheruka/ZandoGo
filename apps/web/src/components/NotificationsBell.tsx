@@ -35,7 +35,13 @@ export function NotificationsBell() {
   async function markRead(notification: AppNotification) {
     if (notification.isRead) return;
     setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n)));
-    await api.patch(`/notifications/${notification.id}/read`);
+    await api.patch(`/notifications/${notification.id}/read`).catch(() => {});
+  }
+
+  async function markAllRead() {
+    if (unreadCount === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await api.patch('/notifications/read-all').catch(() => {});
   }
 
   return (
@@ -54,7 +60,19 @@ export function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white border border-encre/10 shadow-lg z-20">
+        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white rounded-card border border-encre/10 shadow-lg z-30">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-encre/10 bg-brume/50">
+            <span className="text-xs font-display font-bold text-nuit">Notifications</span>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                className="text-[11px] font-semibold text-seve hover:underline"
+              >
+                Tout marquer comme lu
+              </button>
+            )}
+          </div>
           {notifications.length === 0 ? (
             <p className="p-4 text-sm text-encre/50">Aucune notification.</p>
           ) : (
@@ -66,9 +84,9 @@ export function NotificationsBell() {
                   n.isRead ? '' : 'bg-safran/10'
                 }`}
               >
-                <p className="text-sm font-medium">{n.title}</p>
-                <p className="text-sm text-encre/60 mt-0.5">{n.body}</p>
-                <p className="text-xs text-encre/40 mt-1">{new Date(n.createdAt).toLocaleString('fr-FR')}</p>
+                <p className="text-sm font-medium text-nuit">{n.title}</p>
+                <p className="text-xs text-encre/60 mt-0.5">{n.body}</p>
+                <p className="text-[11px] text-encre/40 mt-1">{new Date(n.createdAt).toLocaleString('fr-FR')}</p>
               </button>
             ))
           )}

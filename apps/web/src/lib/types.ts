@@ -89,6 +89,8 @@ export interface Product {
   variants: ProductVariant[];
   store: { id?: string; storeName: string; slug: string; ownerId?: string; rating?: number; city?: string; verifiedSupplier?: boolean };
   category?: { id: string; name: string };
+  rating?: number;
+  reviewCount?: number;
 }
 
 export interface DeliveryOption {
@@ -133,8 +135,11 @@ export interface DeliveryJob {
   pickupLng: number;
   dropoffLat: number;
   dropoffLng: number;
+  otpCode?: string;
+  agent?: { id?: string; vehicleType?: string; user: { fullName: string; phone?: string } } | null;
+  trackingPings?: { lat: number; lng: number; recordedAt: string }[];
   subOrder: {
-    store: { storeName: string };
+    store: { storeName: string; city?: string };
     order: {
       id: string;
       orderNumber: string;
@@ -198,8 +203,12 @@ export interface Cart {
     quantity: number;
     unitPriceSnapshot: string | number;
     variant: {
+      id?: string;
+      name?: string;
       product: {
+        id?: string;
         title: string;
+        productType?: ProductType;
         images: ProductImage[];
       };
     };
@@ -232,4 +241,49 @@ export interface AgentProfile {
   id: string;
   status: 'AVAILABLE' | 'BUSY' | 'OFFLINE';
   vehicleType?: string;
+  currentLat?: number;
+  currentLng?: number;
 }
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  authorName: string;
+  city?: string;
+  rating: number;
+  comment: string;
+  verifiedPurchase: boolean;
+  createdAt: string;
+}
+
+export interface PayoutRequestRecord {
+  id: string;
+  amountUsd: number;
+  method: string;
+  destination: string;
+  status: 'REQUESTED' | 'PAID' | 'REJECTED';
+  createdAt: string;
+}
+
+export interface WalletSummary {
+  storeId?: string;
+  availableBalanceUsd: number;
+  lockedEscrowUsd: number;
+  totalEarnedUsd: number;
+  currency: Currency;
+  payouts: PayoutRequestRecord[];
+}
+
+export interface ExchangeRateHistoryItem {
+  id: string;
+  rate: number;
+  effectiveFrom: string;
+}
+
+export interface ExchangeRatePayload {
+  rate: number;
+  currencyPair: string;
+  updatedAt: string;
+  history?: ExchangeRateHistoryItem[];
+}
+

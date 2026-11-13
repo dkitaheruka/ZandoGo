@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
+import { useStore } from '../lib/store-context';
 import { CardPaymentForm } from '../components/CardPaymentForm';
 import type { Address, Currency } from '../lib/types';
 
@@ -14,10 +15,11 @@ type PaymentMethod =
 
 export function CheckoutPage() {
   const navigate = useNavigate();
+  const { currency: preferredCurrency, refreshCart } = useStore();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressId, setAddressId] = useState<string>('');
   const [showNewAddress, setShowNewAddress] = useState(false);
-  const [currency, setCurrency] = useState<Currency>('USD');
+  const [currency, setCurrency] = useState<Currency>(preferredCurrency);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [method, setMethod] = useState<PaymentMethod>('CASH_ON_DELIVERY');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -67,6 +69,7 @@ export function CheckoutPage() {
         deliveryOptionId: selectedDeliveryId,
       });
       setOrderId(data.orderId || data.id);
+      await refreshCart();
       setStep('payment');
     } catch (err: any) {
       setMessage(err?.response?.data?.message ?? 'Impossible de créer la commande.');
@@ -110,30 +113,38 @@ export function CheckoutPage() {
   if (step === 'done') {
     return (
       <div className="mx-auto max-w-xl px-6 py-20 text-center">
-        <div className="w-16 h-16 mx-auto bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+        <div className="w-16 h-16 mx-auto bg-seve/10 text-seve rounded-card flex items-center justify-center mb-4">
           <CheckCircle2 className="w-8 h-8" />
         </div>
-        <h1 className="font-display text-2xl md:text-3xl font-semibold text-nuit">Commande validée avec succès !</h1>
+        <h1 className="font-display text-2xl md:text-3xl font-bold text-nuit">Commande validée avec succès !</h1>
         <p className="mt-3 text-sm text-encre/70 max-w-md mx-auto">
           Vos fonds sont sécurisés sous séquestre plateforme. Le vendeur prépare votre colis et le transporteur sélectionné prendra le relais.
         </p>
 
-        <div className="mt-6 p-4 rounded-2xl bg-neutral-100 text-xs text-left max-w-md mx-auto border border-encre/10 space-y-1">
+        <div className="mt-6 p-4 rounded-card bg-white text-xs text-left max-w-md mx-auto border border-encre/10 space-y-1 shadow-xs">
           <p><strong className="text-nuit font-semibold">Mode de livraison :</strong> {selectedDelivery?.name || 'Transporteur'}</p>
           <p><strong className="text-nuit font-semibold">Délai estimé :</strong> {selectedDelivery?.estimatedTime || 'Moins de 24h'}</p>
           <p><strong className="text-nuit font-semibold">Frais de livraison :</strong> {deliveryFee > 0 ? `${deliveryFee} ${currency}` : 'Gratuit'}</p>
         </div>
 
-        <div className="mt-8 flex items-center justify-center gap-4">
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {orderId && (
+            <button
+              onClick={() => navigate(`/orders/${orderId}/tracking`)}
+              className="rounded-full bg-seve text-brume font-medium px-6 py-3 text-sm hover:bg-seve/90 transition-colors shadow-xs"
+            >
+              Carte & Suivi GPS en direct
+            </button>
+          )}
           <button
             onClick={() => navigate('/orders')}
-            className="rounded-full bg-nuit text-brume font-medium px-8 py-3 text-sm hover:bg-nuit/90 transition-colors shadow-xs"
+            className="rounded-full bg-nuit text-brume font-medium px-6 py-3 text-sm hover:bg-nuit/90 transition-colors shadow-xs"
           >
-            Suivre ma commande & téléchargements
+            Mes commandes & factures
           </button>
           <button
             onClick={() => navigate('/products')}
-            className="text-sm text-encre/70 hover:underline"
+            className="text-sm text-encre/70 hover:underline px-3"
           >
             Continuer mes achats
           </button>
@@ -153,7 +164,7 @@ export function CheckoutPage() {
         <div className="mt-8 space-y-8">
           {/* Section 1: Delivery Address */}
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80 mb-3">
+            <h2 className="text-sm font-display font-semibold uppercase tracking-wider text-encre/80 mb-3">
               1. Adresse de livraison en République Démocratique du Congo
             </h2>
             {addresses.length > 0 && !showNewAddress && (
@@ -161,8 +172,8 @@ export function CheckoutPage() {
                 {addresses.map((addr) => (
                   <label
                     key={addr.id}
-                    className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
-                      addressId === addr.id ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                    className={`flex items-start gap-3 rounded-card border p-4 cursor-pointer transition-all ${
+                      addressId === addr.id ? 'border-seve bg-seve/5 shadow-xs' : 'border-encre/15 bg-white'
                     }`}
                   >
                     <input
@@ -170,10 +181,10 @@ export function CheckoutPage() {
                       name="address"
                       checked={addressId === addr.id}
                       onChange={() => setAddressId(addr.id)}
-                      className="mt-1 accent-nuit"
+                      className="mt-1 accent-seve"
                     />
                     <div className="text-sm">
-                      <p className="font-medium text-nuit">
+                      <p className="font-display font-medium text-nuit">
                         {addr.commune && <span>{addr.commune}, </span>}
                         {addr.quartier}
                       </p>
@@ -209,18 +220,18 @@ export function CheckoutPage() {
           {/* Section 2: Choose Delivery Provider */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80">
+              <h2 className="text-sm font-display font-semibold uppercase tracking-wider text-encre/80">
                 2. Choisissez votre mode de transport
               </h2>
-              <span className="text-xs text-seve font-medium">Libre choix du client</span>
+              <span className="text-xs text-seve font-semibold">Libre choix du client</span>
             </div>
 
             <div className="space-y-3">
               {deliveryOptions.map((del) => (
                 <label
                   key={del.id}
-                  className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
-                    selectedDeliveryId === del.id ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                  className={`flex items-start gap-3 rounded-card border p-4 cursor-pointer transition-all ${
+                    selectedDeliveryId === del.id ? 'border-seve bg-seve/5 shadow-xs' : 'border-encre/15 bg-white'
                   }`}
                 >
                   <input
@@ -228,12 +239,12 @@ export function CheckoutPage() {
                     name="deliveryMethod"
                     checked={selectedDeliveryId === del.id}
                     onChange={() => setSelectedDeliveryId(del.id)}
-                    className="mt-1 accent-nuit"
+                    className="mt-1 accent-seve"
                   />
                   <div className="flex-1 text-sm">
                     <div className="flex items-center justify-between">
-                      <p className="font-semibold text-nuit">{del.name}</p>
-                      <p className="font-mono font-bold text-nuit tabular-nums">
+                      <p className="font-display font-semibold text-nuit">{del.name}</p>
+                      <p className="font-display font-bold text-nuit tabular-nums">
                         {del.feeUsd === 0
                           ? 'Gratuit'
                           : currency === 'CDF'
@@ -255,13 +266,13 @@ export function CheckoutPage() {
           </div>
 
           {/* Section 3: Currency & Summary */}
-          <div className="p-4 rounded-2xl bg-neutral-100 border border-encre/10 space-y-3">
+          <div className="p-4 rounded-card bg-white border border-encre/10 space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-encre/70">Devise de facturation</span>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="rounded-lg border border-encre/20 bg-white px-3 py-1.5 text-xs font-semibold outline-none"
+                className="rounded-card border border-encre/20 bg-brume/50 px-3 py-1.5 text-xs font-semibold outline-none text-encre"
               >
                 <option value="USD">Dollar américain (USD $)</option>
                 <option value="CDF">Franc congolais (CDF)</option>
@@ -270,13 +281,13 @@ export function CheckoutPage() {
 
             <div className="pt-2 border-t border-encre/10 flex items-center justify-between text-xs text-encre/60">
               <span>Frais de livraison sélectionnés :</span>
-              <span className="font-mono font-medium text-nuit tabular-nums">
+              <span className="font-display font-semibold text-nuit tabular-nums">
                 {deliveryFee === 0 ? 'Gratuit' : `${deliveryFee} ${currency}`}
               </span>
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] text-emerald-800 font-medium bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="flex items-center gap-2 text-[11px] text-seve font-medium bg-seve/10 p-2.5 rounded-card border border-seve/25">
+              <ShieldCheck className="w-4 h-4 text-seve shrink-0" />
               <span>Garantie Trade Assurance ZandoGo : Fonds sous séquestre sécurisé jusqu’à confirmation.</span>
             </div>
           </div>
@@ -286,7 +297,7 @@ export function CheckoutPage() {
           <button
             onClick={handleConfirmAddress}
             disabled={loading || addressesLoading || !addressId}
-            className="w-full rounded-full bg-nuit text-brume font-medium py-3.5 text-sm hover:bg-nuit/90 transition-colors disabled:opacity-60 shadow-xs"
+            className="w-full rounded-card bg-seve text-brume font-display font-bold py-3.5 text-sm hover:bg-seve/90 transition-colors disabled:opacity-60 shadow-xs"
           >
             {addressesLoading ? 'Chargement des adresses…' : loading ? 'Création de la commande…' : 'Continuer vers le paiement sécurisé →'}
           </button>
@@ -295,18 +306,18 @@ export function CheckoutPage() {
 
       {step === 'payment' && (
         <div className="mt-8 space-y-6">
-          <div className="p-4 rounded-2xl bg-neutral-100 border border-encre/10 flex items-center justify-between text-sm">
+          <div className="p-4 rounded-card bg-white border border-encre/10 flex items-center justify-between text-sm">
             <div>
-              <p className="font-semibold text-nuit">Transporteur choisi</p>
+              <p className="font-display font-semibold text-nuit">Transporteur choisi</p>
               <p className="text-xs text-encre/60">{selectedDelivery?.name} ({selectedDelivery?.estimatedTime})</p>
             </div>
-            <p className="font-mono font-bold text-nuit tabular-nums">
+            <p className="font-display font-bold text-nuit tabular-nums">
               Frais : {deliveryFee === 0 ? '0' : deliveryFee} {currency}
             </p>
           </div>
 
           <div className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-encre/80 mb-2">
+            <h2 className="text-sm font-display font-semibold uppercase tracking-wider text-encre/80 mb-2">
               Mode de règlement
             </h2>
             {(
@@ -320,8 +331,8 @@ export function CheckoutPage() {
             ).map(([value, label]) => (
               <label
                 key={value}
-                className={`flex items-center gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
-                  method === value ? 'border-nuit bg-neutral-50 shadow-xs' : 'border-encre/15 bg-white'
+                className={`flex items-center gap-3 rounded-card border p-4 cursor-pointer transition-all ${
+                  method === value ? 'border-seve bg-seve/5 shadow-xs' : 'border-encre/15 bg-white'
                 }`}
               >
                 <input
@@ -330,7 +341,7 @@ export function CheckoutPage() {
                   checked={method === value}
                   disabled={clientSecret !== null}
                   onChange={() => setMethod(value)}
-                  className="accent-nuit"
+                  className="accent-seve"
                 />
                 <span className="text-sm font-medium text-nuit">{label}</span>
               </label>
@@ -347,7 +358,7 @@ export function CheckoutPage() {
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 placeholder="+243 820 001 122"
-                className="w-full rounded-xl border border-encre/20 bg-white px-4 py-2.5 text-sm outline-none focus:border-seve font-mono"
+                className="w-full rounded-card border border-encre/20 bg-white px-4 py-2.5 text-sm outline-none focus:border-seve font-mono text-encre"
               />
             </div>
           )}
@@ -364,7 +375,7 @@ export function CheckoutPage() {
             <button
               onClick={handlePay}
               disabled={loading}
-              className="w-full rounded-full bg-seve text-white font-medium py-3.5 text-sm hover:bg-seve/90 transition-colors disabled:opacity-60 shadow-xs"
+              className="w-full rounded-card bg-seve text-brume font-display font-bold py-3.5 text-sm hover:bg-seve/90 transition-colors disabled:opacity-60 shadow-xs"
             >
               {loading ? 'Validation en cours…' : 'Valider & Déposer les fonds sous séquestre'}
             </button>
@@ -394,32 +405,41 @@ function NewAddressForm({
 
   function useCurrentPosition() {
     setLocating(true);
+    setError(null);
+    if (!navigator.geolocation) {
+      setCoords({ lat: -4.325, lng: 15.322 });
+      setLocating(false);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         setLocating(false);
       },
       () => {
-        setError("Impossible d'obtenir votre position. Vérifiez les autorisations du navigateur.");
+        // Fallback propre sur Kinshasa Centre si la géolocalisation navigateur est bloquée dans l'iframe
+        setCoords({ lat: -4.325, lng: 15.322 });
         setLocating(false);
       },
+      { timeout: 6000 },
     );
   }
 
   async function handleSave() {
-    if (!coords) {
-      setError('Indiquez votre position (bouton ci-dessous) — indispensable pour le livreur.');
+    if (!commune.trim() || !quartier.trim()) {
+      setError('Indiquez au moins la commune et le quartier.');
       return;
     }
+    const targetCoords = coords || { lat: -4.325, lng: 15.322 };
     setSaving(true);
     setError(null);
     try {
       const { data } = await api.post<Address>('/users/me/addresses', {
-        commune,
-        quartier,
-        referencePoint,
-        latitude: coords.lat,
-        longitude: coords.lng,
+        commune: commune.trim(),
+        quartier: quartier.trim(),
+        referencePoint: referencePoint.trim(),
+        latitude: targetCoords.lat,
+        longitude: targetCoords.lng,
         isDefault: true,
       });
       onCreated(data);

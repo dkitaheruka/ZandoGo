@@ -85,7 +85,7 @@ export function CreateProductPage() {
         <div className="flex items-center gap-2">
           <Link
             to={`/vendor/${storeId}/products`}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-encre/60 hover:text-nuit"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Revenir au catalogue de la boutique</span>
@@ -93,57 +93,57 @@ export function CreateProductPage() {
         </div>
 
         <div>
-          <h1 className="font-display text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+          <h1 className="font-display text-2xl lg:text-3xl font-bold text-nuit tracking-tight">
             Créer une Nouvelle Offre ZandoGo
           </h1>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-encre/70">
             Prise en charge universelle : biens physiques avec stock unitaire, documents PDF dématérialisés, ou prestations de services en RDC.
           </p>
         </div>
 
         {/* Offering Type Selector */}
-        <div className="p-1.5 bg-slate-200/70 rounded-2xl flex flex-wrap gap-1 text-xs font-semibold">
+        <div className="p-1.5 bg-encre/10 rounded-card flex flex-wrap gap-1 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setProductType('PHYSICAL')}
-            className={`flex-1 py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
               productType === 'PHYSICAL'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-nuit shadow-xs font-display font-bold'
+                : 'text-encre/70 hover:text-nuit'
             }`}
           >
-            <Package className="w-4 h-4 text-emerald-600" />
+            <Package className="w-4 h-4 text-seve" />
             <span>Bien Physique (Stock)</span>
           </button>
           <button
             type="button"
             onClick={() => setProductType('DIGITAL')}
-            className={`flex-1 py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
               productType === 'DIGITAL'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-nuit shadow-xs font-display font-bold'
+                : 'text-encre/70 hover:text-nuit'
             }`}
           >
-            <FileText className="w-4 h-4 text-indigo-600" />
+            <FileText className="w-4 h-4 text-seve" />
             <span>Document PDF (Téléchargement)</span>
           </button>
           <button
             type="button"
             onClick={() => setProductType('SERVICE')}
-            className={`flex-1 py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
               productType === 'SERVICE'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-nuit shadow-xs font-display font-bold'
+                : 'text-encre/70 hover:text-nuit'
             }`}
           >
-            <Sparkles className="w-4 h-4 text-sky-600" />
+            <Sparkles className="w-4 h-4 text-safran" />
             <span>Prestation de Service</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">
+        <form onSubmit={handleSubmit} className="bg-white border border-encre/10 rounded-card p-6 shadow-xs space-y-5">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Titre commercial de l’offre *
             </label>
             <input
@@ -152,20 +152,20 @@ export function CreateProductPage() {
               placeholder="ex: Pagne Super Wax Vlisco Original (6 yards)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre outline-none focus:border-seve"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+              <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
                 Catégorie *
               </label>
               <select
                 required
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none focus:border-cyan-500"
+                className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs font-medium text-encre outline-none focus:border-seve"
               >
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -176,7 +176,7 @@ export function CreateProductPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+              <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
                 Prix unitaire de base ($ USD) *
               </label>
               <input
@@ -187,20 +187,20 @@ export function CreateProductPage() {
                 placeholder="ex: 65.00"
                 value={basePriceUsd}
                 onChange={(e) => setBasePriceUsd(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-mono font-bold text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs font-display font-bold text-nuit outline-none focus:border-seve"
               />
             </div>
           </div>
 
           {/* Contextual Fields: Physical Inventory */}
           {productType === 'PHYSICAL' && (
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+            <div className="p-4 rounded-card bg-brume/60 border border-encre/10 space-y-4">
+              <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider">
                 Paramètres d’Inventaire & Stock
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Quantité initiale en rayon (unités) *
                   </label>
                   <input
@@ -208,12 +208,12 @@ export function CreateProductPage() {
                     min={0}
                     value={stockQty}
                     onChange={(e) => setStockQty(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-mono font-bold outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs font-display font-bold text-nuit outline-none focus:border-seve"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Seuil d’alerte stock critique
                   </label>
                   <input
@@ -221,7 +221,7 @@ export function CreateProductPage() {
                     min={1}
                     value={lowStockThreshold}
                     onChange={(e) => setLowStockThreshold(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-mono outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs font-display outline-none focus:border-seve"
                   />
                 </div>
               </div>
@@ -230,13 +230,13 @@ export function CreateProductPage() {
 
           {/* Contextual Fields: Digital PDF */}
           {productType === 'DIGITAL' && (
-            <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-4">
-              <h3 className="text-xs font-bold text-indigo-950 uppercase tracking-wider">
+            <div className="p-4 rounded-card bg-seve/5 border border-seve/20 space-y-4">
+              <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider">
                 Fichier Numérique Téléchargeable
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-indigo-900 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Nom du fichier PDF *
                   </label>
                   <input
@@ -244,19 +244,19 @@ export function CreateProductPage() {
                     placeholder="guide-investissement-rdc-2026.pdf"
                     value={digitalFileName}
                     onChange={(e) => setDigitalFileName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-indigo-900 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Taille indicative (Mo)
                   </label>
                   <input
                     type="text"
                     value={digitalFileSize}
                     onChange={(e) => setDigitalFileSize(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
                   />
                 </div>
               </div>
@@ -265,13 +265,13 @@ export function CreateProductPage() {
 
           {/* Contextual Fields: Service */}
           {productType === 'SERVICE' && (
-            <div className="p-4 rounded-xl bg-sky-50/70 border border-sky-200 space-y-4">
-              <h3 className="text-xs font-bold text-sky-950 uppercase tracking-wider">
+            <div className="p-4 rounded-card bg-safran/10 border border-safran/30 space-y-4">
+              <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider">
                 Conditions de Prestation de Service
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-sky-900 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Durée ou délai d’intervention
                   </label>
                   <input
@@ -279,11 +279,11 @@ export function CreateProductPage() {
                     placeholder="ex: Forfait mensuel 30j ou intervention sous 2h"
                     value={serviceDuration}
                     onChange={(e) => setServiceDuration(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-sky-900 mb-1">
+                  <label className="block text-xs font-semibold text-encre/80 mb-1">
                     Modalités de prise de contact
                   </label>
                   <input
@@ -291,7 +291,7 @@ export function CreateProductPage() {
                     placeholder="ex: Appel technicien sous 2h pour RDV"
                     value={fulfillmentDetails}
                     onChange={(e) => setFulfillmentDetails(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs outline-none"
+                    className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
                   />
                 </div>
               </div>
@@ -299,7 +299,7 @@ export function CreateProductPage() {
           )}
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">
+            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
               Description détaillée de l'offre
             </label>
             <textarea
@@ -307,16 +307,16 @@ export function CreateProductPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Détails techniques, composition, garanties, conditions de livraison en RDC..."
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre outline-none focus:border-seve"
             />
           </div>
 
-          {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
+          {error && <p className="text-xs text-wax font-medium">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
+            className="w-full rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
           >
             {loading ? 'Publication en cours…' : 'Publier l’offre sur la place de marché ZandoGo'}
           </button>

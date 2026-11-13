@@ -28,23 +28,23 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex">
+    <div className="min-h-screen bg-[#111917] text-brume flex font-sans">
       {/* SaaS Sidebar */}
       <aside
         className={`${
           collapsed ? 'w-20' : 'w-64'
-        } shrink-0 bg-slate-950 border-r border-slate-800 flex flex-col justify-between transition-all duration-200 z-20`}
+        } shrink-0 bg-nuit border-r border-white/10 flex flex-col justify-between transition-all duration-200 z-20`}
       >
         <div>
           {/* Brand lockup */}
-          <div className="h-16 px-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="h-16 px-4 border-b border-white/10 flex items-center justify-between">
             {!collapsed && (
               <div className="flex items-center gap-2">
-                <span className="h-8 w-8 rounded-lg bg-emerald-600 flex items-center justify-center font-bold text-white text-xs font-display shadow-xs">
+                <span className="h-8 w-8 rounded-card bg-seve flex items-center justify-center font-bold text-brume text-xs font-display shadow-xs">
                   ZG
                 </span>
-                <span className="font-display font-bold tracking-tight text-white text-base">
-                  Zando<span className="text-cyan-400">Go</span>
+                <span className="font-display font-bold tracking-tight text-brume text-base">
+                  Zando<span className="text-safran">Go</span>
                 </span>
               </div>
             )}
@@ -52,7 +52,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => setCollapsed(!collapsed)}
               title={collapsed ? 'Agrandir la barre' : 'Réduire la barre'}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors mx-auto"
+              className="p-1.5 rounded-lg text-brume/60 hover:text-brume hover:bg-white/5 transition-colors mx-auto"
             >
               {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
             </button>
@@ -67,13 +67,13 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                 <Link
                   key={item.to}
                   to={item.to}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-card text-xs font-medium transition-all ${
                     active
-                      ? 'bg-emerald-600 text-white font-bold shadow-xs'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
+                      ? 'bg-seve text-brume font-display font-bold shadow-xs'
+                      : 'text-brume/70 hover:text-brume hover:bg-white/5'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-cyan-400'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-brume' : 'text-safran'}`} />
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
@@ -82,47 +82,47 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Footer shortcuts */}
-        <div className="p-3 border-t border-slate-800 space-y-1">
+        <div className="p-3 border-t border-white/10 space-y-1">
           <Link
             to="/products"
-            className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-card text-xs text-brume/70 hover:text-brume hover:bg-white/5 transition-colors"
           >
-            <ShoppingBag className="w-4 h-4 shrink-0 text-cyan-400" />
+            <ShoppingBag className="w-4 h-4 shrink-0 text-safran" />
             {!collapsed && <span className="truncate">Retour Place de Marché</span>}
           </Link>
           <Link
             to="/vendor"
-            className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-card text-xs text-brume/70 hover:text-brume hover:bg-white/5 transition-colors"
           >
-            <Store className="w-4 h-4 shrink-0 text-emerald-400" />
+            <Store className="w-4 h-4 shrink-0 text-seve" />
             {!collapsed && <span className="truncate">Espace Vendeur Pro</span>}
           </Link>
         </div>
       </aside>
 
       {/* Main App Content Viewport */}
-      <div className="flex-1 flex flex-col min-w-0 bg-slate-900">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#111917]">
         {/* Top Header Contract */}
-        <header className="h-16 px-8 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-6 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="text-slate-200 font-medium">Console Centrale ZandoGo</span>
+        <header className="h-16 px-8 border-b border-white/10 bg-nuit/90 flex items-center justify-between gap-6 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-brume/60">
+            <span className="text-brume font-medium font-display">Console Centrale ZandoGo</span>
             <span aria-hidden="true">/</span>
-            <span className="truncate text-cyan-400 font-semibold">Supervision RDC & Séquestre</span>
+            <span className="truncate text-safran font-semibold">Supervision RDC & Séquestre</span>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              <span className="text-slate-300 font-mono text-[11px] tabular-nums">Système Opérationnel</span>
+            <div className="flex items-center gap-2 text-xs bg-white/5 border border-white/10 px-3 py-1.5 rounded-full">
+              <span className="h-2 w-2 rounded-full bg-seve" />
+              <span className="text-brume/80 font-mono text-[11px] tabular-nums">Système Opérationnel</span>
             </div>
 
-            <div className="flex items-center gap-2 border-l border-slate-800 pl-4 text-xs">
-              <div className="h-7 w-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
+            <div className="flex items-center gap-2 border-l border-white/10 pl-4 text-xs">
+              <div className="h-7 w-7 rounded-full bg-seve text-brume flex items-center justify-center font-display font-bold">
                 {user?.fullName?.charAt(0) || 'A'}
               </div>
               <div className="hidden sm:block text-left">
-                <p className="font-semibold text-slate-200 leading-none">{user?.fullName || 'Administrateur'}</p>
-                <p className="text-[10px] text-slate-400 font-mono mt-0.5">SUPER_ADMIN</p>
+                <p className="font-semibold text-brume leading-none">{user?.fullName || 'Administrateur'}</p>
+                <p className="text-[10px] text-safran font-mono mt-0.5">SUPER_ADMIN</p>
               </div>
             </div>
           </div>

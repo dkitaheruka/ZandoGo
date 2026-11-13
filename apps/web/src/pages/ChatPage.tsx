@@ -12,56 +12,39 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
+import { useStore } from '../lib/store-context';
 import type { ChatMessage, Conversation, NegotiationOffer } from '../lib/types';
+
+interface EnrichedConversation extends Conversation {
+  city?: string;
+  storeId?: string;
+  negotiationId?: string;
+}
 
 export function ChatPage() {
   const { user } = useAuth();
+  const { formatPrimaryPrice } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
   const requestedId = (location.state as { conversationId?: string } | null)?.conversationId;
 
-  const [conversations, setConversations] = useState<Conversation[]>([
-    {
-      id: 'conv-1',
-      type: 'CUSTOMER_VENDOR',
-      messages: [
-        {
-          id: 'm-1',
-          conversationId: 'conv-1',
-          senderId: 'usr-vendor-1',
-          content:
-            'Bonjour ! Nous avons bien reçu votre proposition de négociation de prix pour le lot de 20 pagnes Super Wax Vlisco.',
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: 'm-2',
-          conversationId: 'conv-1',
-          senderId: 'usr-vendor-1',
-          content:
-            'Nous pouvons vous accorder un prix de gros spécial de $50.00 par pièce (au lieu du prix catalogue de $65.00). Le devis convenu a été placé sur votre compte.',
-          createdAt: new Date(Date.now() - 1800000).toISOString(),
-        },
-      ],
-    },
-  ]);
-
-  const [activeId, setActiveId] = useState<string | null>('conv-1');
+  const [conversations, setConversations] = useState<EnrichedConversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [negotiations, setNegotiations] = useState<NegotiationOffer[]>([]);
   const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
   const [acceptingNotice, setAcceptingNotice] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load negotiations
     api
       .get<NegotiationOffer[]>('/negotiations')
       .then(({ data }) => setNegotiations(data || []))
       .catch(() => {});
 
-    // Try load remote conversations if present
     api
-      .get<Conversation[]>('/chat/conversations')
+      .get<EnrichedConversation[]>('/chat/conversations')
       .then(({ data }) => {
         if (data && data.length > 0) {
           setConversations(data);
@@ -83,21 +66,30 @@ export function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function handleSend(e: FormEvent) {
+  async function handleSend(e: FormEvent) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content || !activeId) return;
+    if (!content || !activeId || sending) return;
 
-    const newMsg: ChatMessage = {
+    const optimisticMsg: ChatMessage = {
       id: `m-${Date.now()}`,
       conversationId: activeId,
-      senderId: user?.id || 'usr-me',
+      senderId: user?.id || 'usr-1',
       content,
       createdAt: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setConversations((prev) =>
+      prev.map((c) => (c.id === activeId ? { ...c, messages: [...(c.messages || []), optimisticMsg] } : c)),
+    );
     setDraft('');
+    setSending(true);
+    try {
+      await api.post(`/chat/conversations/${activeId}/messages`, { content });
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleAcceptNegotiatedQuote(neg: NegotiationOffer) {
@@ -107,200 +99,227 @@ export function ChatPage() {
       setAcceptingNotice('Offre spéciale ajoutée au panier avec le tarif négocié !');
       setTimeout(() => {
         navigate('/cart');
-      }, 1200);
+      }, 1000);
     } catch {
       setAcceptingNotice('Erreur lors de la validation.');
     }
   }
 
-  const activeNegotiation = negotiations.find(
-    (n) => n.status === 'ACCEPTED_BY_VENDOR' || n.status === 'PENDING_VENDOR_REVIEW',
-  );
+  const activeConv = conversations.find((c) => c.id === activeId);
+  const activeNegotiation =
+    negotiations.find((n) => n.id === activeConv?.negotiationId) ||
+    negotiations.find(
+      (n) =>
+        (activeConv?.productId && n.productId === activeConv.productId) ||
+        (activeConv?.storeId && n.storeId === activeConv.storeId),
+    );
+
+  const initials = (activeConv?.storeName || 'ZG')
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       {/* Title */}
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-encre/10 pb-5">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 uppercase tracking-wider">
-            <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 border border-cyan-200 text-cyan-800 flex items-center gap-1.5 font-bold text-[10px]">
-              <MessageSquare className="w-3.5 h-3.5 text-cyan-600" />
+          <div className="flex items-center gap-2 text-xs font-semibold text-seve uppercase tracking-wider">
+            <span className="px-3 py-0.5 rounded-full bg-seve/10 border border-seve/25 text-seve flex items-center gap-1.5 font-bold text-[10px]">
+              <MessageSquare className="w-3.5 h-3.5 text-seve" />
               <span>Messagerie Directe & Négociations</span>
             </span>
           </div>
-          <h1 className="mt-2 font-display text-2xl lg:text-3xl font-extrabold text-slate-950 tracking-tight">
+          <h1 className="mt-2 font-display text-2xl lg:text-3xl font-extrabold text-nuit tracking-tight">
             Échanges Vendeurs & Transporteurs
           </h1>
-          <p className="mt-1 text-xs text-slate-500">
-            Discutez directement le prix de l'article, convenez du moyen de transport et validez vos commandes en toute transparence.
+          <p className="mt-1 text-xs text-encre/60">
+            Discutez directement le prix de l’article, convenez du moyen de transport et validez vos commandes en toute transparence.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono bg-[#0B0F19] text-white px-3.5 py-2 rounded-xl border border-slate-800 shadow-xs">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-slate-200 font-medium">Séquestre ZandoGo Actif</span>
+        <div className="flex items-center gap-2 text-xs font-mono bg-nuit text-brume px-3.5 py-2 rounded-card border border-white/10 shadow-xs">
+          <ShieldCheck className="w-3.5 h-3.5 text-safran" />
+          <span className="text-safran font-semibold">Séquestre ZandoGo Actif</span>
         </div>
       </div>
 
       {acceptingNotice && (
-        <div className="mt-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2 animate-in fade-in">
-          <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div className="mt-4 p-3.5 rounded-card bg-seve/10 border border-seve/30 text-xs font-medium text-seve flex items-center gap-2">
+          <Check className="w-4 h-4 text-seve shrink-0" />
           <span>{acceptingNotice}</span>
         </div>
       )}
 
       {/* Main Chat & Negotiation Box */}
-      <div className="mt-6 grid md:grid-cols-[300px_1fr] border border-slate-200 bg-white rounded-3xl overflow-hidden shadow-sm h-[38rem]">
+      <div className="mt-6 grid md:grid-cols-[310px_1fr] border border-encre/10 bg-white rounded-card overflow-hidden shadow-sm h-[38rem]">
         {/* Left: Conversations list */}
-        <div className="border-r border-slate-200 flex flex-col bg-slate-50/60">
-          <div className="p-3.5 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
-            <span>Conversations en cours</span>
-            <span className="text-[10px] font-mono text-cyan-700 font-semibold bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+        <div className="border-r border-encre/10 flex flex-col bg-brume/50">
+          <div className="p-3.5 border-b border-encre/10 text-xs font-display font-bold text-nuit uppercase tracking-wider flex items-center justify-between">
+            <span>Conversations ({conversations.length})</span>
+            <span className="text-[10px] font-mono text-seve font-semibold bg-seve/10 px-2 py-0.5 rounded border border-seve/25">
               RDC
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {conversations.map((c) => {
-              const active = c.id === activeId;
-              const lastMsg = c.messages[c.messages.length - 1];
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setActiveId(c.id)}
-                  className={`w-full text-left p-4 transition ${
-                    active
-                      ? 'bg-[#0B0F19] text-white border-l-4 border-cyan-400 shadow-xs'
-                      : 'hover:bg-slate-100/70 text-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`font-bold text-xs ${active ? 'text-white' : 'text-slate-900'}`}>
-                      Boutique Victoire Wax
-                    </span>
-                    <span className={`text-[10px] font-mono ${active ? 'text-cyan-300' : 'text-slate-400'}`}>
-                      14:45
-                    </span>
-                  </div>
-                  <p className={`text-xs line-clamp-2 leading-relaxed ${active ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {lastMsg ? lastMsg.content : 'Nouvelle conversation'}
-                  </p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                        active
-                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
-                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      }`}
-                    >
-                      <Handshake className="w-3 h-3 text-emerald-500" />
-                      <span>Offre convenue</span>
-                    </span>
-                    <span className={`text-[10px] font-mono flex items-center gap-1 ${active ? 'text-slate-400' : 'text-slate-400'}`}>
-                      <Truck className="w-3 h-3 text-cyan-500" />
-                      <span>Kinshasa</span>
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="flex-1 overflow-y-auto divide-y divide-encre/5">
+            {conversations.length === 0 ? (
+              <div className="p-6 text-xs text-encre/50 text-center">Aucune conversation active.</div>
+            ) : (
+              conversations.map((c) => {
+                const active = c.id === activeId;
+                const lastMsg = c.messages[c.messages.length - 1];
+                const isDelivery = c.type === 'CUSTOMER_DELIVERY';
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setActiveId(c.id)}
+                    className={`w-full text-left p-4 transition ${
+                      active ? 'bg-nuit text-brume border-l-4 border-seve shadow-xs' : 'hover:bg-encre/5 text-encre'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className={`font-display font-bold text-xs truncate ${active ? 'text-brume' : 'text-nuit'}`}>
+                        {c.storeName || 'Boutique Partenaire'}
+                      </span>
+                      <span className={`text-[10px] font-mono shrink-0 ${active ? 'text-safran' : 'text-encre/40'}`}>
+                        {lastMsg
+                          ? new Date(lastMsg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                          : ''}
+                      </span>
+                    </div>
+                    <p className={`text-xs line-clamp-2 leading-relaxed ${active ? 'text-brume/75' : 'text-encre/60'}`}>
+                      {lastMsg ? lastMsg.content : 'Nouvelle conversation'}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          active
+                            ? 'bg-seve/20 text-safran border border-safran/30'
+                            : 'bg-seve/10 text-seve border border-seve/25'
+                        }`}
+                      >
+                        {isDelivery ? <Truck className="w-3 h-3" /> : <Handshake className="w-3 h-3" />}
+                        <span>{isDelivery ? 'Coursier en route' : 'Devis & Prix'}</span>
+                      </span>
+                      {c.city && (
+                        <span className={`text-[10px] font-sans truncate ${active ? 'text-brume/60' : 'text-encre/50'}`}>
+                          · {c.city}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Right: Active Chat & Negotiation Workspace */}
+        {/* Right: Active Chat Workspace */}
         <div className="flex flex-col min-h-0 bg-white">
-          {/* Header of active chat */}
-          <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+          <div className="px-6 py-3 border-b border-encre/10 flex items-center justify-between bg-white shrink-0">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-[#0B0F19] text-cyan-400 font-bold text-xs flex items-center justify-center shrink-0 border border-cyan-500/30">
-                VW
+              <div className="h-9 w-9 rounded-card bg-nuit text-safran font-display font-bold text-xs flex items-center justify-center shrink-0 border border-white/10">
+                {initials}
               </div>
               <div>
-                <p className="font-bold text-xs text-slate-900">Boutique Victoire Wax</p>
-                <p className="text-[10px] text-emerald-700 font-mono flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span>Vendeur Vérifié RDC · En ligne</span>
+                <p className="font-display font-bold text-xs text-nuit">
+                  {activeConv?.storeName || 'Boutique Partenaire'}
+                </p>
+                <p className="text-[10px] text-seve font-sans flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-seve" />
+                  <span>
+                    {activeConv?.type === 'CUSTOMER_DELIVERY'
+                      ? 'Coursier certifié · En course'
+                      : 'Vendeur Vérifié RDC · En ligne'}
+                  </span>
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-[10px] font-mono text-slate-400">#CONV-101</span>
-            </div>
+            <span className="text-[10px] font-mono text-encre/40 uppercase">#{activeId || 'CONV'}</span>
           </div>
 
-          {/* Product Anchor Banner (Tied to the specific product) */}
-          <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4 shrink-0 text-xs">
-            <div className="flex items-center gap-3 min-w-0">
-              <img
-                src={activeNegotiation?.productImage || 'https://images.unsplash.com/photo-1590736969955-71cc94801759?auto=format&fit=crop&w=200&q=80'}
-                alt="Produit lié"
-                className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
-              />
-              <div className="truncate">
-                <span className="text-[10px] uppercase font-bold text-cyan-700 tracking-wider block">
-                  Produit en discussion :
-                </span>
-                <span className="font-bold text-slate-900 truncate block text-xs">
-                  {activeNegotiation?.productTitle || 'Pagne Super Wax Vlisco Original (6 yards)'}
-                </span>
+          {/* Product Anchor Banner */}
+          {activeConv && (
+            <div className="px-6 py-2.5 bg-brume/50 border-b border-encre/10 flex items-center justify-between gap-4 shrink-0 text-xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={activeConv.productImage || '/src/assets/images/marketplace_parcel_default_1794567970796.jpg'}
+                  alt={activeConv.productTitle || 'Produit lié'}
+                  className="w-10 h-10 rounded-lg object-cover border border-encre/10 shrink-0"
+                />
+                <div className="truncate">
+                  <span className="text-[10px] uppercase font-display font-bold text-seve tracking-wider block">
+                    Objet de la discussion :
+                  </span>
+                  <span className="font-bold text-nuit truncate block text-xs">
+                    {activeConv.productTitle || 'Demande commerciale ZandoGo'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                {activeConv.productPriceUsd && (
+                  <div className="text-right">
+                    <span className="text-[10px] text-encre/50 font-mono block">Tarif affiché</span>
+                    <span className="font-display font-bold text-nuit tabular-nums">
+                      {formatPrimaryPrice(activeConv.productPriceUsd)}
+                    </span>
+                  </div>
+                )}
+                <Link
+                  to={activeConv.productId ? `/products/${activeConv.productId}` : '/products'}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-seve hover:text-seve/80 bg-seve/10 px-2.5 py-1.5 rounded-card border border-seve/25 transition"
+                >
+                  <span>Fiche</span>
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
               </div>
             </div>
+          )}
 
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 font-mono block">Prix catalogue</span>
-                <span className="font-bold font-mono text-slate-900">$65.00</span>
-              </div>
-              <Link
-                to={activeNegotiation?.productId ? `/products/${activeNegotiation.productId}` : '/products'}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:text-cyan-900 bg-cyan-50 px-2.5 py-1.5 rounded-lg border border-cyan-200 transition"
-              >
-                <span>Fiche</span>
-                <ExternalLink className="w-3 h-3" />
-              </Link>
-            </div>
-          </div>
-
-          {/* Agreed Product & Transport Terms Card (Noir + Vert + Cyan) */}
+          {/* Negotiation Card if tied to active conversation */}
           {activeNegotiation && (
-            <div className="m-4 p-4 rounded-2xl bg-[#0B0F19] text-white border border-cyan-500/40 shrink-0 shadow-lg relative overflow-hidden">
+            <div className="m-4 p-4 rounded-card bg-nuit text-brume border border-white/10 shrink-0 shadow-lg">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span>Accord Validé par le Fournisseur</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
-                      Produit & Transport
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-sans font-bold bg-seve/20 text-seve border border-seve/30 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-seve" />
+                      <span>
+                        {activeNegotiation.status === 'ACCEPTED_BY_VENDOR'
+                          ? 'Accord Validé par le Fournisseur'
+                          : activeNegotiation.status === 'CONVERTED_TO_ORDER'
+                          ? 'Transféré au panier'
+                          : 'Proposition envoyée au vendeur'}
+                      </span>
                     </span>
                   </div>
 
-                  {/* Dual Terms: Product Price + Transport Fee */}
                   <div className="grid sm:grid-cols-2 gap-3 pt-1 text-xs">
-                    <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <span className="text-[10px] text-slate-400 font-mono block uppercase">1. Prix Article Convenu</span>
-                      <p className="font-mono text-white mt-0.5">
-                        <strong className="text-cyan-300 text-sm">
+                    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                      <span className="text-[10px] text-brume/60 font-sans block uppercase">1. Prix Article</span>
+                      <p className="text-brume mt-0.5 font-display">
+                        <strong className="text-safran text-sm tabular-nums">
                           ${activeNegotiation.agreedPriceUsd || activeNegotiation.requestedPriceUsd}
                         </strong>{' '}
                         / unité × {activeNegotiation.requestedQty} pcs
                       </p>
-                      <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                        Sous-total : ${( (activeNegotiation.agreedPriceUsd || activeNegotiation.requestedPriceUsd) * activeNegotiation.requestedQty ).toFixed(2)}
-                      </span>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <span className="text-[10px] text-slate-400 font-mono block uppercase">2. Transport & Acheminement</span>
-                      <p className="font-mono text-white mt-0.5 flex items-center gap-1">
-                        <Truck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                      <span className="text-[10px] text-brume/60 font-sans block uppercase">2. Transport</span>
+                      <p className="text-brume mt-0.5 flex items-center gap-1 font-display">
+                        <Truck className="w-3.5 h-3.5 text-seve shrink-0" />
                         <span className="truncate">{activeNegotiation.transportMode || 'Coursier Express'}</span>
                       </p>
-                      <span className="text-[10px] text-emerald-300 font-mono font-semibold block mt-0.5">
-                        Frais convenus : ${activeNegotiation.agreedDeliveryFeeUsd ?? activeNegotiation.requestedDeliveryFeeUsd ?? 3.50} ({activeNegotiation.destinationCity || 'Kinshasa'})
+                      <span className="text-[10px] text-seve font-mono font-semibold block mt-0.5">
+                        ${activeNegotiation.agreedDeliveryFeeUsd ?? activeNegotiation.requestedDeliveryFeeUsd ?? 3.5} (
+                        {activeNegotiation.destinationCity || 'Kinshasa'})
                       </span>
                     </div>
                   </div>
@@ -308,13 +327,13 @@ export function ChatPage() {
 
                 <div className="flex flex-col sm:items-end justify-between gap-2 shrink-0">
                   <div className="text-left sm:text-right">
-                    <span className="text-[10px] text-slate-400 font-mono block">Total global convenu</span>
-                    <span className="text-lg font-mono font-extrabold text-emerald-400">
+                    <span className="text-[10px] text-brume/60 font-sans block">Total convenu</span>
+                    <span className="text-lg font-display font-extrabold text-safran tabular-nums">
                       $
                       {(
                         (activeNegotiation.agreedPriceUsd || activeNegotiation.requestedPriceUsd) *
                           activeNegotiation.requestedQty +
-                        (activeNegotiation.agreedDeliveryFeeUsd ?? activeNegotiation.requestedDeliveryFeeUsd ?? 3.50)
+                        (activeNegotiation.agreedDeliveryFeeUsd ?? activeNegotiation.requestedDeliveryFeeUsd ?? 3.5)
                       ).toFixed(2)}
                     </span>
                   </div>
@@ -323,7 +342,7 @@ export function ChatPage() {
                     <button
                       type="button"
                       onClick={() => handleAcceptNegotiatedQuote(activeNegotiation)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs transition shadow-xs"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition shadow-xs"
                     >
                       <span>Commander au prix négocié</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -335,22 +354,22 @@ export function ChatPage() {
           )}
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-slate-50/40">
+          <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-brume/30">
             {messages.map((m) => {
-              const mine = m.senderId === user?.id || m.senderId === 'usr-me';
+              const mine = m.senderId === user?.id || m.senderId === 'usr-me' || m.senderId === 'usr-1';
               return (
                 <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                    className={`max-w-[75%] px-4 py-2.5 rounded-card text-xs leading-relaxed ${
                       mine
-                        ? 'bg-[#0B0F19] text-white border border-cyan-500/30 rounded-br-none shadow-xs'
-                        : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none shadow-xs'
+                        ? 'bg-seve text-brume rounded-br-none shadow-xs font-sans'
+                        : 'bg-white text-encre border border-encre/10 rounded-bl-none shadow-xs font-sans'
                     }`}
                   >
                     <p>{m.content}</p>
                     <span
                       className={`block text-[9px] font-mono mt-1 ${
-                        mine ? 'text-cyan-400/80 text-right' : 'text-slate-400'
+                        mine ? 'text-brume/70 text-right' : 'text-encre/40'
                       }`}
                     >
                       {new Date(m.createdAt).toLocaleTimeString('fr-FR', {
@@ -366,19 +385,18 @@ export function ChatPage() {
           </div>
 
           {/* Input Bar */}
-          <form onSubmit={handleSend} className="p-3 border-t border-slate-200 bg-white flex items-center gap-2">
+          <form onSubmit={handleSend} className="p-3 border-t border-encre/10 bg-white flex items-center gap-2">
             <input
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Écrire au vendeur (préciser quantité, livraison à Lubumbashi, Goma...)..."
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              placeholder="Écrire votre message (quantité, livraison, délai…)..."
+              className="flex-1 px-4 py-2.5 rounded-card border border-encre/20 text-xs text-encre outline-none focus:border-seve focus:ring-1 focus:ring-seve bg-white placeholder-encre/40"
             />
             <button
               type="submit"
-              disabled={!draft.trim()}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition disabled:opacity-40 flex items-center gap-1.5 shadow-xs"
-              title="Envoyer le message"
+              disabled={!draft.trim() || sending}
+              className="px-5 py-2.5 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition disabled:opacity-40 flex items-center gap-1.5 shadow-xs"
             >
               <span>Envoyer</span>
               <Send className="w-3.5 h-3.5" />

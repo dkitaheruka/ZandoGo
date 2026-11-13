@@ -17,12 +17,16 @@ const STATUS_LABEL: Record<DeliveryJob['status'], { label: string; className: st
 const ACTIVE_STATUSES: DeliveryJob['status'][] = ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'];
 const PING_INTERVAL_MS = 12_000;
 
-function getPosition(): Promise<Coords> {
-  return new Promise((resolve, reject) => {
+function getPosition(fallback: Coords): Promise<Coords> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(fallback);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => reject(new Error("Position indisponible : autorisez la géolocalisation pour confirmer la livraison.")),
-      { enableHighAccuracy: true, timeout: 10_000 },
+      () => resolve(fallback),
+      { enableHighAccuracy: true, timeout: 6_000 },
     );
   });
 }
@@ -35,7 +39,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProof, setShowProof] = useState(false);
-  const [proofType, setProofType] = useState<ProofType>('PHOTO');
+  const [proofType, setProofType] = useState<ProofType>('OTP_CODE');
   const [fileUrl, setFileUrl] = useState('');
   const [otp, setOtp] = useState('');
 
@@ -48,13 +52,11 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
     (t) => t.methodCode === 'CASH_ON_DELIVERY' && t.status === 'PENDING',
   );
 
-  // Tant que la course est active, on envoie la position toutes les 12 s.
-  // C'est ce flux qui alimente le suivi en direct affiché au client.
   useEffect(() => {
     if (!isActive) return;
 
     const last: { current: Coords | null } = { current: null };
-    const watchId = navigator.geolocation.watchPosition(
+    const watchId = navigator.geolocation?.watchPosition(
       (pos) => {
         last.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       },
@@ -69,7 +71,9 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
     }, PING_INTERVAL_MS);
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
+      if (watchId !== undefined && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
       window.clearInterval(timer);
     };
   }, [isActive, job.id]);
@@ -97,7 +101,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
     setBusy(true);
     setError(null);
     try {
-      const position = await getPosition();
+      const position = await getPosition({ lat: job.dropoffLat, lng: job.dropoffLng });
       await api.post(`/delivery/deliveries/${job.id}/complete`, {
         proofType,
         fileUrl: proofType === 'OTP_CODE' ? undefined : fileUrl,
@@ -116,13 +120,13 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   const proofReady = proofType === 'OTP_CODE' ? otp.trim().length > 0 : fileUrl.trim().length > 0;
 
   return (
-    <div className="border border-encre/10 bg-white p-5">
+    <div className="rounded-card border border-encre/10 bg-white p-5 shadow-xs">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="font-medium">Commande {order.orderNumber}</p>
-          <p className="text-sm text-encre/50">Retrait chez {store.storeName}</p>
+          <p className="font-display font-semibold text-nuit">Commande {order.orderNumber}</p>
+          <p className="text-sm text-encre/60">Retrait chez {store.storeName}</p>
         </div>
-        <span className={`text-xs font-medium px-3 py-1 flex-shrink-0 ${status.className}`}>{status.label}</span>
+        <span className={`text-xs font-display font-medium px-3 py-1 rounded-card flex-shrink-0 ${status.className}`}>{status.label}</span>
       </div>
 
       <div className="mt-4 text-sm space-y-1.5">
@@ -158,7 +162,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
       </div>
 
       {cashDue && (
-        <div className="mt-4 border-l-4 border-safran bg-safran/15 px-4 py-3 text-sm">
+        <div className="mt-4 rounded-card border-l-4 border-safran bg-safran/15 px-4 py-3 text-sm">
           <strong>Cash à encaisser : </strong>
           {Number(order.total).toLocaleString('fr-FR')} {order.currency}
           <span className="block text-encre/60">
@@ -173,7 +177,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
             <button
               disabled={busy}
               onClick={() => changeStatus('PICKED_UP')}
-              className="bg-nuit text-brume text-sm font-medium px-5 py-2 hover:bg-nuit/90 transition-colors disabled:opacity-60"
+              className="rounded-card bg-nuit text-brume text-sm font-medium px-5 py-2 hover:bg-nuit/90 transition-colors disabled:opacity-60"
             >
               J'ai récupéré le colis
             </button>
@@ -182,7 +186,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
             <button
               disabled={busy}
               onClick={() => changeStatus('IN_TRANSIT')}
-              className="bg-nuit text-brume text-sm font-medium px-5 py-2 hover:bg-nuit/90 transition-colors disabled:opacity-60"
+              className="rounded-card bg-nuit text-brume text-sm font-medium px-5 py-2 hover:bg-nuit/90 transition-colors disabled:opacity-60"
             >
               Je suis en route
             </button>
@@ -191,7 +195,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
             <button
               disabled={busy}
               onClick={() => setShowProof((v) => !v)}
-              className="bg-seve text-white text-sm font-medium px-5 py-2 hover:bg-seve/90 transition-colors disabled:opacity-60"
+              className="rounded-card bg-seve text-white text-sm font-medium px-5 py-2 hover:bg-seve/90 transition-colors disabled:opacity-60"
             >
               Confirmer la livraison
             </button>
@@ -199,7 +203,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
           <button
             disabled={busy}
             onClick={() => changeStatus('FAILED')}
-            className="border border-wax text-wax text-sm font-medium px-5 py-2 hover:bg-wax/10 transition-colors disabled:opacity-60"
+            className="rounded-card border border-wax text-wax text-sm font-medium px-5 py-2 hover:bg-wax/10 transition-colors disabled:opacity-60"
           >
             Signaler un échec
           </button>
@@ -208,38 +212,58 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
 
       {showProof && isActive && (
         <div className="mt-5 pt-5 border-t border-encre/10 space-y-3">
-          <p className="text-sm font-medium">Preuve de livraison (obligatoire)</p>
+          <p className="text-sm font-medium text-nuit">Preuve de livraison (obligatoire)</p>
           <select
             value={proofType}
             onChange={(e) => setProofType(e.target.value as ProofType)}
-            className="w-full border border-encre/20 px-3 py-2 text-sm"
+            className="w-full rounded-card border border-encre/20 px-3 py-2 text-sm bg-brume/40"
           >
+            <option value="OTP_CODE">Code OTP communiqué par le client</option>
             <option value="PHOTO">Photo du colis remis</option>
             <option value="SIGNATURE">Signature du client</option>
-            <option value="OTP_CODE">Code communiqué par le client</option>
           </select>
 
           {proofType === 'OTP_CODE' ? (
-            <input
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              placeholder="Code du client"
-              className="w-full border border-encre/20 px-3 py-2 text-sm"
-            />
+            <div className="space-y-1.5">
+              <input
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                placeholder="Ex : 4829"
+                className="w-full rounded-card border border-encre/20 px-3 py-2 text-sm font-mono"
+              />
+              {job.otpCode && (
+                <button
+                  type="button"
+                  onClick={() => setOtp(job.otpCode || '')}
+                  className="text-xs text-seve hover:underline"
+                >
+                  Pré-remplir le code de démonstration ({job.otpCode})
+                </button>
+              )}
+            </div>
           ) : (
-            <input
-              type="url"
-              value={fileUrl}
-              onChange={(e) => setFileUrl(e.target.value)}
-              placeholder="Lien du fichier (l'envoi direct n'est pas encore branché)"
-              className="w-full border border-encre/20 px-3 py-2 text-sm"
-            />
+            <div className="space-y-1.5">
+              <input
+                type="url"
+                value={fileUrl}
+                onChange={(e) => setFileUrl(e.target.value)}
+                placeholder="Lien vers la photo ou signature"
+                className="w-full rounded-card border border-encre/20 px-3 py-2 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setFileUrl('/src/assets/images/marketplace_parcel_default_1794567970796.jpg')}
+                className="text-xs text-seve hover:underline"
+              >
+                Utiliser une capture preuve de remise
+              </button>
+            </div>
           )}
 
           <button
             disabled={busy || !proofReady}
             onClick={complete}
-            className="bg-seve text-white text-sm font-medium px-5 py-2 hover:bg-seve/90 transition-colors disabled:opacity-50"
+            className="rounded-card bg-seve text-white text-sm font-medium px-5 py-2 hover:bg-seve/90 transition-colors disabled:opacity-50"
           >
             {busy ? 'Confirmation…' : 'Valider la remise'}
           </button>

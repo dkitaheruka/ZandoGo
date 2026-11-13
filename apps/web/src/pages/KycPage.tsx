@@ -98,13 +98,13 @@ export function KycPage() {
 
   return (
     <div className="mx-auto max-w-lg px-6 py-12">
-      <h1 className="font-display text-3xl font-semibold">Vérification d'identité</h1>
-      <p className="mt-2 text-encre/60">
-        Requise pour activer une boutique vendeur ou un compte livreur.
+      <h1 className="font-display text-3xl font-bold text-nuit">Vérification d'identité</h1>
+      <p className="mt-2 text-xs text-encre/70">
+        Requise pour activer une boutique vendeur ou un compte livreur sur la place de marché ZandoGo.
       </p>
 
       {documentsError && (
-        <div role="alert" className="mt-6 rounded-lg border border-wax/30 bg-wax/10 p-4 text-sm text-wax">
+        <div role="alert" className="mt-6 rounded-card border border-wax/30 bg-wax/10 p-4 text-xs text-wax">
           <p>{documentsError}</p>
           <button type="button" onClick={() => void loadDocuments()} className="mt-2 font-medium underline">
             Réessayer
@@ -113,13 +113,13 @@ export function KycPage() {
       )}
 
       {error && (
-        <div role="alert" className="mt-6 rounded-lg border border-wax/30 bg-wax/10 p-4 text-sm text-wax">
+        <div role="alert" className="mt-6 rounded-card border border-wax/30 bg-wax/10 p-4 text-xs text-wax">
           <p>{error}</p>
         </div>
       )}
 
       {loading ? (
-        <p className="mt-8 text-encre/50" role="status">Chargement de vos documents…</p>
+        <p className="mt-8 text-encre/50 text-xs font-mono" role="status">Chargement de vos documents…</p>
       ) : documents.length > 0 ? (
         <div className="mt-8 space-y-3">
           {documents.map((doc) => {
@@ -127,15 +127,15 @@ export function KycPage() {
             return (
               <div
                 key={doc.id}
-                className="flex items-center justify-between rounded-lg border border-encre/10 p-4"
+                className="flex items-center justify-between rounded-card border border-encre/10 bg-white p-4 shadow-xs"
               >
                 <div>
-                  <p>{TYPE_LABEL[doc.type]}</p>
-                  <p className="mt-1 text-xs text-encre/50">
+                  <p className="font-semibold text-nuit text-sm">{TYPE_LABEL[doc.type]}</p>
+                  <p className="mt-1 text-xs text-encre/50 font-mono">
                     Envoyé le {new Date(doc.createdAt).toLocaleDateString('fr-FR')}
                   </p>
                 </div>
-                <span className={`text-xs font-medium rounded-full px-3 py-1 ${status.className}`} role="status">
+                <span className={`text-xs font-display font-semibold rounded-card px-3 py-1 ${status.className}`} role="status">
                   {status.label}
                 </span>
               </div>
@@ -143,30 +143,30 @@ export function KycPage() {
           })}
         </div>
       ) : (
-        <p className="mt-8 text-sm text-encre/50">Aucun document envoyé pour le moment.</p>
+        <p className="mt-8 text-xs text-encre/50">Aucun document envoyé pour le moment.</p>
       )}
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+      <form onSubmit={handleSubmit} className="mt-8 space-y-5 rounded-card bg-white border border-encre/10 p-6 shadow-xs">
         <div>
-          <label htmlFor="kyc-type" className="block text-sm font-medium mb-1.5">
-            Type de document
+          <label htmlFor="kyc-type" className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
+            Type de document *
           </label>
           <select
             id="kyc-type"
             value={type}
             onChange={(e) => setType(e.target.value as KycType)}
             disabled={submitting}
-            className="w-full rounded-lg border border-encre/20 px-4 py-2.5"
+            className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre outline-none focus:border-seve"
           >
-            <option value="VENDOR_LICENSE">Document vendeur</option>
-            <option value="DRIVER_LICENSE">Permis / pièce livreur</option>
-            <option value="ID_CARD">Pièce d'identité</option>
+            <option value="VENDOR_LICENSE">Document vendeur (Registre de commerce / Patente)</option>
+            <option value="DRIVER_LICENSE">Permis de conduire / Pièce livreur</option>
+            <option value="ID_CARD">Carte d'électeur / Passeport RDC</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1.5" htmlFor="kyc-file">
-            Document (JPEG, PNG ou PDF, 5 Mo maximum)
+          <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5" htmlFor="kyc-file">
+            Document (JPEG, PNG ou PDF, 5 Mo maximum) *
           </label>
           <input
             id="kyc-file"
@@ -179,20 +179,19 @@ export function KycPage() {
               setFile(selectedFile);
               setError(selectedFile ? validateFile(selectedFile, 'KYC_DOCUMENT') : null);
             }}
-            className="w-full rounded-lg border border-encre/20 px-4 py-2.5 text-sm"
+            className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre file:mr-4 file:py-1.5 file:px-3 file:rounded-card file:border-0 file:text-xs file:font-semibold file:bg-nuit file:text-brume hover:file:bg-nuit/90"
           />
-          <p className="mt-1.5 text-xs text-encre/50">
-            Votre document est stocké de façon privée. Il n'est consulté que par l'équipe de
-            vérification, et chaque consultation est enregistrée.
+          <p className="mt-1.5 text-[11px] text-encre/50">
+            Votre document est stocké de façon privée et chiffrée. Il n'est consulté que par l'équipe de vérification ZandoGo.
           </p>
         </div>
 
         <button
           type="submit"
           disabled={submitting || loading}
-          className="w-full rounded-full bg-nuit text-brume font-medium py-3 hover:bg-nuit/90 transition-colors disabled:opacity-60"
+          className="w-full rounded-card bg-seve text-brume font-display font-bold py-3.5 hover:bg-seve/90 transition-colors disabled:opacity-60 text-xs shadow-xs"
         >
-          {submitting ? 'Envoi…' : 'Soumettre le document'}
+          {submitting ? 'Envoi en cours…' : 'Soumettre le document'}
         </button>
       </form>
     </div>

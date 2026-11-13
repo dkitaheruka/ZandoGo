@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
@@ -13,40 +13,60 @@ import {
   Sparkles,
   FileText,
   Truck,
+  User,
+  Heart,
+  ChevronDown,
+  Bike,
+  Scale,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
+import { useStore } from '../lib/store-context';
 import { NotificationsBell } from './NotificationsBell';
-import { api } from '../lib/api';
-import type { Cart } from '../lib/types';
+import { CartDrawer } from './CartDrawer';
+import { CompareDrawer } from './CompareDrawer';
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { currency, setCurrency, exchangeRate, cartCount, openCart, wishlistIds, compareProducts, setCompareOpen } =
+    useStore();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [cartCount, setCartCount] = useState<number>(0);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
 
   const isConsoleRoute = location.pathname.startsWith('/admin') || location.pathname.startsWith('/vendor');
 
-  // Fetch cart item count
+  // Keyboard shortcut Cmd/Ctrl+K to focus search
   useEffect(() => {
-    if (user && !isConsoleRoute) {
-      api
-        .get<Cart>('/cart')
-        .then(({ data }) => {
-          const count = data?.items?.reduce((sum, it) => sum + (it.quantity || 1), 0) || 0;
-          setCartCount(count);
-        })
-        .catch(() => {});
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
     }
-  }, [user, location.pathname, isConsoleRoute]);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
-  // If in Admin or Vendor console, bypass consumer header/footer so they retain full-screen SaaS UI
+  // Close account menu when clicking outside
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
   if (isConsoleRoute) {
     return <>{children}</>;
   }
 
   async function handleLogout() {
+    setAccountMenuOpen(false);
     await logout();
     navigate('/');
   }
@@ -64,155 +84,276 @@ export function Layout({ children }: { children: ReactNode }) {
   const isVendor = user?.roles.some((r) => r.role === 'VENDOR_OWNER' || r.role === 'VENDOR_STAFF');
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-800 antialiased font-sans">
-      {/* Top Utility Bar (Signature Congolese Green #172320 strip) */}
-      <div className="bg-[#172320] text-emerald-100/90 text-[11px] font-mono border-b border-emerald-950">
-        <div className="mx-auto max-w-7xl px-6 h-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-1.5 text-emerald-300 font-semibold">
-              <ShieldCheck className="w-3.5 h-3.5" />
+    <div className="min-h-screen flex flex-col bg-brume text-encre antialiased font-sans">
+      {/* Top Utility Bar */}
+      <div className="bg-nuit text-brume/90 text-[11px] font-sans border-b border-white/10">
+        <div className="mx-auto max-w-7xl px-6 h-9 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="inline-flex items-center gap-1.5 text-safran font-semibold truncate">
+              <ShieldCheck className="w-3.5 h-3.5 text-safran shrink-0" />
               <span>Protection Acheteur ZandoGo : Séquestre 100% Garanti</span>
             </span>
-            <span className="hidden md:inline text-emerald-800">|</span>
-            <span className="hidden md:inline-flex items-center gap-1 text-emerald-200/80">
-              <Globe className="w-3 h-3 text-emerald-400" />
-              <span>Toute la RDC (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani, etc.)</span>
+            <span className="hidden lg:inline text-white/20">|</span>
+            <span className="hidden lg:inline-flex items-center gap-1 text-brume/75 truncate">
+              <Globe className="w-3 h-3 text-seve shrink-0" />
+              <span>Toute la RDC (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani)</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-4 text-emerald-200/80">
-            <span>Parité : 1 USD = 2 850 CDF</span>
+          <div className="flex items-center gap-3 text-brume/75 shrink-0">
+            <span className="hidden sm:inline font-mono text-safran tabular-nums">
+              1 USD = {exchangeRate.toLocaleString('fr-FR')} CDF
+            </span>
+
+            {/* Live Currency Toggle */}
+            <div className="inline-flex items-center rounded-md bg-white/10 p-0.5 border border-white/15">
+              <button
+                type="button"
+                onClick={() => setCurrency('USD')}
+                className={`px-2 py-0.5 rounded text-[10px] font-display font-bold transition ${
+                  currency === 'USD' ? 'bg-safran text-nuit' : 'text-brume/75 hover:text-brume'
+                }`}
+              >
+                USD $
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrency('CDF')}
+                className={`px-2 py-0.5 rounded text-[10px] font-display font-bold transition ${
+                  currency === 'CDF' ? 'bg-safran text-nuit' : 'text-brume/75 hover:text-brume'
+                }`}
+              >
+                CDF
+              </button>
+            </div>
+
             {isAdmin && (
-              <Link to="/admin" className="text-emerald-300 hover:underline font-bold">
-                Console Admin ↗
+              <Link to="/admin" className="hidden md:inline text-safran hover:underline font-semibold font-display">
+                Admin ↗
               </Link>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main Header Bar (ZandoGo branding + search + professional icon menus) */}
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-30 shadow-xs">
-        <div className="mx-auto max-w-7xl px-6 h-18 flex items-center justify-between gap-6">
+      {/* Main Header Bar */}
+      <header className="border-b border-encre/10 bg-white/95 backdrop-blur-md sticky top-0 z-30 shadow-xs">
+        <div className="mx-auto max-w-7xl px-6 h-18 flex items-center justify-between gap-4 md:gap-6">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
-            <div className="h-9 w-9 rounded-xl bg-emerald-700 text-white font-bold flex items-center justify-center font-display text-lg shadow-xs group-hover:scale-105 transition-transform">
+            <div className="h-9 w-9 rounded-card bg-nuit text-safran font-bold flex items-center justify-center font-display text-lg shadow-xs group-hover:scale-105 transition-transform">
               ZG
             </div>
             <div>
-              <span className="text-2xl font-display font-extrabold tracking-tight text-slate-900">
-                Zando<span className="text-emerald-700">Go</span>
+              <span className="text-2xl font-display font-extrabold tracking-tight text-nuit">
+                Zando<span className="text-seve">Go</span>
               </span>
-              <span className="block text-[9px] font-mono font-semibold uppercase tracking-wider text-slate-400 -mt-1">
+              <span className="block text-[9px] font-display font-semibold uppercase tracking-wider text-encre/50 -mt-1">
                 Marketplace RDC
               </span>
             </div>
           </Link>
 
-          {/* Global Search Bar with Green Theme */}
+          {/* Global Search Bar */}
           <form
             onSubmit={handleSearchSubmit}
-            className="hidden sm:flex flex-1 max-w-xl items-center rounded-xl border-2 border-emerald-700/80 bg-white overflow-hidden shadow-xs focus-within:border-emerald-700 transition"
+            className="hidden sm:flex flex-1 max-w-xl items-center rounded-card border border-encre/20 bg-white overflow-hidden shadow-xs focus-within:border-seve focus-within:ring-1 focus-within:ring-seve transition"
           >
-            <div className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border-r border-slate-200 shrink-0 hidden md:block">
-              Tous produits & services
+            <div className="px-3.5 py-2 text-xs font-semibold text-encre/70 bg-brume/70 border-r border-encre/10 shrink-0 hidden lg:block">
+              Catalogue RDC
             </div>
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Que recherchez-vous ? (tissus wax, téléphones, formations PDF, services...)"
-              className="w-full px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 outline-none"
+              placeholder="Rechercher : wax, téléphone, café du Kivu, guide PDF… (Ctrl+K)"
+              className="w-full px-3.5 py-2 text-xs text-encre placeholder-encre/40 outline-none bg-transparent"
             />
             <button
               type="submit"
-              className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 text-xs font-bold transition flex items-center justify-center shrink-0"
+              className="bg-seve hover:bg-seve/90 text-brume px-4 py-2 text-xs font-bold transition flex items-center justify-center shrink-0"
               title="Lancer la recherche"
             >
               <Search className="w-4 h-4" />
             </button>
           </form>
 
-          {/* Professional Icon Menus (Panier, Messagerie, Commandes, Vendeur, User) */}
-          <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            {/* Vendor Space Link Button */}
+          {/* Navigation Icons */}
+          <div className="flex items-center gap-1.5 md:gap-2.5 shrink-0">
             <Link
               to={isVendor ? '/vendor' : '/vendor/new'}
-              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-50 transition"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-card border border-encre/15 hover:border-seve text-xs font-semibold text-encre hover:text-seve bg-brume/50 transition"
             >
-              <Store className="w-4 h-4 text-emerald-700" />
+              <Store className="w-4 h-4 text-seve" />
               <span>{isVendor ? 'Espace Vendeur' : 'Vendre sur ZandoGo'}</span>
             </Link>
 
-            {/* Messagerie & Négociations Icon */}
+            {compareProducts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCompareOpen(true)}
+                className="p-2 rounded-xl text-encre/70 hover:text-nuit hover:bg-encre/5 transition relative"
+                title="Comparer les produits sélectionnés"
+              >
+                <Scale className="w-5 h-5" />
+                <span className="absolute -top-0.5 -right-0.5 bg-safran text-nuit font-bold font-display text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
+                  {compareProducts.length}
+                </span>
+              </button>
+            )}
+
             <Link
               to="/chat"
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition relative"
-              title="Messagerie & Négociations Fournisseurs"
+              className="p-2 rounded-xl text-encre/70 hover:text-encre hover:bg-encre/5 transition relative"
+              title="Messagerie & Négociations"
               aria-label="Messagerie"
             >
               <MessageSquare className="w-5 h-5" />
             </Link>
 
-            {/* Commandes Icon */}
             <Link
               to="/orders"
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition relative"
-              title="Mes Commandes (Payées & Non payées)"
+              className="p-2 rounded-xl text-encre/70 hover:text-encre hover:bg-encre/5 transition relative"
+              title="Mes Commandes"
               aria-label="Commandes"
             >
               <Package className="w-5 h-5" />
             </Link>
 
-            {/* Notifications */}
             {user && <NotificationsBell />}
 
-            {/* Panier Icon with Badge */}
-            <Link
-              to="/cart"
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition relative"
-              title="Panier d'achats"
+            {/* Quick Cart Drawer Trigger */}
+            <button
+              type="button"
+              onClick={openCart}
+              className="p-2 rounded-xl text-encre/70 hover:text-encre hover:bg-encre/5 transition relative"
+              title="Ouvrir le panier rapide"
               aria-label="Panier"
             >
               <ShoppingCart className="w-5 h-5" />
               {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-emerald-700 text-white font-bold font-mono text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center shadow-xs">
+                <span className="absolute -top-0.5 -right-0.5 bg-wax text-brume font-bold font-display text-[10px] rounded-full h-4 min-w-4 px-1 flex items-center justify-center shadow-xs tabular-nums">
                   {cartCount}
                 </span>
               )}
-            </Link>
+            </button>
 
-            <div className="h-5 w-px bg-slate-200 mx-1" />
+            <div className="h-5 w-px bg-encre/10 mx-1" />
 
-            {/* Account / User */}
+            {/* User Account Dropdown */}
             {user ? (
-              <div className="flex items-center gap-2">
-                <div
-                  className="h-8 w-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0"
-                  title={user.fullName || user.email || 'Compte'}
-                >
-                  {(user.fullName || 'U')[0]}
-                </div>
+              <div className="relative" ref={accountMenuRef}>
                 <button
                   type="button"
-                  onClick={handleLogout}
-                  className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition"
-                  title="Déconnexion"
+                  onClick={() => setAccountMenuOpen((v) => !v)}
+                  className="flex items-center gap-2 p-1 pr-2 rounded-full hover:bg-encre/5 transition"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <div className="h-8 w-8 rounded-full bg-nuit text-safran font-display font-bold text-xs flex items-center justify-center shrink-0 border border-white/10">
+                    {(user.fullName || 'U')[0]}
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-encre/50 hidden sm:block" />
                 </button>
+
+                {accountMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 rounded-card bg-white border border-encre/10 shadow-xl py-2 z-40 text-xs">
+                    <div className="px-4 py-2.5 border-b border-encre/10">
+                      <p className="font-display font-bold text-nuit truncate">{user.fullName}</p>
+                      <p className="text-[11px] text-encre/55 truncate font-mono">{user.email || user.phone}</p>
+                    </div>
+
+                    <div className="py-1">
+                      <Link
+                        to="/profile"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <User className="w-4 h-4 text-seve" />
+                        <span>Mon profil & Adresses RDC</span>
+                      </Link>
+                      <Link
+                        to="/products?favorites=1"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center justify-between px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Heart className="w-4 h-4 text-wax" />
+                          <span>Mes Favoris</span>
+                        </span>
+                        {wishlistIds.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-brume font-mono text-[10px] text-nuit">
+                            {wishlistIds.length}
+                          </span>
+                        )}
+                      </Link>
+                      <Link
+                        to="/orders"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <Package className="w-4 h-4 text-seve" />
+                        <span>Commandes & Factures</span>
+                      </Link>
+                      <Link
+                        to="/kyc"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-seve" />
+                        <span>Vérification d’identité (KYC)</span>
+                      </Link>
+                    </div>
+
+                    <div className="border-t border-encre/10 py-1">
+                      <Link
+                        to="/vendor"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <Store className="w-4 h-4 text-seve" />
+                        <span>Espace Vendeur Pro</span>
+                      </Link>
+                      <Link
+                        to="/delivery"
+                        onClick={() => setAccountMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2 text-encre hover:bg-brume font-medium"
+                      >
+                        <Bike className="w-4 h-4 text-safran" />
+                        <span>Portail Livreur / Coursier</span>
+                      </Link>
+                      {isAdmin && (
+                        <Link
+                          to="/admin"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-nuit hover:bg-brume font-semibold"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-safran" />
+                          <span>Console Administration</span>
+                        </Link>
+                      )}
+                    </div>
+
+                    <div className="border-t border-encre/10 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-2.5 px-4 py-2 text-wax hover:bg-wax/10 font-medium text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Se déconnecter</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Link
-                  to="/login"
-                  className="px-3 py-1.5 text-xs text-slate-700 hover:text-slate-900 font-semibold"
-                >
+                <Link to="/login" className="px-3 py-1.5 text-xs text-encre/80 hover:text-encre font-semibold">
                   Connexion
                 </Link>
                 <Link
                   to="/register"
-                  className="px-3.5 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition shadow-xs"
+                  className="px-4 py-1.5 rounded-card bg-seve text-brume text-xs font-semibold hover:bg-seve/90 transition shadow-xs"
                 >
                   S'inscrire
                 </Link>
@@ -222,29 +363,29 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Secondary Category Navigation Strip */}
-        <div className="border-t border-slate-100 bg-white">
-          <div className="mx-auto max-w-7xl px-6 h-10 flex items-center gap-6 text-xs font-medium text-slate-600 overflow-x-auto">
-            <Link to="/products" className="font-semibold text-slate-900 hover:text-emerald-700 whitespace-nowrap flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5 text-emerald-700" />
+        <div className="border-t border-encre/5 bg-white/70">
+          <div className="mx-auto max-w-7xl px-6 h-10 flex items-center gap-6 text-xs font-medium text-encre/70 overflow-x-auto">
+            <Link to="/products" className="font-semibold text-nuit hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-seve" />
               <span>Toutes les catégories</span>
             </Link>
-            <Link to="/products" className="hover:text-emerald-700 whitespace-nowrap flex items-center gap-1">
-              <Package className="w-3.5 h-3.5 text-emerald-600" />
+            <Link to="/products?type=PHYSICAL" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5 text-seve" />
               <span>Biens physiques & Stocks</span>
             </Link>
-            <Link to="/products" className="hover:text-emerald-700 whitespace-nowrap flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-slate-600" />
+            <Link to="/products?type=DIGITAL" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-encre/60" />
               <span>Numériques & PDF</span>
             </Link>
-            <Link to="/products" className="hover:text-emerald-700 whitespace-nowrap flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+            <Link to="/products?type=SERVICE" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-safran" />
               <span>Services & Prestations</span>
             </Link>
-            <Link to="/orders" className="hover:text-emerald-700 whitespace-nowrap flex items-center gap-1">
-              <Truck className="w-3.5 h-3.5 text-emerald-700" />
+            <Link to="/orders" className="hover:text-seve whitespace-nowrap flex items-center gap-1.5">
+              <Truck className="w-3.5 h-3.5 text-seve" />
               <span>Suivi livraison & Fret</span>
             </Link>
-            <Link to="/chat" className="text-emerald-700 font-semibold hover:underline whitespace-nowrap ml-auto">
+            <Link to="/chat" className="text-seve font-semibold hover:underline whitespace-nowrap ml-auto">
               Discuter d'un produit ou de la livraison &rarr;
             </Link>
           </div>
@@ -254,27 +395,31 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Main Content Area */}
       <main className="flex-1">{children}</main>
 
+      {/* Slide-over Drawers */}
+      <CartDrawer />
+      <CompareDrawer />
+
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white mt-20">
-        <div className="mx-auto max-w-7xl px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-xs text-slate-600">
+      <footer className="border-t border-encre/10 bg-nuit text-brume/80 mt-20">
+        <div className="mx-auto max-w-7xl px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-xs">
           <div>
             <div className="flex items-center gap-2 mb-3">
-              <div className="h-6 w-6 rounded-lg bg-emerald-700 text-white font-bold flex items-center justify-center font-display text-xs">
+              <div className="h-6 w-6 rounded-card bg-seve text-brume font-bold flex items-center justify-center font-display text-xs">
                 ZG
               </div>
-              <span className="font-display font-bold text-slate-900 text-base">ZandoGo</span>
+              <span className="font-display font-bold text-brume text-base">ZandoGo</span>
             </div>
-            <p className="text-slate-500 leading-relaxed">
+            <p className="text-brume/65 leading-relaxed">
               Place de marché universelle de référence en République Démocratique du Congo.
               Vente au détail dès 1 article, commandes groupées et services avec paiement sécurisé sous séquestre.
             </p>
           </div>
 
           <div>
-            <h4 className="font-semibold text-slate-900 uppercase tracking-wider text-[11px] mb-3">
+            <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
               Protection & Confiance
             </h4>
-            <ul className="space-y-2 text-slate-500">
+            <ul className="space-y-2 text-brume/65">
               <li>Paiement sous séquestre ZandoGo</li>
               <li>Fournisseurs vérifiés RCCM</li>
               <li>Négociation de prix directe</li>
@@ -283,10 +428,10 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
 
           <div>
-            <h4 className="font-semibold text-slate-900 uppercase tracking-wider text-[11px] mb-3">
+            <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
               Couverture Logistique RDC
             </h4>
-            <ul className="space-y-2 text-slate-500">
+            <ul className="space-y-2 text-brume/65">
               <li>Grand Kinshasa (coursiers express)</li>
               <li>Lubumbashi & Haut-Katanga</li>
               <li>Goma & Nord-Kivu</li>
@@ -295,13 +440,13 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
 
           <div>
-            <h4 className="font-semibold text-slate-900 uppercase tracking-wider text-[11px] mb-3">
+            <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
               Moyens de Règlement
             </h4>
-            <p className="text-slate-500 mb-2">
+            <p className="text-brume/65 mb-2">
               Orange Money, Airtel Money, M-Pesa Vodacom, Cartes Visa / Mastercard ou espèces à la livraison.
             </p>
-            <span className="font-mono text-slate-400 block text-[10px]">
+            <span className="font-mono text-brume/40 block text-[10px]">
               © {new Date().getFullYear()} ZandoGo RDC. Tous droits réservés.
             </span>
           </div>
