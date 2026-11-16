@@ -6,10 +6,11 @@ export class CreateCategoryDto {
   @MaxLength(80)
   name: string;
 
+  @IsOptional()
   @IsString()
   @Matches(/^[a-z0-9-]+$/)
   @MaxLength(100)
-  slug: string;
+  slug?: string;
 
   @IsOptional()
   @IsString()

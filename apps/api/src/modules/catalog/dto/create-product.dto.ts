@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -42,6 +43,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsIn(['PHYSICAL', 'DIGITAL', 'SERVICE'])
+  productType?: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
 
   @IsString()
   categoryId: string;

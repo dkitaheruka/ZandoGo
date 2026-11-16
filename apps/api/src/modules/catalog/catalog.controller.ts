@@ -24,7 +24,7 @@ export class CatalogController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN, RoleName.VENDOR_OWNER)
   @Post('categories')
   createCategory(@CurrentUser() admin: AuthenticatedUser, @Body() dto: CreateCategoryDto) {
     return this.catalog.createCategory(admin, dto);

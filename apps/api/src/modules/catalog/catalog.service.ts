@@ -28,12 +28,29 @@ export class CatalogService {
   // -------------------------------------------------------------------
 
   async createCategory(admin: AuthenticatedUser, dto: CreateCategoryDto) {
-    const existing = await this.prisma.category.findUnique({ where: { slug: dto.slug } });
+    const baseSlug =
+      dto.slug?.trim() ||
+      dto.name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') ||
+      `cat-${Date.now()}`;
+
+    const existing = await this.prisma.category.findUnique({ where: { slug: baseSlug } });
     if (existing) {
       throw new ConflictException('Ce slug de catégorie est déjà utilisé');
     }
 
-    const category = await this.prisma.category.create({ data: dto });
+    const category = await this.prisma.category.create({
+      data: {
+        name: dto.name.trim(),
+        slug: baseSlug,
+        parentId: dto.parentId,
+        icon: dto.icon,
+      },
+    });
 
     await this.audit.log({
       actorUserId: admin.id,
@@ -136,6 +153,17 @@ export class CatalogService {
     if (store.status !== StoreStatus.ACTIVE) {
       throw new BadRequestException(
         'Votre boutique doit être activée par un admin avant de pouvoir publier des produits',
+      );
+    }
+
+    const requestedType = (dto as { productType?: 'PHYSICAL' | 'DIGITAL' | 'SERVICE' }).productType ?? 'PHYSICAL';
+    const serviceSetting = await this.prisma.platformSetting.findUnique({
+      where: { key: `store_services:${storeId}` },
+    });
+    const enabledServices = (serviceSetting?.value as { enabledServices?: string[] } | null)?.enabledServices;
+    if (Array.isArray(enabledServices) && !enabledServices.includes(requestedType)) {
+      throw new ForbiddenException(
+        `Le service "${requestedType}" n'est pas encore activé sur cette boutique. Activez-le par Mobile Money ou Carte avant de publier.`,
       );
     }
 

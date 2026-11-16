@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Lock, Unlock, BadgeCheck, Megaphone } from 'lucide-react';
+import { Lock, Unlock, BadgeCheck, Megaphone, Zap, Truck } from 'lucide-react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { api } from '../../lib/api';
 import type { VendorStore } from '../../lib/types';
@@ -79,6 +79,52 @@ export function StoresReviewPage() {
       );
     } catch {
       setError('Erreur lors de la mise à jour du blocage des retraits.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function toggleImmediateWithdrawal(store: VendorStore) {
+    const nextEnabled = !store.immediateWithdrawalEnabled;
+    setBusyId(store.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data } = await api.patch<VendorStore>(`/vendors/stores/${store.id}/immediate-withdrawal`, {
+        enabled: nextEnabled,
+      });
+      setStores((prev) =>
+        prev.map((s) =>
+          s.id === store.id ? { ...s, ...data, immediateWithdrawalEnabled: nextEnabled } : s,
+        ),
+      );
+      setSuccess(
+        nextEnabled
+          ? `Retrait immédiat autorisé pour « ${store.storeName} » (contourne le délai de 48h).`
+          : `Règle standard 48h rétablie pour « ${store.storeName} ».`,
+      );
+    } catch {
+      setError('Impossible de modifier l’autorisation de retrait immédiat.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function unlockStoreFunds(store: VendorStore) {
+    setBusyId(store.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data } = await api.post<{ unlockedAmountUsd?: number; message?: string }>(
+        `/wallets/admin/store/${store.id}/unlock-funds`,
+      );
+      setSuccess(
+        data?.message ||
+          `Fonds débloqués immédiatement pour « ${store.storeName} » ($${Number(data?.unlockedAmountUsd || 0).toFixed(2)}).`,
+      );
+      load();
+    } catch {
+      setError('Impossible de débloquer les fonds pour cette boutique.');
     } finally {
       setBusyId(null);
     }
@@ -166,6 +212,18 @@ export function StoresReviewPage() {
                           <span>Retraits bloqués</span>
                         </span>
                       )}
+                      {store.immediateWithdrawalEnabled && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-display font-bold px-2 py-0.5 rounded-card bg-seve text-brume">
+                          <Zap className="w-3 h-3 text-safran" />
+                          <span>Retrait immédiat</span>
+                        </span>
+                      )}
+                      {store.isTransportAgency && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-display font-bold px-2 py-0.5 rounded-card bg-white/10 text-safran">
+                          <Truck className="w-3 h-3" />
+                          <span>Agence ({store.transportDestinations?.length || 0} lignes)</span>
+                        </span>
+                      )}
                     </div>
 
                     <p className="mt-1.5 text-xs text-brume/70 max-w-xl">
@@ -197,6 +255,32 @@ export function StoresReviewPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={busyId === store.id}
+                      onClick={() => toggleImmediateWithdrawal(store)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-card text-xs font-display font-semibold transition-colors disabled:opacity-50 border ${
+                        store.immediateWithdrawalEnabled
+                          ? 'bg-seve/20 text-seve border-seve/40 hover:bg-seve/30'
+                          : 'bg-white/5 text-brume/85 border-white/15 hover:border-safran/40'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5 text-safran" />
+                      <span>
+                        {store.immediateWithdrawalEnabled ? 'Retrait immédiat : Autorisé' : 'Autoriser retrait immédiat'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={busyId === store.id || store.payoutBlocked}
+                      onClick={() => unlockStoreFunds(store)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-card text-xs font-display font-semibold bg-safran/15 text-safran border border-safran/35 hover:bg-safran/25 transition-colors disabled:opacity-40"
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>Débloquer fonds maintenant</span>
+                    </button>
+
                     <button
                       type="button"
                       disabled={busyId === store.id}

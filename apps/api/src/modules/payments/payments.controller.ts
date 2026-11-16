@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
+  Param,
   Post,
+  Query,
   RawBodyRequest,
   Req,
   UseGuards,
@@ -19,9 +22,6 @@ import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
-  // Chaque appel peut déclencher une demande de validation sur le téléphone d'un tiers
-  // (numéro saisi librement) : plafonné. Les webhooks ci-dessous ne le sont JAMAIS : ils
-  // viennent des serveurs de CinetPay/Stripe, pas d'un utilisateur.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @UseGuards(JwtAuthGuard, ThrottlerGuard)
   @Post('initiate')
@@ -29,20 +29,54 @@ export class PaymentsController {
     return this.paymentsService.initiatePayment(user, dto);
   }
 
-  /**
-   * Webhook public (CinetPay ne peut pas envoyer de JWT). La sécurité repose
-   * ici sur la contre-vérification systématique auprès de l'API CinetPay
-   * dans PaymentsService, jamais sur la confiance dans ce payload entrant.
-   */
+  /** Vérifie le statut en direct d'une transaction ou commande */
+  @UseGuards(JwtAuthGuard)
+  @Get('status/:id')
+  checkStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.paymentsService.checkPaymentStatus(user, id);
+  }
+
+  /** Webhook principal neutre (C2B & B2C, vérification HMAC-SHA256) */
+  @Post('callbacks/gateway')
+  handleGatewayCallback(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-maishapay-signature') signature: string | undefined,
+    @Body() payload: Record<string, any>,
+  ) {
+    return this.paymentsService.handleGatewayWebhook(req.rawBody, signature, payload);
+  }
+
+  /** Alias silencieux pour compatibilité webhook */
+  @Post('webhooks/maishapay')
+  handleGatewayWebhookAlias(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-maishapay-signature') signature: string | undefined,
+    @Body() payload: Record<string, any>,
+  ) {
+    return this.paymentsService.handleGatewayWebhook(req.rawBody, signature, payload);
+  }
+
+  /** Callback GET de retour Carte Visa / Mastercard (?status=200&description=APPROVED&...) */
+  @Get('callbacks/card')
+  handleCardRedirect(
+    @Query('status') status?: string,
+    @Query('description') description?: string,
+    @Query('transactionRefId') transactionRefId?: string,
+    @Query('operatorRefId') operatorRefId?: string,
+  ) {
+    return this.paymentsService.handleCardRedirectCallback({
+      status,
+      description,
+      transactionRefId,
+      operatorRefId,
+    });
+  }
+
   @Post('webhooks/cinetpay')
   handleCinetPayWebhook(@Body() payload: any) {
     return this.paymentsService.handleCinetPayWebhook(payload);
   }
 
-  /**
-   * Nécessite le body brut (non parsé en JSON) pour vérifier la signature
-   * Stripe — voir la configuration dédiée de cette route dans main.ts.
-   */
   @Post('webhooks/stripe')
   async handleStripeWebhook(
     @Req() req: RawBodyRequest<Request>,
@@ -54,8 +88,6 @@ export class PaymentsController {
     try {
       return await this.paymentsService.handleStripeWebhook(req.rawBody, signature);
     } catch (err) {
-      // Une signature invalide doit répondre 400, pas 500 : un 500 fait réessayer Stripe sans
-      // fin, et renvoie une erreur serveur à quiconque forge un faux appel.
       if ((err as { type?: string })?.type === 'StripeSignatureVerificationError') {
         throw new BadRequestException('Signature Stripe invalide');
       }

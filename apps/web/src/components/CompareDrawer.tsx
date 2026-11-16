@@ -118,7 +118,7 @@ export function CompareDrawer() {
                       <ShieldCheck className="w-3.5 h-3.5 text-seve" />
                       {p.store.storeName}
                     </span>
-                    <span className="block text-[11px] text-encre/55 mt-0.5">{p.store.city || 'Kinshasa'}</span>
+                    <span className="block text-[11px] text-encre/55 mt-0.5">{p.store.city || 'Goma (Nord-Kivu)'}</span>
                   </td>
                 ))}
               </tr>

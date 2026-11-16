@@ -30,7 +30,7 @@ export function StoreProductsPage() {
       api.get<Product[]>(`/vendors/stores/${storeId}/products`).catch(() => ({ data: [] })),
     ])
       .then(([storeResponse, productsResponse]) => {
-        setStore(storeResponse.data || { id: storeId, storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', status: 'ACTIVE' });
+        setStore(storeResponse.data || { id: storeId, storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', status: 'ACTIVE' });
         setProducts(productsResponse.data || []);
       })
       .catch(() => setError('Impossible de charger le catalogue de cette boutique.'))

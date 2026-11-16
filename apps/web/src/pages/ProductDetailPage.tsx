@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, Link } from 'react-router-dom';
 import {
   ShieldCheck,
   Package,
@@ -22,21 +22,31 @@ import {
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { useStore } from '../lib/store-context';
+import { PaymentOperatorStrip } from '../components/PaymentOperatorLogos';
 import type { Product, ProductReview } from '../lib/types';
 
 const CITY_SHIPPING_BASE: Record<string, { label: string; expressUsd: number; freightUsd: number }> = {
-  Kinshasa: { label: 'Kinshasa (Coursier Moto)', expressUsd: 6.5, freightUsd: 0 },
-  Lubumbashi: { label: 'Lubumbashi (Haut-Katanga)', expressUsd: 14, freightUsd: 8 },
-  Goma: { label: 'Goma (Nord-Kivu)', expressUsd: 15, freightUsd: 9 },
-  Matadi: { label: 'Matadi (Kongo-Central)', expressUsd: 10, freightUsd: 6 },
-  Kisangani: { label: 'Kisangani (Tshopo)', expressUsd: 16, freightUsd: 10 },
+  Goma: { label: 'Goma (Grand Goma · Moto)', expressUsd: 3.5, freightUsd: 0 },
+  Sake: { label: 'Sake (Territoire de Masisi)', expressUsd: 7, freightUsd: 5 },
+  Bukavu: { label: 'Bukavu (Sud-Kivu · Bateau/Fret)', expressUsd: 10, freightUsd: 6 },
+  Butembo: { label: 'Butembo (Nord-Kivu)', expressUsd: 12, freightUsd: 8 },
+  Beni: { label: 'Beni (Nord-Kivu)', expressUsd: 13, freightUsd: 9 },
+  Bunia: { label: 'Bunia (Ituri)', expressUsd: 15, freightUsd: 10 },
+  Kisangani: { label: 'Kisangani (Tshopo · Cargo)', expressUsd: 16, freightUsd: 11 },
+  Lubumbashi: { label: 'Lubumbashi / Kolwezi (Katanga)', expressUsd: 15, freightUsd: 10 },
+  Kinshasa: { label: 'Kinshasa (Fret Aérien/Cargo)', expressUsd: 18, freightUsd: 12 },
+  Matadi: { label: 'Matadi / Kongo-Central', expressUsd: 20, freightUsd: 14 },
+  GisenyiKigali: { label: 'Gisenyi / Kigali (Rwanda · Environs)', expressUsd: 9, freightUsd: 6 },
+  Bujumbura: { label: 'Bujumbura (Burundi · Environs)', expressUsd: 14, freightUsd: 9 },
+  Kampala: { label: 'Kampala (Ouganda · Environs)', expressUsd: 18, freightUsd: 12 },
 };
 
-const KINSHASA_KM_PRESETS = [
-  { label: 'Gombe ↔ Lingwala', km: 4 },
-  { label: 'Victoire ↔ Limete', km: 7 },
-  { label: 'Gombe ↔ Ngaliema', km: 9 },
-  { label: 'Aéroport Ndjili ↔ Gombe', km: 22 },
+const GOMA_KM_PRESETS = [
+  { label: 'Les Volcans ↔ Himbi', km: 4 },
+  { label: 'Himbi ↔ Birere', km: 6 },
+  { label: 'Centre-Ville ↔ Ndosho', km: 7 },
+  { label: 'Aéroport Goma ↔ Lac Vert', km: 9 },
+  { label: 'Goma ↔ Sake', km: 24 },
 ];
 
 export function ProductDetailPage() {
@@ -54,6 +64,7 @@ export function ProductDetailPage() {
     exchangeRate,
   } = useStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [product, setProduct] = useState<Product | null>(null);
   const [variantId, setVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
@@ -61,7 +72,7 @@ export function ProductDetailPage() {
   const [contactError, setContactError] = useState<string | null>(null);
 
   // Landed Cost Simulator
-  const [simCity, setSimCity] = useState<string>('Kinshasa');
+  const [simCity, setSimCity] = useState<string>('Goma');
   const [simPickup, setSimPickup] = useState<'EXPRESS' | 'FREIGHT' | 'PICKUP'>('EXPRESS');
 
   // Reviews
@@ -74,7 +85,7 @@ export function ProductDetailPage() {
   const [negotiationOpen, setNegotiationOpen] = useState(false);
   const [targetPrice, setTargetPrice] = useState<number>(0);
   const [targetQty, setTargetQty] = useState<number>(1);
-  const [targetCity, setTargetCity] = useState('Kinshasa');
+  const [targetCity, setTargetCity] = useState('Goma (Nord-Kivu)');
   const [targetTransportMode, setTargetTransportMode] = useState('Coursier Express Ville (Rapide)');
   const [targetDeliveryFee, setTargetDeliveryFee] = useState<number>(3.5);
   const [negotiationNote, setNegotiationNote] = useState('');
@@ -126,7 +137,7 @@ export function ProductDetailPage() {
   const outOfStock = isPhysical && stockAvailable <= 0;
   const isLowStock = isPhysical && stockAvailable > 0 && stockAvailable <= (product.lowStockThreshold || 5);
 
-  const cityCfg = CITY_SHIPPING_BASE[simCity] || CITY_SHIPPING_BASE.Kinshasa;
+  const cityCfg = CITY_SHIPPING_BASE[simCity] || CITY_SHIPPING_BASE.Goma;
   const simShippingUsd =
     isDigital || isKm
       ? 0
@@ -180,12 +191,12 @@ export function ProductDetailPage() {
 
   async function handleAddToCart() {
     if (!user) {
-      navigate('/login');
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
       return;
     }
     setStatus('adding');
     try {
-      await api.post('/cart/items', { productVariantId: variantId, quantity });
+      await api.post('/cart/items', { productVariantId: variantId || product?.id, productId: product?.id, quantity });
       await refreshCart();
       setStatus('added');
     } catch {
@@ -196,7 +207,7 @@ export function ProductDetailPage() {
   async function handleSendNegotiation(e: FormEvent) {
     e.preventDefault();
     if (!user) {
-      navigate('/login');
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
       return;
     }
     setNegotiationSubmitting(true);
@@ -341,6 +352,9 @@ export function ProductDetailPage() {
             <p className="text-brume/75 leading-relaxed text-[11px]">
               Fonds bloqués sous séquestre sécurisé. Le vendeur n’est crédité qu’après confirmation de livraison et d’inspection conforme de votre part.
             </p>
+            <div className="pt-2 border-t border-white/10">
+              <PaymentOperatorStrip compact dark />
+            </div>
           </div>
 
           {/* Interactive B2B / RDC Landed Cost Simulator */}
@@ -426,14 +440,14 @@ export function ProductDetailPage() {
                   <span>Annonce Sponsorisée</span>
                 </span>
               )}
-              <span className="text-encre/50">· {product.store.city || 'Kinshasa (RDC)'}</span>
+              <span className="text-encre/50">· {product.store.city || 'Goma (Nord-Kivu)'}</span>
             </div>
 
             <button
               type="button"
               onClick={async () => {
                 if (!user) {
-                  navigate('/login');
+                  navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
                   return;
                 }
                 try {
@@ -543,7 +557,7 @@ export function ProductDetailPage() {
                 <span>Téléchargement Numérique Direct · Aucune livraison requise ($0)</span>
               </p>
               <p className="text-encre/80 mt-1 leading-relaxed">
-                Livre / Document PDF ({product.digitalFileSize || '18 Mo'}). Juste après validation du paiement MaishaPay, votre lien de téléchargement direct est activé et transmis par SMS Africa’s Talking.
+                Livre / Document PDF ({product.digitalFileSize || '18 Mo'}). Juste après validation de votre paiement (Airtel Money, M-Pesa Vodacom, Orange Money, MTN MoMo ou Carte), votre lien de téléchargement direct est activé et transmis par SMS Africa’s Talking.
               </p>
             </div>
           )}
@@ -559,6 +573,35 @@ export function ProductDetailPage() {
               </p>
             </div>
           )}
+
+          {product.store.isTransportAgency &&
+            product.store.transportDestinations &&
+            product.store.transportDestinations.length > 0 && (
+              <div className="p-4 rounded-card bg-white border border-seve/30 text-xs space-y-2.5 shadow-xs">
+                <p className="font-display font-bold text-nuit uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-seve" />
+                  <span>Lignes & Destinations desservies par cette Agence</span>
+                </p>
+                <div className="divide-y divide-encre/10">
+                  {product.store.transportDestinations.map((dest) => (
+                    <div key={dest.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="font-display font-bold text-nuit">
+                          {dest.originCity} &rarr; {dest.destinationCity}
+                        </span>
+                        <span className="block text-[10px] text-encre/60 font-mono">
+                          {dest.vehicleMode} · Délai : {dest.estimatedDelay}
+                        </span>
+                      </div>
+                      <span className="font-display font-bold text-seve tabular-nums">
+                        {formatPrimaryPrice(dest.basePriceUsd)}
+                        {dest.pricePerKmUsd ? ` (+${formatPrimaryPrice(dest.pricePerKmUsd)}/km)` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           {isPhysical && (
             <div className="p-3.5 rounded-card bg-white border border-encre/10 text-xs flex items-center justify-between">
@@ -688,7 +731,7 @@ export function ProductDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {KINSHASA_KM_PRESETS.map((preset) => (
+                {GOMA_KM_PRESETS.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
@@ -1019,13 +1062,20 @@ export function ProductDetailPage() {
                       onChange={(e) => setTargetCity(e.target.value)}
                       className="w-full px-3 py-2 rounded-card border border-encre/20 font-medium text-xs outline-none bg-white focus:border-seve text-encre"
                     >
+                      <option value="Goma (Nord-Kivu)">Goma (Nord-Kivu)</option>
+                      <option value="Sake (Masisi)">Sake (Masisi)</option>
+                      <option value="Bukavu (Sud-Kivu)">Bukavu (Sud-Kivu)</option>
+                      <option value="Butembo (Nord-Kivu)">Butembo (Nord-Kivu)</option>
+                      <option value="Beni (Nord-Kivu)">Beni (Nord-Kivu)</option>
+                      <option value="Bunia (Ituri)">Bunia (Ituri)</option>
+                      <option value="Kisangani (Tshopo)">Kisangani (Tshopo)</option>
+                      <option value="Lubumbashi / Kolwezi (Katanga)">Lubumbashi / Kolwezi (Katanga)</option>
                       <option value="Kinshasa">Kinshasa</option>
-                      <option value="Lubumbashi (Haut-Katanga)">Lubumbashi</option>
-                      <option value="Goma (Nord-Kivu)">Goma</option>
-                      <option value="Kisangani (Tshopo)">Kisangani</option>
-                      <option value="Matadi (Kongo-Central)">Matadi</option>
-                      <option value="Bukavu (Sud-Kivu)">Bukavu</option>
-                      <option value="Kolwezi (Lualaba)">Kolwezi</option>
+                      <option value="Matadi (Kongo-Central)">Matadi (Kongo-Central)</option>
+                      <option value="Kananga / Mbuji-Mayi (Kasaï)">Kananga / Mbuji-Mayi (Kasaï)</option>
+                      <option value="Gisenyi / Kigali (Rwanda)">Gisenyi / Kigali (Rwanda)</option>
+                      <option value="Bujumbura (Burundi)">Bujumbura (Burundi)</option>
+                      <option value="Kampala (Ouganda)">Kampala (Ouganda)</option>
                     </select>
                   </div>
 
@@ -1053,10 +1103,10 @@ export function ProductDetailPage() {
                     onChange={(e) => setTargetTransportMode(e.target.value)}
                     className="w-full px-3 py-2 rounded-card border border-encre/20 font-medium text-xs outline-none bg-white focus:border-seve text-encre"
                   >
-                    <option value="Coursier Express Ville (Rapide)">Coursier Express Ville (Moto/Voiture)</option>
+                    <option value="Coursier Express Goma (Moto/Voiture)">Coursier Express Goma (Moto/Voiture)</option>
                     <option value="Retrait direct en boutique (Gratuit)">Retrait direct en boutique ($0.00)</option>
-                    <option value="Bus / Agence Interurbaine (Fret provincial)">Bus / Agence Interurbaine (Fret inter-provinces)</option>
-                    <option value="Transporteur Fret Fluvial / Cargo">Fret Aérien / Fluvial Fleuve Congo</option>
+                    <option value="Bus / Agence Interurbaine (Nord & Sud-Kivu)">Bus / Agence Interurbaine (Nord & Sud-Kivu)</option>
+                    <option value="Bateau Lac Kivu / Fret National">Bateau Lac Kivu (Bukavu) / Fret Cargo</option>
                   </select>
                 </div>
               </div>
@@ -1067,7 +1117,7 @@ export function ProductDetailPage() {
                   rows={2}
                   value={negotiationNote}
                   onChange={(e) => setNegotiationNote(e.target.value)}
-                  placeholder="Ex : Besoin urgent pour ce vendredi à Gombe..."
+                  placeholder="Ex : Besoin urgent pour ce vendredi à Himbi / Les Volcans..."
                   className="w-full px-3.5 py-2 rounded-card border border-encre/20 text-xs outline-none focus:border-seve bg-white text-encre"
                 />
               </div>

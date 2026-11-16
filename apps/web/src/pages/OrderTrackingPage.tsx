@@ -105,7 +105,7 @@ export function OrderTrackingPage() {
     };
   }, [delivery?.id]);
 
-  // Smooth preview telemetry simulation along the Kinshasa route
+  // Smooth preview telemetry simulation along the Goma route
   useEffect(() => {
     if (!delivery || !simulating || delivery.status === 'DELIVERED') return;
     const timer = window.setInterval(() => {
@@ -167,7 +167,7 @@ export function OrderTrackingPage() {
           <p className="text-xs text-encre/60 mt-1">
             Retrait : <strong className="text-nuit">{delivery.subOrder.store.storeName}</strong> → Livraison :{' '}
             <strong className="text-nuit">
-              {delivery.subOrder.order.deliveryAddress?.commune || 'Gombe'},{' '}
+              {delivery.subOrder.order.deliveryAddress?.commune || 'Goma (Himbi)'},{' '}
               {delivery.subOrder.order.deliveryAddress?.quartier || 'Centre'}
             </strong>
           </p>
@@ -247,10 +247,10 @@ export function OrderTrackingPage() {
               </defs>
               <rect width="600" height="280" fill="url(#grid)" />
 
-              {/* Stylized Kinshasa river & main boulevards */}
+              {/* Stylized Lake Kivu & Goma main boulevards */}
               <path d="M 0 38 Q 220 12 420 44 T 600 28" fill="none" stroke="#26735B" strokeOpacity="0.16" strokeWidth="26" />
               <text x="20" y="25" fontSize="10" fill="#26735B" opacity="0.6" fontFamily="monospace">
-                FLEUVE CONGO
+                LAC KIVU · GOMA
               </text>
               <path d="M 30 230 L 570 95" stroke="#202A27" strokeOpacity="0.08" strokeWidth="8" strokeLinecap="round" />
               <path d="M 140 50 L 340 265" stroke="#202A27" strokeOpacity="0.07" strokeWidth="6" strokeLinecap="round" />
@@ -285,7 +285,7 @@ export function OrderTrackingPage() {
               <circle cx={p2.x} cy={p2.y} r="10" fill="#B84C43" stroke="#F6F4EE" strokeWidth="3" />
               <rect x={p2.x - 135} y={p2.y - 34} width="142" height="24" rx="6" fill="#172320" />
               <text x={p2.x - 126} y={p2.y - 18} fontSize="10" fontWeight="bold" fill="#F2B84B" fontFamily="sans-serif">
-                Client · {delivery.subOrder.order.deliveryAddress?.commune || 'Gombe'}
+                Client · {delivery.subOrder.order.deliveryAddress?.commune || 'Goma (Himbi)'}
               </text>
 
               {/* Moving Courier Marker */}
@@ -349,7 +349,7 @@ export function OrderTrackingPage() {
                 <div>
                   <p className="text-xs font-bold text-nuit">{delivery.agent.user.fullName}</p>
                   <p className="text-[11px] text-encre/60">
-                    {delivery.agent.vehicleType || 'Moto Express'} · {delivery.distanceKm ? `${delivery.distanceKm} km` : 'Kinshasa'}
+                    {delivery.agent.vehicleType || 'Moto Express'} · {delivery.distanceKm ? `${delivery.distanceKm} km` : 'Goma · Nord-Kivu'}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

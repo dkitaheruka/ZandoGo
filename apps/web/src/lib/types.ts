@@ -12,8 +12,10 @@ export interface User {
 
 export interface Address {
   id: string;
+  email?: string;
   commune?: string | null;
   quartier: string;
+  ville?: string | null;
   referencePoint?: string | null;
   latitude: number;
   longitude: number;
@@ -110,10 +112,22 @@ export interface Product {
     verifiedSupplier?: boolean;
     isCertified?: boolean;
     hasMonthlyAd?: boolean;
+    isTransportAgency?: boolean;
+    transportDestinations?: TransportDestination[];
   };
   category?: { id: string; name: string };
   rating?: number;
   reviewCount?: number;
+}
+
+export interface TransportDestination {
+  id: string;
+  originCity: string;
+  destinationCity: string;
+  basePriceUsd: number;
+  pricePerKmUsd?: number;
+  estimatedDelay: string;
+  vehicleMode: string;
 }
 
 export interface DeliveryOption {
@@ -128,13 +142,20 @@ export interface DeliveryOption {
   badgeText?: string;
 }
 
+export type StoreServiceModule = 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
+
 export interface PlatformPricing {
   storeCreationFeeUsd: number;
+  servicePhysicalFeeUsd: number;
+  serviceDigitalFeeUsd: number;
+  servicePrestationFeeUsd: number;
   certificationMonthlyFeeUsd: number;
   certificationQuarterlyFeeUsd: number;
   adEssentialMonthlyFeeUsd: number;
   adProCarouselMonthlyFeeUsd: number;
   defaultCommissionPercent: number;
+  paymentTransactionFeePercent: number;
+  allowImmediateVendorWithdrawal: boolean;
   updatedAt?: string;
 }
 
@@ -144,6 +165,11 @@ export interface VendorStore {
   slug: string;
   description?: string | null;
   storeType?: 'RETAIL' | 'DIGITAL' | 'SERVICES' | 'LOGISTICS';
+  enabledServices?: StoreServiceModule[];
+  serviceFeesPaidUsd?: Record<string, number>;
+  isTransportAgency?: boolean;
+  transportDestinations?: TransportDestination[];
+  immediateWithdrawalEnabled?: boolean;
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED';
   fulfillmentMode?: string;
   commissionRate?: number;
@@ -152,7 +178,8 @@ export interface VendorStore {
   payoutBlocked?: boolean;
   payoutBlockReason?: string | null;
   creationFeePaidUsd?: number;
-  maishaPayRef?: string;
+  paymentRef?: string;
+  paymentOperator?: string;
   isCertified?: boolean;
   certificationStatus?: 'NONE' | 'ACTIVE' | 'EXPIRED';
   certificationFeeUsd?: number;
@@ -170,6 +197,8 @@ export interface AppNotification {
   body: string;
   channel?: 'IN_APP' | 'SMS_AFRICASTALKING';
   smsRecipient?: string;
+  actionUrl?: string;
+  actionLabel?: string;
   isRead: boolean;
   createdAt: string;
 }
@@ -229,11 +258,17 @@ export interface Order {
   status: OrderStatus;
   isPaid?: boolean;
   paymentStatus?: 'PAID' | 'UNPAID';
-  paymentGateway?: 'MAISHAPAY' | 'CASH_ON_DELIVERY';
-  maishaPayRef?: string;
+  paymentGateway?: 'MOBILE_MONEY' | 'CARD' | 'CASH_ON_DELIVERY';
+  paymentOperator?: string;
+  paymentRef?: string;
   escrowStatus?: 'HELD' | 'RELEASED_TO_VENDOR' | 'REFUNDED_TO_BUYER';
+  paidAt?: string;
+  escrowReleaseAt?: string;
   createdAt: string;
   total: string | number;
+  transactionFeePercent?: number;
+  transactionFeeAmount?: number;
+  chargedTotal?: number;
   deliveryFee?: number;
   noDeliveryNeeded?: boolean;
   deliveryNegotiationStatus?: 'NONE' | 'PENDING_DRIVER' | 'COUNTERED' | 'AGREED';
@@ -246,10 +281,17 @@ export interface Order {
     title: string;
     downloadUrl: string;
     fileName: string;
+    token?: string;
+    autoDispatched?: boolean;
+    autoDispatchedAt?: string;
+    fileUrl?: string;
   }[];
   smsDispatches?: SmsDispatchRecord[];
   subOrders: {
     id: string;
+    storeId?: string;
+    status?: string;
+    autoFulfilled?: boolean;
     store: { storeName: string };
     items: {
       id: string;
@@ -373,6 +415,7 @@ export interface WalletSummary {
   lockedEscrowUsd: number;
   totalEarnedUsd: number;
   currency: Currency;
+  immediateWithdrawalAuthorized?: boolean;
   payoutBlocked?: boolean;
   payoutBlockReason?: string | null;
   blockingDisputes?: { id: string; orderNumber: string; reason: string }[];
@@ -392,4 +435,50 @@ export interface ExchangeRatePayload {
   history?: ExchangeRateHistoryItem[];
 }
 
+export interface AnalyticsRevenuePoint {
+  label: string;
+  revenueUsd: number;
+  ordersCount: number;
+}
+
+export interface AnalyticsSegmentItem {
+  label: string;
+  value: number;
+  color?: string;
+}
+
+export interface VendorAnalyticsPayload {
+  storeId: string;
+  storeName: string;
+  kpis: {
+    grossRevenueUsd: number;
+    netVendorUsd: number;
+    platformCommissionUsd: number;
+    totalOrders: number;
+    paidOrders: number;
+    averageBasketUsd: number;
+  };
+  revenueSeries: AnalyticsRevenuePoint[];
+  productTypeBreakdown: AnalyticsSegmentItem[];
+  statusBreakdown: AnalyticsSegmentItem[];
+  topProducts: { title: string; qty: number; revenueUsd: number }[];
+}
+
+export interface AdminAnalyticsPayload {
+  kpis: {
+    grossVolumeUsd: number;
+    totalOrders: number;
+    activeStores: number;
+    totalStores: number;
+    openDisputes: number;
+    paymentTransactionFeePercent: number;
+    totalTransactionFeesUsd: number;
+    platformCommissionEarnedUsd: number;
+    allowImmediateVendorWithdrawal: boolean;
+  };
+  revenueSeries: AnalyticsRevenuePoint[];
+  paymentMethods: { label: string; count: number; volumeUsd: number; color?: string }[];
+  storeRevenueSeries: { label: string; revenueUsd: number; ordersCount: number }[];
+  regionalBreakdown: AnalyticsSegmentItem[];
+}
 

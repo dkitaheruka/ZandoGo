@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class RequestPayoutDto {
   @IsUUID()
@@ -11,4 +11,14 @@ export class RequestPayoutDto {
   @IsString()
   @MaxLength(80)
   method: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  phoneNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  operator?: string;
 }

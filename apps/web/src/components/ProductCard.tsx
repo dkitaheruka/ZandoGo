@@ -1,15 +1,41 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ShieldCheck, Package, FileText, Sparkles, Heart, Scale, Star, BadgeCheck, Megaphone } from 'lucide-react';
+import { useState, type MouseEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ShieldCheck,
+  Package,
+  FileText,
+  Sparkles,
+  Heart,
+  Scale,
+  Star,
+  BadgeCheck,
+  Megaphone,
+  ShoppingCart,
+  Check,
+  Truck,
+} from 'lucide-react';
 import { useStore } from '../lib/store-context';
+import { useAuth } from '../lib/auth-context';
+import { api } from '../lib/api';
 import type { Product } from '../lib/types';
 
 const FALLBACK_IMAGE = '/src/assets/images/marketplace_parcel_default_1794567970796.jpg';
 
 export function ProductCard({ product }: { product: Product }) {
-  const { formatPrimaryPrice, formatSecondaryPrice, isWishlisted, toggleWishlist, compareProducts, toggleCompare } =
-    useStore();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const {
+    formatPrimaryPrice,
+    formatSecondaryPrice,
+    isWishlisted,
+    toggleWishlist,
+    compareProducts,
+    toggleCompare,
+    refreshCart,
+  } = useStore();
   const [imgSrc, setImgSrc] = useState(product.images[0]?.url || FALLBACK_IMAGE);
+  const [cartBusy, setCartBusy] = useState(false);
+  const [addedFeedback, setAddedFeedback] = useState(false);
 
   const priceUsd = Number(product.basePriceUsd);
   const isLowStock =
@@ -45,6 +71,31 @@ export function ProductCard({ product }: { product: Product }) {
       : product.audience === 'PRO'
       ? 'Pro / Service'
       : null;
+
+  const isOutOfStock = product.productType === 'PHYSICAL' && product.stockQty === 0;
+
+  async function handleQuickAddToCart(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isOutOfStock || cartBusy) return;
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
+    setCartBusy(true);
+    try {
+      await api.post('/cart/items', {
+        productVariantId: product.variants?.[0]?.id || product.id,
+        productId: product.id,
+        quantity: product.minOrderQty || 1,
+      });
+      await refreshCart();
+      setAddedFeedback(true);
+      setTimeout(() => setAddedFeedback(false), 2000);
+    } finally {
+      setCartBusy(false);
+    }
+  }
 
   return (
     <article
@@ -175,6 +226,15 @@ export function ProductCard({ product }: { product: Product }) {
               {product.title}
             </h2>
 
+            {product.store.isTransportAgency && product.store.transportDestinations && product.store.transportDestinations.length > 0 && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] font-mono text-seve bg-seve/10 border border-seve/25 px-2 py-0.5 rounded-md truncate">
+                <Truck className="w-3 h-3 shrink-0" />
+                <span className="truncate">
+                  Lignes : {product.store.transportDestinations.map((d) => d.destinationCity).slice(0, 3).join(', ')}
+                </span>
+              </div>
+            )}
+
             {colorVariants.length > 0 && (
               <div className="mt-2 flex items-center gap-1.5">
                 {colorVariants.slice(0, 4).map(([label, hex]) => (
@@ -221,6 +281,31 @@ export function ProductCard({ product }: { product: Product }) {
               )}
             </div>
           </div>
+
+          <button
+            type="button"
+            disabled={isOutOfStock || cartBusy}
+            onClick={handleQuickAddToCart}
+            className={`mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-card text-xs font-display font-bold transition shadow-2xs ${
+              isOutOfStock
+                ? 'bg-encre/10 text-encre/40 cursor-not-allowed'
+                : addedFeedback
+                ? 'bg-seve text-brume'
+                : 'bg-nuit hover:bg-seve text-brume'
+            }`}
+          >
+            {addedFeedback ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-safran" />
+                <span>Ajouté ✓</span>
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="w-3.5 h-3.5 text-safran" />
+                <span>{cartBusy ? 'Ajout…' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}</span>
+              </>
+            )}
+          </button>
         </div>
       </Link>
     </article>

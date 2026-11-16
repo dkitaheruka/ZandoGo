@@ -24,6 +24,8 @@ import { useStore } from '../lib/store-context';
 import { NotificationsBell } from './NotificationsBell';
 import { CartDrawer } from './CartDrawer';
 import { CompareDrawer } from './CompareDrawer';
+import { PaymentOperatorStrip } from './PaymentOperatorLogos';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -96,7 +98,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <span className="hidden lg:inline text-white/20">|</span>
             <span className="hidden lg:inline-flex items-center gap-1 text-brume/75 truncate">
               <Globe className="w-3 h-3 text-seve shrink-0" />
-              <span>Toute la RDC (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani)</span>
+              <span>Siège Goma (Nord-Kivu) · Vente & livraison dans toute la RDC et ses environs</span>
             </span>
           </div>
 
@@ -149,7 +151,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 Zando<span className="text-seve">Go</span>
               </span>
               <span className="block text-[9px] font-display font-semibold uppercase tracking-wider text-encre/50 -mt-1">
-                Marketplace RDC
+                RDC & Environs
               </span>
             </div>
           </Link>
@@ -160,14 +162,14 @@ export function Layout({ children }: { children: ReactNode }) {
             className="hidden sm:flex flex-1 max-w-xl items-center rounded-card border border-encre/20 bg-white overflow-hidden shadow-xs focus-within:border-seve focus-within:ring-1 focus-within:ring-seve transition"
           >
             <div className="px-3.5 py-2 text-xs font-semibold text-encre/70 bg-brume/70 border-r border-encre/10 shrink-0 hidden lg:block">
-              Catalogue RDC
+              Toute la RDC
             </div>
             <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher : wax, téléphone, café du Kivu, guide PDF… (Ctrl+K)"
+              placeholder="Rechercher partout en RDC : wax, café du Kivu, smartphone, guide PDF… (Ctrl+K)"
               className="w-full px-3.5 py-2 text-xs text-encre placeholder-encre/40 outline-none bg-transparent"
             />
             <button
@@ -181,6 +183,8 @@ export function Layout({ children }: { children: ReactNode }) {
 
           {/* Navigation Icons */}
           <div className="flex items-center gap-1.5 md:gap-2.5 shrink-0">
+            <PWAInstallButton variant="header" compact />
+
             <Link
               to={isVendor ? '/vendor' : '/vendor/new'}
               className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-card border border-encre/15 hover:border-seve text-xs font-semibold text-encre hover:text-seve bg-brume/50 transition"
@@ -418,6 +422,9 @@ export function Layout({ children }: { children: ReactNode }) {
               Place de marché universelle de référence en République Démocratique du Congo.
               Vente au détail dès 1 article, commandes groupées et services avec paiement sécurisé sous séquestre.
             </p>
+            <div className="mt-4">
+              <PWAInstallButton variant="footer" />
+            </div>
           </div>
 
           <div>
@@ -434,25 +441,30 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <div>
             <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
-              Couverture Logistique RDC
+              Couverture Logistique RDC & Environs
             </h4>
             <ul className="space-y-2 text-brume/65">
-              <li>Grand Kinshasa (coursiers express)</li>
-              <li>Lubumbashi & Haut-Katanga</li>
-              <li>Goma & Nord-Kivu</li>
-              <li>Matadi, Kisangani, Bukavu</li>
+              <li>Siège Goma · Grand Kivu (Bukavu, Butembo, Beni, Sake)</li>
+              <li>Kinshasa, Lubumbashi, Kisangani, Kolwezi & Matadi</li>
+              <li>Ituri (Bunia) & Kasaï (Kananga, Mbuji-Mayi)</li>
+              <li>Environs : Rwanda (Gisenyi/Kigali), Burundi & Ouganda</li>
             </ul>
           </div>
 
           <div>
             <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
-              Agrégateur & Notifications SMS
+              Paiements Sécurisés & SMS
             </h4>
+            <div className="mb-2.5">
+              <PaymentOperatorStrip compact dark />
+            </div>
             <p className="text-brume/65 mb-2">
-              Paiements gérés via l’agrégateur <strong>MaishaPay RDC</strong> (Orange Money, Airtel Money, M-Pesa Vodacom, Cartes Visa / Mastercard). Notifications temps réel par SMS via l’API <strong>Africa’s Talking</strong>.
+              Réglez directement via <strong>Airtel Money</strong>, <strong>M-Pesa Vodacom</strong>,{' '}
+              <strong>Orange Money</strong>, <strong>MTN MoMo</strong> ou <strong>Cartes Visa / Mastercard</strong>.
+              Alertes SMS temps réel via <strong>Africa’s Talking</strong>.
             </p>
             <span className="font-mono text-brume/40 block text-[10px]">
-              © {new Date().getFullYear()} ZandoGo RDC. Tous droits réservés.
+              © {new Date().getFullYear()} ZandoGo · Basé à Goma, actif dans toute la RDC & ses environs.
             </span>
           </div>
         </div>

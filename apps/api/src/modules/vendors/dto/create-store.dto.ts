@@ -1,5 +1,51 @@
 import { FulfillmentMode } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+
+export class TransportDestinationDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  @MaxLength(80)
+  originCity: string;
+
+  @IsString()
+  @MaxLength(80)
+  destinationCity: string;
+
+  @IsNumber()
+  @Min(0)
+  basePriceUsd: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  pricePerKmUsd?: number;
+
+  @IsString()
+  @MaxLength(60)
+  estimatedDelay: string;
+
+  @IsString()
+  @MaxLength(60)
+  vehicleMode: string;
+}
 
 export class CreateStoreDto {
   @IsString()
@@ -21,6 +67,22 @@ export class CreateStoreDto {
   @IsString()
   @MaxLength(32)
   storeType?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isTransportAgency?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TransportDestinationDto)
+  transportDestinations?: TransportDestinationDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Sélectionnez au moins un module de service pour votre boutique' })
+  @IsIn(['PHYSICAL', 'DIGITAL', 'SERVICE'], { each: true })
+  enabledServices?: ('PHYSICAL' | 'DIGITAL' | 'SERVICE')[];
 
   @IsOptional()
   @IsEnum(FulfillmentMode)

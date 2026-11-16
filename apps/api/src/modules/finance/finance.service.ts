@@ -8,21 +8,31 @@ import { UpdatePricingDto } from './dto/update-pricing.dto';
 
 export interface PlatformPricingConfig {
   storeCreationFeeUsd: number;
+  servicePhysicalFeeUsd: number;
+  serviceDigitalFeeUsd: number;
+  servicePrestationFeeUsd: number;
   certificationMonthlyFeeUsd: number;
   certificationQuarterlyFeeUsd: number;
   adEssentialMonthlyFeeUsd: number;
   adProCarouselMonthlyFeeUsd: number;
   defaultCommissionPercent: number;
+  paymentTransactionFeePercent: number;
+  allowImmediateVendorWithdrawal: boolean;
   updatedAt: string;
 }
 
 const DEFAULT_PRICING: Omit<PlatformPricingConfig, 'updatedAt'> = {
-  storeCreationFeeUsd: 25,
+  storeCreationFeeUsd: 15,
+  servicePhysicalFeeUsd: 15,
+  serviceDigitalFeeUsd: 10,
+  servicePrestationFeeUsd: 20,
   certificationMonthlyFeeUsd: 15,
   certificationQuarterlyFeeUsd: 39,
   adEssentialMonthlyFeeUsd: 29,
   adProCarouselMonthlyFeeUsd: 59,
   defaultCommissionPercent: 5,
+  paymentTransactionFeePercent: 3.5,
+  allowImmediateVendorWithdrawal: false,
 };
 
 @Injectable()
@@ -39,6 +49,9 @@ export class FinanceService {
     const raw = (setting?.value as Partial<PlatformPricingConfig> | null) ?? {};
     return {
       storeCreationFeeUsd: Number(raw.storeCreationFeeUsd ?? DEFAULT_PRICING.storeCreationFeeUsd),
+      servicePhysicalFeeUsd: Number(raw.servicePhysicalFeeUsd ?? DEFAULT_PRICING.servicePhysicalFeeUsd),
+      serviceDigitalFeeUsd: Number(raw.serviceDigitalFeeUsd ?? DEFAULT_PRICING.serviceDigitalFeeUsd),
+      servicePrestationFeeUsd: Number(raw.servicePrestationFeeUsd ?? DEFAULT_PRICING.servicePrestationFeeUsd),
       certificationMonthlyFeeUsd: Number(
         raw.certificationMonthlyFeeUsd ?? DEFAULT_PRICING.certificationMonthlyFeeUsd,
       ),
@@ -54,6 +67,12 @@ export class FinanceService {
       defaultCommissionPercent: Number(
         raw.defaultCommissionPercent ?? DEFAULT_PRICING.defaultCommissionPercent,
       ),
+      paymentTransactionFeePercent: Number(
+        raw.paymentTransactionFeePercent ?? DEFAULT_PRICING.paymentTransactionFeePercent,
+      ),
+      allowImmediateVendorWithdrawal: Boolean(
+        raw.allowImmediateVendorWithdrawal ?? DEFAULT_PRICING.allowImmediateVendorWithdrawal,
+      ),
       updatedAt: setting?.updatedAt?.toISOString() ?? new Date().toISOString(),
     };
   }
@@ -62,12 +81,19 @@ export class FinanceService {
     const current = await this.getPlatformPricing();
     const nextValue = {
       storeCreationFeeUsd: dto.storeCreationFeeUsd ?? current.storeCreationFeeUsd,
+      servicePhysicalFeeUsd: dto.servicePhysicalFeeUsd ?? current.servicePhysicalFeeUsd,
+      serviceDigitalFeeUsd: dto.serviceDigitalFeeUsd ?? current.serviceDigitalFeeUsd,
+      servicePrestationFeeUsd: dto.servicePrestationFeeUsd ?? current.servicePrestationFeeUsd,
       certificationMonthlyFeeUsd: dto.certificationMonthlyFeeUsd ?? current.certificationMonthlyFeeUsd,
       certificationQuarterlyFeeUsd:
         dto.certificationQuarterlyFeeUsd ?? current.certificationQuarterlyFeeUsd,
       adEssentialMonthlyFeeUsd: dto.adEssentialMonthlyFeeUsd ?? current.adEssentialMonthlyFeeUsd,
       adProCarouselMonthlyFeeUsd: dto.adProCarouselMonthlyFeeUsd ?? current.adProCarouselMonthlyFeeUsd,
       defaultCommissionPercent: dto.defaultCommissionPercent ?? current.defaultCommissionPercent,
+      paymentTransactionFeePercent:
+        dto.paymentTransactionFeePercent ?? current.paymentTransactionFeePercent,
+      allowImmediateVendorWithdrawal:
+        dto.allowImmediateVendorWithdrawal ?? current.allowImmediateVendorWithdrawal,
     };
 
     const saved = await this.prisma.platformSetting.upsert({

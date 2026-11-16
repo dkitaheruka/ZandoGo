@@ -84,13 +84,17 @@ export class AfricasTalkingSmsService {
     phone: string;
     orderNumber: string;
     amountLabel: string;
-    maishaPayRef: string;
+    paymentRef?: string;
+    maishaPayRef?: string;
+    operatorLabel?: string;
     digitalDownloadUrl?: string;
   }) {
+    const ref = params.paymentRef || params.maishaPayRef || 'CONFIRME';
+    const opNote = params.operatorLabel ? ` via ${params.operatorLabel}` : '';
     const downloadNote = params.digitalDownloadUrl
       ? ` Téléchargez votre livre ici : ${params.digitalDownloadUrl}`
-      : ' Suivi coursier actif sur ZandoGo.';
-    const text = `ZandoGo : Paiement ${params.amountLabel} confirmé via MaishaPay (${params.maishaPayRef}) pour ${params.orderNumber}.${downloadNote}`;
+      : ' Suivi coursier actif sur ZandoGo Goma.';
+    const text = `ZandoGo Goma : Paiement ${params.amountLabel}${opNote} confirmé (Réf ${ref}) pour ${params.orderNumber}.${downloadNote}`;
     return this.sendSms(params.phone, text);
   }
 

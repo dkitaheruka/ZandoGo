@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 function mockApiPlugin(): Plugin {
   let exchangeRate = 2850;
@@ -9,14 +10,25 @@ function mockApiPlugin(): Plugin {
   ];
 
   let platformPricing = {
-    storeCreationFeeUsd: 25,
+    storeCreationFeeUsd: 15,
+    servicePhysicalFeeUsd: 15,
+    serviceDigitalFeeUsd: 10,
+    servicePrestationFeeUsd: 20,
     certificationMonthlyFeeUsd: 15,
     certificationQuarterlyFeeUsd: 39,
     adEssentialMonthlyFeeUsd: 29,
     adProCarouselMonthlyFeeUsd: 59,
     defaultCommissionPercent: 5,
+    paymentTransactionFeePercent: 3.5,
+    allowImmediateVendorWithdrawal: false,
     updatedAt: new Date().toISOString(),
   };
+
+  function getServiceModuleFeeUsd(service: string): number {
+    if (service === 'DIGITAL') return Number(platformPricing.serviceDigitalFeeUsd || 0);
+    if (service === 'SERVICE') return Number(platformPricing.servicePrestationFeeUsd || 0);
+    return Number(platformPricing.servicePhysicalFeeUsd || 0);
+  }
 
   function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371;
@@ -53,7 +65,7 @@ function mockApiPlugin(): Plugin {
       '/F1 11 Tf',
       `(Commande certifiee : ${safeOrder} | Fichier : ${safeFile}) Tj`,
       '0 -22 Td',
-      '(Paiement valide via agregateur MaishaPay RDC & confirmation SMS Africas Talking.) Tj',
+      '(Paiement Airtel, M-Pesa, Orange, MTN ou Visa valide & envoi automatique ZandoGo Goma.) Tj',
       '0 -34 Td',
       '(SOMMAIRE EXECUTIF :) Tj',
       '0 -20 Td',
@@ -103,35 +115,35 @@ function mockApiPlugin(): Plugin {
   const deliveryOptions = [
     {
       id: 'del-opt-express',
-      providerName: 'Kota Express Moto',
+      providerName: 'Nyiragongo Express Moto',
       code: 'EXPRESS_MOTO',
-      name: 'Coursier Moto Express (Tarif négociable + GPS)',
-      estimatedTime: 'Moins de 2 heures',
-      feeUsd: 6.5,
-      feeCdf: 18525,
-      description: 'Livraison express à Kinshasa, Lubumbashi et Goma. Partagez votre point Google Maps et négociez le tarif avec le livreur.',
-      badgeText: 'Express Urbain',
+      name: 'Coursier Moto Express Goma (Tarif négociable + GPS)',
+      estimatedTime: '30 à 90 minutes',
+      feeUsd: 3.5,
+      feeCdf: 9975,
+      description: 'Livraison express à Goma (Himbi, Les Volcans, Katindo, Ndosho, Karisimbi). Partagez votre point Google Maps et négociez le tarif avec le livreur.',
+      badgeText: 'Express Goma',
     },
     {
       id: 'del-opt-partner',
-      providerName: 'MaxiLog RDC Fret National',
+      providerName: 'KivuLog Fret Lac Kivu & RDC',
       code: 'PARTNER_LOGISTICS',
-      name: 'Fret Interurbain & National (Toute la RDC)',
+      name: 'Fret Interurbain Nord/Sud-Kivu & RDC',
       estimatedTime: '24 à 48 heures',
       feeUsd: 8.0,
       feeCdf: 22800,
-      description: 'Liaison nationale sécurisée (Kinshasa ↔ Lubumbashi ↔ Goma ↔ Matadi ↔ Kisangani).',
-      badgeText: 'Toute la RDC',
+      description: 'Liaison sécurisée Goma ↔ Bukavu ↔ Butembo ↔ Beni ↔ Sake ↔ Lubumbashi ↔ Kisangani ↔ Kinshasa.',
+      badgeText: 'Kivu & National',
     },
     {
       id: 'del-opt-pickup',
-      providerName: 'Hub ZandoGo / Dépôt Vendeur',
+      providerName: 'Hub ZandoGo Goma / Dépôt Vendeur',
       code: 'CLICK_AND_COLLECT',
-      name: 'Retrait en Hub ou Boutique (Click & Collect)',
+      name: 'Retrait en Hub Goma ou Boutique (Click & Collect)',
       estimatedTime: 'Disponible dès aujourd’hui',
       feeUsd: 0,
       feeCdf: 0,
-      description: 'Retrait sans frais au dépôt du vendeur ou dans un hub relais ZandoGo agréé.',
+      description: 'Retrait sans frais au dépôt du vendeur à Goma (Centre / Himbi / Karisimbi) ou au point relais ZandoGo.',
       badgeText: 'Gratuit',
     },
   ];
@@ -140,7 +152,7 @@ function mockApiPlugin(): Plugin {
     {
       id: 'prod-1',
       title: 'Pagne Super Wax Vlisco Original (6 yards)',
-      description: 'Véritable wax hollandais de qualité premium, motifs vibrants traditionnels de Kinshasa. 100% coton peigné.',
+      description: 'Véritable wax hollandais de qualité premium, motifs vibrants disponibles à Goma (Nord-Kivu). 100% coton peigné.',
       productType: 'PHYSICAL',
       pricingUnit: 'UNIT',
       audience: 'WOMEN',
@@ -165,7 +177,7 @@ function mockApiPlugin(): Plugin {
         { id: 'var-1b', sku: 'WAX-VLI-02', name: 'Bordeaux Royal · 6 yards', attributes: { size: '6 yards', color: 'Bordeaux Wax', colorHex: '#B84C43' }, priceOverride: 68, stockQty: 9 },
         { id: 'var-1c', sku: 'WAX-VLI-03', name: 'Indigo Nuit · 12 yards', attributes: { size: '12 yards', color: 'Indigo Nuit', colorHex: '#172320' }, priceOverride: 120, stockQty: 6 },
       ],
-      store: { id: 'store-1', storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', ownerId: 'usr-1', rating: 4.9, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-1', storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', ownerId: 'usr-1', rating: 4.9, city: 'Goma (Himbi)', verifiedSupplier: true },
       category: categories[1],
     },
     {
@@ -196,13 +208,13 @@ function mockApiPlugin(): Plugin {
         { id: 'var-kuba-l', sku: 'JKT-KUBA-L-N', name: 'L · Nuit Kuba', attributes: { size: 'L', color: 'Nuit Kuba', colorHex: '#172320' }, priceOverride: 85, stockQty: 4 },
         { id: 'var-kuba-xl', sku: 'JKT-KUBA-XL-S', name: 'XL · Safran & Terre', attributes: { size: 'XL', color: 'Safran & Terre', colorHex: '#F2B84B' }, priceOverride: 88, stockQty: 3 },
       ],
-      store: { id: 'store-1', storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', ownerId: 'usr-1', rating: 4.9, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-1', storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', ownerId: 'usr-1', rating: 4.9, city: 'Goma (Himbi)', verifiedSupplier: true },
       category: categories[2],
     },
     {
       id: 'prod-9',
       title: 'Robe Portefeuille Wax Contemporaine — Femme',
-      description: 'Coupe cintrée élégante réalisée à Kinshasa avec véritable pagne Wax et finitions tailleur. Idéale bureau et cérémonies.',
+      description: 'Coupe cintrée élégante confectionnée à Goma avec véritable pagne Wax et finitions tailleur. Idéale bureau et cérémonies.',
       productType: 'PHYSICAL',
       pricingUnit: 'UNIT',
       audience: 'WOMEN',
@@ -228,7 +240,7 @@ function mockApiPlugin(): Plugin {
         { id: 'var-robe-l-saf', sku: 'ROBE-L-SAF', name: 'L · Safran Soleil', attributes: { size: 'L', color: 'Safran Soleil', colorHex: '#F2B84B' }, priceOverride: 54, stockQty: 6 },
         { id: 'var-robe-xl-wax', sku: 'ROBE-XL-WAX', name: 'XL · Rouge Terracotta', attributes: { size: 'XL', color: 'Rouge Terracotta', colorHex: '#B84C43' }, priceOverride: 56, stockQty: 4 },
       ],
-      store: { id: 'store-1', storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', ownerId: 'usr-1', rating: 4.9, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-1', storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', ownerId: 'usr-1', rating: 4.9, city: 'Goma (Himbi)', verifiedSupplier: true },
       category: categories[1],
     },
     {
@@ -260,13 +272,13 @@ function mockApiPlugin(): Plugin {
         { id: 'var-chem-xl-seve', sku: 'CHM-XL-SV', name: 'XL · Vert Sève', attributes: { size: 'XL', color: 'Vert Sève', colorHex: '#26735B' }, priceOverride: 45, stockQty: 5 },
         { id: 'var-chem-xxl-nuit', sku: 'CHM-XXL-NT', name: 'XXL · Noir Nuit', attributes: { size: 'XXL', color: 'Noir Nuit', colorHex: '#172320' }, priceOverride: 47, stockQty: 3 },
       ],
-      store: { id: 'store-1', storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', ownerId: 'usr-1', rating: 4.9, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-1', storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', ownerId: 'usr-1', rating: 4.9, city: 'Goma (Himbi)', verifiedSupplier: true },
       category: categories[2],
     },
     {
       id: 'prod-3',
       title: 'Guide d’Investissement & Stratégie PME RDC (Livre PDF)',
-      description: 'Livre numérique de 142 pages rédigé par des experts fiduciaires de Kinshasa : fiscalité OHADA, grille salariale locale et modèles de contrats. Téléchargement direct après paiement.',
+      description: 'Livre numérique de 142 pages rédigé par des experts fiduciaires de Goma & RDC : fiscalité OHADA, grille salariale locale et modèles de contrats. Téléchargement direct après paiement.',
       productType: 'DIGITAL',
       pricingUnit: 'UNIT',
       audience: 'PRO',
@@ -285,13 +297,13 @@ function mockApiPlugin(): Plugin {
       variants: [
         { id: 'var-guide-pdf', sku: 'DIGI-GUIDE-PDF', name: 'Édition Complète PDF + Modèles', attributes: { size: 'PDF 142 pages' }, priceOverride: 29, stockQty: 9999 },
       ],
-      store: { id: 'store-digital', storeName: 'Kinshasa Business Insights', slug: 'kin-insights', ownerId: 'usr-1', rating: 5.0, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-digital', storeName: 'Kivu Business Insights', slug: 'kivu-insights', ownerId: 'usr-1', rating: 5.0, city: 'Goma (Centre)', verifiedSupplier: true },
       category: categories[4],
     },
     {
       id: 'prod-4',
       title: 'Abonnement Internet Fibre Pro 100 Mbps (30 Jours)',
-      description: 'Connexion très haut débit illimitée avec routeur Wi-Fi 6 offert en prêt. Installation et configuration par technicien certifié sous 24h à Gombe, Ngaliema ou Limete.',
+      description: 'Connexion très haut débit illimitée avec routeur Wi-Fi 6 offert en prêt. Installation et configuration par technicien certifié sous 24h à Himbi, Les Volcans, Katindo ou Karisimbi (Goma).',
       productType: 'SERVICE',
       pricingUnit: 'FLAT',
       audience: 'PRO',
@@ -304,18 +316,18 @@ function mockApiPlugin(): Plugin {
       serviceDuration: 'Forfait mensuel (30 jours)',
       fulfillmentDetails: 'Prise de contact téléphonique du technicien sous 2 heures après commande.',
       images: [
-        { id: 'img-fiber', url: '/src/assets/images/internet_fiber_service_1794397997131.jpg', altText: 'Internet Fibre Pro Kinshasa' },
+        { id: 'img-fiber', url: '/src/assets/images/internet_fiber_service_1794397997131.jpg', altText: 'Internet Fibre Pro Goma' },
       ],
       variants: [
         { id: 'var-fiber-100', sku: 'SRV-FIBER-100', name: 'Forfait 100 Mbps Illimité', attributes: { capacity: '100 Mbps' }, priceOverride: 75, stockQty: 50 },
       ],
-      store: { id: 'store-telecom', storeName: 'KinConnect Télécoms', slug: 'kin-connect', ownerId: 'usr-2', rating: 4.8, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-telecom', storeName: 'GomaConnect Télécoms', slug: 'goma-connect', ownerId: 'usr-2', rating: 4.8, city: 'Goma (Katindo)', verifiedSupplier: true },
       category: categories[5],
     },
     {
       id: 'prod-5',
       title: 'Transport & Course Express Moto Dédiée (Tarif au km)',
-      description: 'Prestation de transport urbain et livraison de colis à la demande dans le Grand Kinshasa. Tarif calculé au kilomètre réel via Google Maps avec suivi GPS du coursier.',
+      description: 'Prestation de transport urbain et livraison de colis à la demande dans le Grand Goma (Nord-Kivu). Tarif calculé au kilomètre réel via Google Maps avec suivi GPS du coursier.',
       productType: 'SERVICE',
       pricingUnit: 'KM',
       audience: 'PRO',
@@ -340,7 +352,7 @@ function mockApiPlugin(): Plugin {
         { id: 'var-moto-course', sku: 'LOG-MOTO-KM', name: 'Moto Express (-15 kg) · par km', attributes: { capacity: 'Jusqu’à 15 kg' }, priceOverride: 1.5, stockQty: 99 },
         { id: 'var-van-course', sku: 'LOG-VAN-KM', name: 'Fourgonnette Urbaine (-350 kg) · par km', attributes: { capacity: 'Jusqu’à 350 kg' }, priceOverride: 2.8, stockQty: 20 },
       ],
-      store: { id: 'store-logistics', storeName: 'Kota Express Logistique', slug: 'kota-express', ownerId: 'usr-1', rating: 4.9, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-logistics', storeName: 'Nyiragongo Express Logistique', slug: 'nyiragongo-express', ownerId: 'usr-1', rating: 4.9, city: 'Goma (Birere)', verifiedSupplier: true },
       category: categories[6],
     },
     {
@@ -370,7 +382,7 @@ function mockApiPlugin(): Plugin {
         { id: 'var-tecno-blk', sku: 'TEC-CAM30-BLK', name: '512 Go · Noir Sidéral', attributes: { size: '512 Go', color: 'Noir Sidéral', colorHex: '#172320', capacity: '512 Go' }, priceOverride: 380, stockQty: 12 },
         { id: 'var-tecno-slv', sku: 'TEC-CAM30-SLV', name: '256 Go · Argent Alpes', attributes: { size: '256 Go', color: 'Argent Alpes', colorHex: '#CBD5E1', capacity: '256 Go' }, priceOverride: 345, stockQty: 6 },
       ],
-      store: { id: 'store-2', storeName: 'Kin Digital Gombe', slug: 'kin-digital', ownerId: 'usr-1', rating: 4.7, city: 'Lubumbashi', verifiedSupplier: true },
+      store: { id: 'store-2', storeName: 'Kivu Digital & Tech', slug: 'kivu-digital', ownerId: 'usr-1', rating: 4.7, city: 'Goma (Les Volcans)', verifiedSupplier: true },
       category: categories[0],
     },
     {
@@ -400,7 +412,7 @@ function mockApiPlugin(): Plugin {
         { id: 'var-kivu-5kg', sku: 'KIVU-CAF-5KG', name: 'Sachet Pro 5 kg (Grains)', attributes: { size: '5 kg' }, priceOverride: 48, stockQty: 32 },
         { id: 'var-kivu-1kg', sku: 'KIVU-CAF-1KG', name: 'Sachet 1 kg (Moulu)', attributes: { size: '1 kg' }, priceOverride: 12, stockQty: 40 },
       ],
-      store: { id: 'store-kivu', storeName: 'Coopérative Kivu Terroir', slug: 'kivu-terroir', ownerId: 'usr-3', rating: 4.9, city: 'Goma', verifiedSupplier: true },
+      store: { id: 'store-kivu', storeName: 'Coopérative Kivu Terroir', slug: 'kivu-terroir', ownerId: 'usr-3', rating: 4.9, city: 'Goma (Lac Vert)', verifiedSupplier: true },
       category: categories[3],
     },
     {
@@ -429,7 +441,7 @@ function mockApiPlugin(): Plugin {
       variants: [
         { id: 'var-usb-64', sku: 'USB-KNG-64-10', name: 'Pack 10 × 64 Go (Argent)', attributes: { size: '64 Go', color: 'Acier Argent', colorHex: '#94A3B8' }, priceOverride: 42, stockQty: 45 },
       ],
-      store: { id: 'store-2', storeName: 'Kin Digital Gombe', slug: 'kin-digital', ownerId: 'usr-1', rating: 4.8, city: 'Kinshasa', verifiedSupplier: true },
+      store: { id: 'store-2', storeName: 'Kivu Digital & Tech', slug: 'kivu-digital', ownerId: 'usr-1', rating: 4.8, city: 'Goma (Les Volcans)', verifiedSupplier: true },
       category: categories[0],
     },
   ];
@@ -440,9 +452,9 @@ function mockApiPlugin(): Plugin {
         id: 'rev-1',
         productId: 'prod-1',
         authorName: 'Merveille Kasongo',
-        city: 'Kinshasa (Lingwala)',
+        city: 'Goma (Les Volcans)',
         rating: 5,
-        comment: 'Authentique Super Wax Vlisco avec étiquette et toucher impeccable. Livré en 1h30 à Gombe.',
+        comment: 'Authentique Super Wax Vlisco avec étiquette et toucher impeccable. Livré en 45 min à Himbi.',
         verifiedPurchase: true,
         createdAt: '2026-03-04T15:20:00Z',
       },
@@ -450,9 +462,9 @@ function mockApiPlugin(): Plugin {
         id: 'rev-2',
         productId: 'prod-1',
         authorName: 'Cédric Ilunga',
-        city: 'Lubumbashi',
+        city: 'Bukavu (Sud-Kivu)',
         rating: 5,
-        comment: 'Tarif de gros négocié à $50/pièce pour notre boutique, colis arrivé intact via fret.',
+        comment: 'Tarif de gros négocié à $50/pièce pour notre boutique, colis arrivé intact via le Lac Kivu.',
         verifiedPurchase: true,
         createdAt: '2026-02-26T11:10:00Z',
       },
@@ -462,7 +474,7 @@ function mockApiPlugin(): Plugin {
         id: 'rev-3',
         productId: 'prod-2',
         authorName: 'Jean-Paul Banza',
-        city: 'Kinshasa (Gombe)',
+        city: 'Goma (Himbi)',
         rating: 5,
         comment: 'Finitions de couture dignes d’une grande maison. La coupe taille M est parfaite.',
         verifiedPurchase: true,
@@ -474,7 +486,7 @@ function mockApiPlugin(): Plugin {
         id: 'rev-4',
         productId: 'prod-3',
         authorName: 'Fidèle Mulumba',
-        city: 'Goma',
+        city: 'Goma (Karisimbi)',
         rating: 5,
         comment: 'Les modèles Excel OHADA et contrats bilingues m’ont fait gagner des semaines de préparation.',
         verifiedPurchase: true,
@@ -521,23 +533,27 @@ function mockApiPlugin(): Plugin {
     ],
   };
 
-  let addresses = [
+  let addresses: any[] = [
     {
       id: 'addr-1',
-      commune: 'Gombe',
-      quartier: 'Haut Commandement',
-      referencePoint: 'Croisement Batetela et Boulevard du 30 Juin',
-      latitude: -4.3015,
-      longitude: 15.3052,
+      email: 'david.kitenge@example.cd',
+      commune: 'Goma',
+      quartier: 'Himbi',
+      ville: 'Goma (Nord-Kivu)',
+      referencePoint: 'Avenue du Tourisme, proche de l’Hôtel Ihusi & Lac Kivu',
+      latitude: -1.6815,
+      longitude: 29.2115,
       isDefault: true,
     },
     {
       id: 'addr-2',
-      commune: 'Ngaliema',
-      quartier: 'Macampagne',
-      referencePoint: 'En face de l’église méthodiste',
-      latitude: -4.3412,
-      longitude: 15.2654,
+      email: 'david.kitenge@example.cd',
+      commune: 'Karisimbi',
+      quartier: 'Ndosho',
+      ville: 'Goma (Nord-Kivu)',
+      referencePoint: 'Boulevard Kanyamuhanga / Rond-Point Terminus Ndosho',
+      latitude: -1.646,
+      longitude: 29.208,
       isDefault: false,
     },
   ];
@@ -549,10 +565,13 @@ function mockApiPlugin(): Plugin {
       status: 'OUT_FOR_DELIVERY',
       isPaid: true,
       paymentStatus: 'PAID',
+      paymentGateway: 'MOBILE_MONEY',
+      paymentOperator: 'MOBILE_MONEY_ORANGE',
+      paymentRef: 'ZG-PAY-261001',
       escrowStatus: 'HELD',
       createdAt: new Date().toISOString(),
-      total: 91.5,
-      deliveryFee: 6.5,
+      total: 88.5,
+      deliveryFee: 3.5,
       currency: 'USD',
       deliveryOption: deliveryOptions[0],
       hasDigitalItems: false,
@@ -562,8 +581,8 @@ function mockApiPlugin(): Plugin {
           storeId: 'store-1',
           status: 'SHIPPED',
           buyerName: 'David Kitenge',
-          destinationCity: 'Kinshasa (Gombe)',
-          store: { storeName: 'Boutique Victoire Wax' },
+          destinationCity: 'Goma (Himbi)',
+          store: { storeName: 'Boutique Virunga Wax' },
           items: [
             { id: 'item-1', quantity: 1, productTitle: 'Veste Tailleur Haute Couture Motif Kuba', unitPrice: 85, productType: 'PHYSICAL' },
           ],
@@ -587,21 +606,26 @@ function mockApiPlugin(): Plugin {
         {
           productId: 'prod-3',
           title: 'Guide d’Investissement & Stratégie PME RDC (Livre PDF)',
-          downloadUrl: '/api/downloads/prod-3/ord-1002',
+          downloadUrl: '/api/downloads/prod-3/ord-1002?token=zg-auto-1002',
           fileName: 'guide-strategie-pme-rdc-2026.pdf',
+          token: 'zg-auto-1002',
+          autoDispatched: true,
+          autoDispatchedAt: '2026-03-01T14:30:05Z',
         },
       ],
-      paymentGateway: 'MAISHAPAY',
-      maishaPayRef: 'MP-RDC-2026-88421',
+      paymentGateway: 'MOBILE_MONEY',
+      paymentOperator: 'MOBILE_MONEY_AIRTEL',
+      paymentRef: 'ZG-PAY-88421',
       noDeliveryNeeded: true,
       subOrders: [
         {
           id: 'sub-2',
           storeId: 'store-digital',
           status: 'DELIVERED',
+          autoFulfilled: true,
           buyerName: 'David Kitenge',
-          destinationCity: 'Téléchargement immédiat',
-          store: { storeName: 'Kinshasa Business Insights' },
+          destinationCity: 'Envoi automatique du lien PDF',
+          store: { storeName: 'Kivu Business Insights' },
           items: [
             { id: 'item-2', quantity: 1, productTitle: 'Guide d’Investissement & Stratégie PME RDC', unitPrice: 29, productType: 'DIGITAL' },
           ],
@@ -627,8 +651,8 @@ function mockApiPlugin(): Plugin {
           storeId: 'store-1',
           status: 'PENDING',
           buyerName: 'David Kitenge',
-          destinationCity: 'Lubumbashi',
-          store: { storeName: 'Boutique Victoire Wax' },
+          destinationCity: 'Bukavu (Sud-Kivu)',
+          store: { storeName: 'Boutique Virunga Wax' },
           items: [
             { id: 'item-3', quantity: 3, productTitle: 'Pagne Super Wax Vlisco Original (6 yards)', unitPrice: 65, productType: 'PHYSICAL' },
           ],
@@ -644,8 +668,8 @@ function mockApiPlugin(): Plugin {
       escrowStatus: undefined,
       deliveryNegotiationStatus: 'PENDING_DRIVER',
       createdAt: '2026-03-11T08:10:00Z',
-      total: 386.5,
-      deliveryFee: 6.5,
+      total: 383.5,
+      deliveryFee: 3.5,
       currency: 'USD',
       deliveryOption: deliveryOptions[0],
       deliveryAddress: addresses[1],
@@ -656,8 +680,8 @@ function mockApiPlugin(): Plugin {
           storeId: 'store-2',
           status: 'PENDING',
           buyerName: 'David Kitenge',
-          destinationCity: 'Kinshasa (Ngaliema)',
-          store: { storeName: 'Kin Digital Gombe' },
+          destinationCity: 'Goma (Karisimbi — Ndosho)',
+          store: { storeName: 'Kivu Digital & Tech' },
           items: [
             { id: 'item-4', quantity: 1, productTitle: 'Smartphone Tecno Camon 30 Premier 5G (512GB)', unitPrice: 380, productType: 'PHYSICAL' },
           ],
@@ -673,19 +697,19 @@ function mockApiPlugin(): Plugin {
       productTitle: 'Pagne Super Wax Vlisco Original (6 yards)',
       productImage: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg',
       storeId: 'store-1',
-      storeName: 'Boutique Victoire Wax',
+      storeName: 'Boutique Virunga Wax',
       buyerId: 'usr-1',
       buyerName: 'David Kitenge',
       requestedQty: 10,
       requestedPriceUsd: 48,
       agreedPriceUsd: 50,
-      transportMode: 'Coursier Express Kinshasa',
+      transportMode: 'Coursier Express Goma',
       requestedDeliveryFeeUsd: 3.0,
       agreedDeliveryFeeUsd: 3.5,
-      destinationCity: 'Kinshasa (Gombe)',
+      destinationCity: 'Goma (Les Volcans)',
       currency: 'USD',
       status: 'ACCEPTED_BY_VENDOR',
-      notes: 'Commande de 10 pièces avec livraison groupée au bureau.',
+      notes: 'Commande de 10 pièces avec livraison groupée au bureau à Goma.',
       createdAt: '2026-03-09T11:20:00Z',
       updatedAt: '2026-03-09T14:45:00Z',
     },
@@ -695,19 +719,19 @@ function mockApiPlugin(): Plugin {
       productTitle: 'Smartphone Tecno Camon 30 Premier 5G (512GB)',
       productImage: '/src/assets/images/smartphone_camon_pro_1794567971555.jpg',
       storeId: 'store-2',
-      storeName: 'Kin Digital Gombe',
+      storeName: 'Kivu Digital & Tech',
       buyerId: 'usr-1',
       buyerName: 'David Kitenge',
       requestedQty: 2,
       requestedPriceUsd: 340,
       agreedPriceUsd: null,
-      transportMode: 'Bus / Agence Interurbaine (Fret Lubumbashi)',
-      requestedDeliveryFeeUsd: 12.0,
+      transportMode: 'Bateau Express / Fret Lac Kivu (Goma → Bukavu)',
+      requestedDeliveryFeeUsd: 10.0,
       agreedDeliveryFeeUsd: null,
-      destinationCity: 'Lubumbashi (Haut-Katanga)',
+      destinationCity: 'Bukavu (Sud-Kivu)',
       currency: 'USD',
       status: 'PENDING_VENDOR_REVIEW',
-      notes: 'Envoi sécurisé vers Lubumbashi par agence de voyage partenaire.',
+      notes: 'Envoi sécurisé depuis Goma vers Bukavu par agence partenaire.',
       createdAt: '2026-03-10T09:15:00Z',
       updatedAt: '2026-03-10T09:15:00Z',
     },
@@ -717,10 +741,12 @@ function mockApiPlugin(): Plugin {
     {
       id: 'store-1',
       ownerId: 'usr-1',
-      storeName: 'Boutique Victoire Wax',
-      slug: 'victoire-wax',
+      storeName: 'Boutique Virunga Wax',
+      slug: 'virunga-wax',
       storeType: 'RETAIL',
-      description: 'Maison de couture et grossiste de pagnes et tissus haut de gamme à Kinshasa.',
+      enabledServices: ['PHYSICAL'],
+      serviceFeesPaidUsd: { PHYSICAL: 15 },
+      description: 'Maison de couture et grossiste de pagnes et tissus haut de gamme à Goma (Nord-Kivu).',
       status: 'ACTIVE',
       fulfillmentMode: 'PLATFORM_DELIVERY',
       commissionRate: 5,
@@ -741,10 +767,12 @@ function mockApiPlugin(): Plugin {
     {
       id: 'store-2',
       ownerId: 'usr-1',
-      storeName: 'Kin Digital Gombe',
-      slug: 'kin-digital',
+      storeName: 'Kivu Digital & Tech',
+      slug: 'kivu-digital',
       storeType: 'RETAIL',
-      description: 'Importateur officiel smartphones, informatique et accessoires high-tech à Kinshasa & Lubumbashi.',
+      enabledServices: ['PHYSICAL', 'SERVICE'],
+      serviceFeesPaidUsd: { PHYSICAL: 15, SERVICE: 20 },
+      description: 'Importateur officiel smartphones, informatique et accessoires high-tech à Goma, Bukavu & Butembo.',
       status: 'ACTIVE',
       fulfillmentMode: 'PLATFORM_DELIVERY',
       commissionRate: 5,
@@ -765,10 +793,12 @@ function mockApiPlugin(): Plugin {
     {
       id: 'store-digital',
       ownerId: 'usr-1',
-      storeName: 'Kinshasa Business Insights',
-      slug: 'kin-insights',
+      storeName: 'Kivu Business Insights',
+      slug: 'kivu-insights',
       storeType: 'DIGITAL',
-      description: 'Vente d’études sectorielles, templates contractuels et e-books pour entrepreneurs en RDC.',
+      enabledServices: ['DIGITAL'],
+      serviceFeesPaidUsd: { DIGITAL: 10 },
+      description: 'Vente d’études sectorielles, templates contractuels et e-books pour entrepreneurs à Goma & RDC.',
       status: 'ACTIVE',
       fulfillmentMode: 'DIRECT_DOWNLOAD',
       commissionRate: 5,
@@ -789,10 +819,12 @@ function mockApiPlugin(): Plugin {
     {
       id: 'store-telecom',
       ownerId: 'usr-2',
-      storeName: 'KinConnect Télécoms',
-      slug: 'kin-connect',
+      storeName: 'GomaConnect Télécoms',
+      slug: 'goma-connect',
       storeType: 'SERVICES',
-      description: 'Opérateur télécom agréé : forfaits data, fibre optique professionnelle et assistance réseau.',
+      enabledServices: ['SERVICE'],
+      serviceFeesPaidUsd: { SERVICE: 20 },
+      description: 'Opérateur télécom agréé à Goma : forfaits data, fibre optique professionnelle et assistance réseau.',
       status: 'ACTIVE',
       fulfillmentMode: 'SERVICE_APPOINTMENT',
       commissionRate: 5,
@@ -813,10 +845,20 @@ function mockApiPlugin(): Plugin {
     {
       id: 'store-logistics',
       ownerId: 'usr-1',
-      storeName: 'Kota Express Logistique',
-      slug: 'kota-express',
+      storeName: 'Nyiragongo Express Logistique',
+      slug: 'nyiragongo-express',
       storeType: 'LOGISTICS',
-      description: 'Flotte de 45 coursiers motos et camionnettes pour livraison express dans tout Kinshasa.',
+      isTransportAgency: true,
+      transportDestinations: [
+        { id: 'td-1', originCity: 'Goma', destinationCity: 'Bukavu', basePriceUsd: 10, pricePerKmUsd: 0.45, estimatedDelay: '3h (Bateau / Route)', vehicleMode: 'Bateau Express / Fourgon' },
+        { id: 'td-2', originCity: 'Goma', destinationCity: 'Butembo & Beni', basePriceUsd: 14, pricePerKmUsd: 0.40, estimatedDelay: '18 à 24h', vehicleMode: 'Bus & Cargo Nord-Kivu' },
+        { id: 'td-3', originCity: 'Goma', destinationCity: 'Kinshasa', basePriceUsd: 25, pricePerKmUsd: 0.65, estimatedDelay: '24 à 48h (Cargo aérien)', vehicleMode: 'Fret Aérien Express' },
+        { id: 'td-4', originCity: 'Goma', destinationCity: 'Lubumbashi', basePriceUsd: 22, pricePerKmUsd: 0.55, estimatedDelay: '48h', vehicleMode: 'Fret Aérien / Routier' },
+        { id: 'td-5', originCity: 'Goma', destinationCity: 'Gisenyi / Kigali', basePriceUsd: 9, pricePerKmUsd: 0.35, estimatedDelay: '4h', vehicleMode: 'Navette Transfrontalière' },
+      ],
+      enabledServices: ['SERVICE'],
+      serviceFeesPaidUsd: { SERVICE: 20 },
+      description: 'Agence de transport RDC & environs : fret Goma, Bukavu, Butembo, Beni, Kinshasa, Lubumbashi, Kigali et courses urbaines.',
       status: 'ACTIVE',
       fulfillmentMode: 'LOGISTICS_PROVIDER',
       commissionRate: 5,
@@ -824,6 +866,7 @@ function mockApiPlugin(): Plugin {
       totalOrders: 310,
       payoutBlocked: false,
       payoutBlockReason: null,
+      immediateWithdrawalEnabled: false,
       isCertified: true,
       certificationStatus: 'ACTIVE',
       certificationFeeUsd: 15,
@@ -840,7 +883,9 @@ function mockApiPlugin(): Plugin {
       storeName: 'Coopérative Kivu Terroir',
       slug: 'kivu-terroir',
       storeType: 'RETAIL',
-      description: 'Producteurs de café Arabica et produits agroalimentaires du Sud-Kivu.',
+      enabledServices: ['PHYSICAL'],
+      serviceFeesPaidUsd: { PHYSICAL: 15 },
+      description: 'Producteurs de café Arabica et produits agroalimentaires du Nord et Sud-Kivu basés à Goma.',
       status: 'ACTIVE',
       fulfillmentMode: 'PLATFORM_DELIVERY',
       commissionRate: 5,
@@ -848,6 +893,7 @@ function mockApiPlugin(): Plugin {
       totalOrders: 41,
       payoutBlocked: false,
       payoutBlockReason: null,
+      immediateWithdrawalEnabled: false,
       isCertified: false,
       certificationStatus: 'NONE',
       certificationFeeUsd: 0,
@@ -874,6 +920,8 @@ function mockApiPlugin(): Plugin {
         isCertified,
         verifiedSupplier: isCertified,
         hasMonthlyAd,
+        isTransportAgency: Boolean(matchedStore?.isTransportAgency || matchedStore?.storeType === 'LOGISTICS'),
+        transportDestinations: matchedStore?.transportDestinations || [],
       },
     };
   }
@@ -885,14 +933,14 @@ function mockApiPlugin(): Plugin {
       orderNumber: 'ZGO-2026-0988',
       buyerName: 'Marc Mwamba',
       storeId: 'store-2',
-      storeName: 'Kin Digital Gombe',
+      storeName: 'Kivu Digital & Tech',
       amountUsd: 380,
       status: 'OPEN',
       severity: 'HIGH',
       payoutFrozen: false,
       reasonCategory: 'PRODUCT_NOT_RECEIVED',
-      reason: 'Retard de livraison supérieur à 48h sur smartphone vers Lubumbashi — demande de blocage des retraits vendeur.',
-      description: 'Retard de livraison supérieur à 48h sur smartphone vers Lubumbashi — demande de blocage des retraits vendeur.',
+      reason: 'Retard de livraison supérieur à 48h sur smartphone vers Bukavu — demande de blocage des retraits vendeur.',
+      description: 'Retard de livraison supérieur à 48h sur smartphone vers Bukavu — demande de blocage des retraits vendeur.',
       escrowAmount: 380,
       createdAt: '2026-03-08T10:00:00Z',
     },
@@ -901,15 +949,15 @@ function mockApiPlugin(): Plugin {
   let notifications: any[] = [
     {
       id: 'notif-1',
-      title: 'Bienvenue sur ZandoGo RDC !',
-      body: 'Votre devis négocié avec Boutique Victoire Wax ($50.00/unité) a été accepté.',
+      title: 'Bienvenue sur ZandoGo Goma !',
+      body: 'Votre devis négocié avec Boutique Virunga Wax ($50.00/unité) a été accepté.',
       isRead: false,
       createdAt: new Date().toISOString(),
     },
     {
       id: 'notif-2',
       title: 'Colis ZGO-2026-1001 en transit',
-      body: 'Le coursier Patrick Bolamba est en route vers Gombe avec votre commande.',
+      body: 'Le coursier Patrick Muhindo est en route vers Himbi (Goma) avec votre commande.',
       isRead: false,
       createdAt: new Date(Date.now() - 1800000).toISOString(),
     },
@@ -919,8 +967,8 @@ function mockApiPlugin(): Plugin {
     id: 'agent-1',
     status: 'AVAILABLE',
     vehicleType: 'MOTO',
-    currentLat: -4.3125,
-    currentLng: 15.3088,
+    currentLat: -1.6741,
+    currentLng: 29.2285,
   };
 
   let pendingAgents: any[] = [
@@ -929,8 +977,8 @@ function mockApiPlugin(): Plugin {
       vehicleType: 'MOTO_YAMAHA',
       user: {
         id: 'usr-moto-2',
-        fullName: 'Grace Mbuyi',
-        email: 'grace.mbuyi@example.cd',
+        fullName: 'Grace Kavira',
+        email: 'grace.kavira@example.cd',
         phone: '+243819882233',
         kycDocuments: [{ id: 'k-1', status: 'APPROVED' }],
       },
@@ -960,31 +1008,31 @@ function mockApiPlugin(): Plugin {
     {
       id: 'del-1',
       status: 'IN_TRANSIT',
-      estimatedFee: 6.5,
-      negotiatedFeeUsd: 6.5,
+      estimatedFee: 3.5,
+      negotiatedFeeUsd: 3.5,
       feeNegotiationStatus: 'AGREED',
-      distanceKm: 4.8,
-      pickupLat: -4.321,
-      pickupLng: 15.312,
-      dropoffLat: -4.3015,
-      dropoffLng: 15.3052,
-      clientGoogleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-4.3015,15.3052',
+      distanceKm: 3.2,
+      pickupLat: -1.6741,
+      pickupLng: 29.2285,
+      dropoffLat: -1.6815,
+      dropoffLng: 29.2115,
+      clientGoogleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-1.6815,29.2115',
       otpCode: '4829',
       agent: {
         id: 'agent-1',
         vehicleType: 'Moto Express Yamaha',
-        user: { fullName: 'Patrick Bolamba', phone: '+243 81 988 22 33' },
+        user: { fullName: 'Patrick Muhindo', phone: '+243 81 988 22 33' },
       },
       trackingPings: [
-        { lat: -4.321, lng: 15.312, recordedAt: new Date(Date.now() - 900000).toISOString() },
-        { lat: -4.314, lng: 15.3095, recordedAt: new Date(Date.now() - 300000).toISOString() },
+        { lat: -1.6741, lng: 29.2285, recordedAt: new Date(Date.now() - 900000).toISOString() },
+        { lat: -1.6778, lng: 29.2195, recordedAt: new Date(Date.now() - 300000).toISOString() },
       ],
       subOrder: {
-        store: { storeName: 'Boutique Victoire Wax', city: 'Kinshasa (Victoire)' },
+        store: { storeName: 'Boutique Virunga Wax', city: 'Goma (Les Volcans)' },
         order: {
           id: 'ord-1001',
           orderNumber: 'ZGO-2026-1001',
-          total: 91.5,
+          total: 88.5,
           currency: 'USD',
           deliveryAddress: addresses[0],
           paymentTransactions: [{ methodCode: 'MOBILE_MONEY_ORANGE', status: 'SUCCESS' }],
@@ -994,30 +1042,30 @@ function mockApiPlugin(): Plugin {
     {
       id: 'del-2',
       status: 'ASSIGNED',
-      estimatedFee: 6.5,
-      negotiatedFeeUsd: 5.0,
+      estimatedFee: 3.5,
+      negotiatedFeeUsd: 3.0,
       feeNegotiationStatus: 'PENDING_DRIVER',
-      distanceKm: 7.4,
-      pickupLat: -4.308,
-      pickupLng: 15.312,
-      dropoffLat: -4.3412,
-      dropoffLng: 15.2654,
-      clientGoogleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-4.3412,15.2654',
+      distanceKm: 4.9,
+      pickupLat: -1.6741,
+      pickupLng: 29.2285,
+      dropoffLat: -1.646,
+      dropoffLng: 29.208,
+      clientGoogleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-1.6460,29.2080',
       otpCode: '7194',
       agent: {
         id: 'agent-1',
         vehicleType: 'Moto Express Yamaha',
-        user: { fullName: 'Patrick Bolamba', phone: '+243 81 988 22 33' },
+        user: { fullName: 'Patrick Muhindo', phone: '+243 81 988 22 33' },
       },
       trackingPings: [
-        { lat: -4.308, lng: 15.312, recordedAt: new Date(Date.now() - 400000).toISOString() },
+        { lat: -1.6741, lng: 29.2285, recordedAt: new Date(Date.now() - 400000).toISOString() },
       ],
       subOrder: {
-        store: { storeName: 'Kin Digital Gombe', city: 'Kinshasa (Gombe)' },
+        store: { storeName: 'Kivu Digital & Tech', city: 'Goma (Centre)' },
         order: {
           id: 'ord-1004',
           orderNumber: 'ZGO-2026-1004',
-          total: 386.5,
+          total: 383.5,
           currency: 'USD',
           deliveryAddress: addresses[1],
           paymentTransactions: [{ methodCode: 'MOBILE_MONEY_MPESA', status: 'PENDING' }],
@@ -1033,28 +1081,28 @@ function mockApiPlugin(): Plugin {
       orderId: 'ord-1004',
       orderNumber: 'ZGO-2026-1004',
       storeId: 'store-logistics',
-      storeName: 'Patrick Bolamba · Coursier Moto (Avant paiement)',
-      city: 'Kinshasa (Ngaliema)',
+      storeName: 'Patrick Muhindo · Coursier Moto (Avant paiement)',
+      city: 'Goma (Karisimbi — Ndosho)',
       productId: 'prod-6',
       productTitle: 'Livraison Commande ZGO-2026-1004 (Avant paiement)',
       productImage: '/src/assets/images/express_courier_moto_1794397998233.jpg',
-      productPriceUsd: 6.5,
-      distanceKm: 7.4,
+      productPriceUsd: 3.5,
+      distanceKm: 4.9,
       clientLocation: {
-        lat: -4.3412,
-        lng: 15.2654,
-        label: 'Ngaliema · Macampagne',
-        googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-4.3412,15.2654',
-        distanceKm: 7.4,
+        lat: -1.646,
+        lng: 29.208,
+        label: 'Karisimbi · Ndosho (Goma)',
+        googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-1.6460,29.2080',
+        distanceKm: 4.9,
       },
       deliveryNegotiation: {
         orderId: 'ord-1004',
-        originalFeeUsd: 6.5,
-        proposedFeeUsd: 5.0,
+        originalFeeUsd: 3.5,
+        proposedFeeUsd: 3.0,
         agreedFeeUsd: null,
         status: 'PENDING_DRIVER',
         proposedBy: 'CUSTOMER',
-        distanceKm: 7.4,
+        distanceKm: 4.9,
       },
       messages: [
         {
@@ -1062,25 +1110,25 @@ function mockApiPlugin(): Plugin {
           conversationId: 'conv-4',
           senderId: 'usr-driver-1',
           content:
-            'Bonjour M. Kitenge ! Avant de régler votre commande ZGO-2026-1004, partagez votre point Google Maps exact afin que nous fixions un tarif de course juste.',
+            'Bonjour M. Kitenge ! Avant de régler votre commande ZGO-2026-1004 à Goma, partagez votre point Google Maps exact afin que nous fixions un tarif de course juste.',
           createdAt: new Date(Date.now() - 1200000).toISOString(),
         },
         {
           id: 'm-41',
           conversationId: 'conv-4',
           senderId: 'usr-1',
-          content: 'Voici ma position Google Maps à Macampagne (Ngaliema). Je propose $5.00 pour la course.',
+          content: 'Voici ma position Google Maps à Ndosho (Karisimbi · Goma). Je propose $3.00 pour la course.',
           location: {
-            lat: -4.3412,
-            lng: 15.2654,
-            label: 'Ngaliema · Macampagne (7.4 km)',
-            googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-4.3412,15.2654',
-            distanceKm: 7.4,
+            lat: -1.646,
+            lng: 29.208,
+            label: 'Karisimbi · Ndosho (4.9 km)',
+            googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=-1.6460,29.2080',
+            distanceKm: 4.9,
           },
           deliveryProposal: {
-            feeUsd: 5.0,
-            originalFeeUsd: 6.5,
-            distanceKm: 7.4,
+            feeUsd: 3.0,
+            originalFeeUsd: 3.5,
+            distanceKm: 4.9,
             status: 'PROPOSED',
             proposedBy: 'CUSTOMER',
             orderId: 'ord-1004',
@@ -1093,8 +1141,8 @@ function mockApiPlugin(): Plugin {
       id: 'conv-1',
       type: 'CUSTOMER_VENDOR',
       storeId: 'store-1',
-      storeName: 'Boutique Victoire Wax',
-      city: 'Kinshasa',
+      storeName: 'Boutique Virunga Wax',
+      city: 'Goma (Les Volcans)',
       productId: 'prod-1',
       productTitle: 'Pagne Super Wax Vlisco Original (6 yards)',
       productImage: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg',
@@ -1114,7 +1162,7 @@ function mockApiPlugin(): Plugin {
           conversationId: 'conv-1',
           senderId: 'usr-vendor-1',
           content:
-            'Nous pouvons vous accorder un prix spécial de $50.00 par pièce (au lieu de $65.00) avec coursier express à $3.50 vers Gombe. Le devis est prêt !',
+            'Nous pouvons vous accorder un prix spécial de $50.00 par pièce (au lieu de $65.00) avec coursier express à $3.50 vers Himbi / Les Volcans (Goma). Le devis est prêt !',
           createdAt: new Date(Date.now() - 1800000).toISOString(),
         },
       ],
@@ -1123,8 +1171,8 @@ function mockApiPlugin(): Plugin {
       id: 'conv-2',
       type: 'CUSTOMER_VENDOR',
       storeId: 'store-2',
-      storeName: 'Kin Digital Gombe',
-      city: 'Lubumbashi',
+      storeName: 'Kivu Digital & Tech',
+      city: 'Bukavu',
       productId: 'prod-6',
       productTitle: 'Smartphone Tecno Camon 30 Premier 5G (512GB)',
       productImage: '/src/assets/images/smartphone_camon_pro_1794567971555.jpg',
@@ -1136,7 +1184,7 @@ function mockApiPlugin(): Plugin {
           conversationId: 'conv-2',
           senderId: 'usr-vendor-2',
           content:
-            'Bonjour M. Kitenge, votre demande pour 2 Tecno Camon 30 vers Lubumbashi est en cours d’étude. L’expédition sécurisée par agence aérienne coûte $12.',
+            'Bonjour M. Kitenge, votre demande pour 2 Tecno Camon 30 depuis Goma vers Bukavu est en cours d’étude. L’expédition sécurisée par bateau / agence coûte $10.',
           createdAt: new Date(Date.now() - 7200000).toISOString(),
         },
       ],
@@ -1147,20 +1195,20 @@ function mockApiPlugin(): Plugin {
       orderId: 'ord-1001',
       orderNumber: 'ZGO-2026-1001',
       storeId: 'store-logistics',
-      storeName: 'Patrick Bolamba · Kota Express Moto',
-      city: 'Kinshasa',
+      storeName: 'Patrick Muhindo · Nyiragongo Express Moto',
+      city: 'Goma (Nord-Kivu)',
       productId: 'prod-2',
       productTitle: 'Livraison Commande ZGO-2026-1001',
       productImage: '/src/assets/images/express_courier_moto_1794397998233.jpg',
-      productPriceUsd: 6.5,
-      distanceKm: 4.8,
+      productPriceUsd: 3.5,
+      distanceKm: 3.2,
       messages: [
         {
           id: 'm-4',
           conversationId: 'conv-3',
           senderId: 'usr-driver-1',
           content:
-            'Bonjour ! J’ai récupéré votre veste Motif Kuba chez Boutique Victoire Wax. Je suis sur le Boulevard du 30 Juin, arrivée estimée dans 12 minutes.',
+            'Bonjour ! J’ai récupéré votre veste Motif Kuba chez Boutique Virunga Wax. Je suis sur le Boulevard Kanyamuhanga (Goma), arrivée estimée dans 10 minutes.',
           createdAt: new Date(Date.now() - 600000).toISOString(),
         },
       ],
@@ -1242,6 +1290,32 @@ function mockApiPlugin(): Plugin {
         if (path === '/users/me/addresses' && method === 'GET') {
           return json(addresses);
         }
+        if (path === '/users/me/addresses/by-email' && method === 'GET') {
+          const searchParams = new URL(url, 'http://localhost').searchParams;
+          const targetEmail = (searchParams.get('email') || currentUser.email || '').trim().toLowerCase();
+          if (!targetEmail || !targetEmail.includes('@')) {
+            return json({ statusCode: 400, message: 'Veuillez saisir une adresse e-mail valide.' }, 400);
+          }
+          let matched = addresses.filter(
+            (a) => !a.email || a.email.toLowerCase() === targetEmail,
+          );
+          if (matched.length === 0) {
+            const recovered = {
+              id: `addr-${Date.now()}`,
+              email: targetEmail,
+              commune: 'Goma — Les Volcans',
+              quartier: 'Boulevard Kanyamuhanga',
+              ville: 'Goma (Nord-Kivu)',
+              referencePoint: `Adresse liée au compte ${targetEmail} (modifiable)`,
+              latitude: -1.6741,
+              longitude: 29.2285,
+              isDefault: false,
+            };
+            addresses.push(recovered);
+            matched = [recovered];
+          }
+          return json({ email: targetEmail, addresses: matched });
+        }
         if (path === '/users/me/addresses' && method === 'POST') {
           readBody().then((body) => {
             if (body.isDefault) {
@@ -1249,11 +1323,13 @@ function mockApiPlugin(): Plugin {
             }
             const newAddr = {
               id: `addr-${Date.now()}`,
-              commune: body.commune || 'Gombe',
-              quartier: body.quartier || 'Centre',
+              email: (body.email || currentUser.email || '').toLowerCase(),
+              commune: body.commune || 'Goma',
+              quartier: body.quartier || 'Himbi',
+              ville: body.ville || body.commune || 'Goma (Nord-Kivu)',
               referencePoint: body.referencePoint || '',
-              latitude: body.latitude || -4.325,
-              longitude: body.longitude || 15.322,
+              latitude: body.latitude || -1.6741,
+              longitude: body.longitude || 29.2285,
               isDefault: Boolean(body.isDefault) || addresses.length === 0,
             };
             addresses.unshift(newAddr);
@@ -1266,15 +1342,57 @@ function mockApiPlugin(): Plugin {
           addresses = addresses.map((a) => ({ ...a, isDefault: a.id === addrDefaultMatch[1] }));
           return json(addresses);
         }
-        const addrDeleteMatch = path.match(/^\/users\/me\/addresses\/([^/]+)$/);
-        if (addrDeleteMatch && method === 'DELETE') {
-          addresses = addresses.filter((a) => a.id !== addrDeleteMatch[1]);
+        const addrSingleMatch = path.match(/^\/users\/me\/addresses\/([^/]+)$/);
+        if (addrSingleMatch && method === 'PATCH') {
+          readBody().then((body) => {
+            const addr = addresses.find((a) => a.id === addrSingleMatch[1]);
+            if (!addr) {
+              return json({ statusCode: 404, message: 'Adresse introuvable.' }, 404);
+            }
+            if (body.isDefault) {
+              addresses = addresses.map((a) => ({ ...a, isDefault: false }));
+            }
+            if (body.commune !== undefined) addr.commune = body.commune;
+            if (body.quartier !== undefined) addr.quartier = body.quartier;
+            if (body.ville !== undefined) addr.ville = body.ville;
+            if (body.referencePoint !== undefined) addr.referencePoint = body.referencePoint;
+            if (body.latitude !== undefined) addr.latitude = Number(body.latitude);
+            if (body.longitude !== undefined) addr.longitude = Number(body.longitude);
+            if (body.email !== undefined) addr.email = String(body.email).trim().toLowerCase();
+            if (body.isDefault !== undefined) addr.isDefault = Boolean(body.isDefault);
+            json(addr);
+          });
+          return;
+        }
+        if (addrSingleMatch && method === 'DELETE') {
+          addresses = addresses.filter((a) => a.id !== addrSingleMatch[1]);
           return json({ success: true });
         }
 
-        // --- CATEGORIES ---
+        // --- CATEGORIES (ILLIMITÉES & DYNAMIQUES) ---
         if (path === '/categories' && method === 'GET') {
           return json(categories);
+        }
+        if (path === '/categories' && method === 'POST') {
+          readBody().then((body) => {
+            const name = String(body.name || '').trim();
+            if (!name || name.length < 2) {
+              return json({ statusCode: 400, message: 'Nom de catégorie invalide.' }, 400);
+            }
+            const existing = categories.find(
+              (c) => c.name.toLowerCase() === name.toLowerCase(),
+            );
+            if (existing) {
+              return json(existing, 200);
+            }
+            const newCat = {
+              id: `cat-${Date.now()}`,
+              name,
+            };
+            categories.push(newCat);
+            json(newCat, 201);
+          });
+          return;
         }
 
         // --- PRODUCTS & REVIEWS ---
@@ -1328,7 +1446,7 @@ function mockApiPlugin(): Plugin {
               id: `rev-${Date.now()}`,
               productId: pid,
               authorName: currentUser.fullName,
-              city: addresses[0]?.commune ? `Kinshasa (${addresses[0].commune})` : 'Kinshasa',
+              city: addresses[0]?.commune ? `Goma (${addresses[0].commune})` : 'Goma (Nord-Kivu)',
               rating: Math.min(5, Math.max(1, Number(body.rating) || 5)),
               comment: body.comment || '',
               verifiedPurchase: true,
@@ -1360,11 +1478,19 @@ function mockApiPlugin(): Plugin {
           const prod = products.find((p) => p.id === prodId) || products.find((p) => p.productType === 'DIGITAL');
           const ord = orders.find((o) => o.id === ordId);
           const fileName = prod?.digitalFileName || 'document-zandogo.pdf';
-          const pdfBytes = buildRealPdfBuffer(
-            prod?.title || 'Document Numerique ZandoGo',
-            ord?.orderNumber || 'ZGO-2026',
-            fileName,
-          );
+
+          let pdfBytes: Buffer;
+          if (typeof prod?.digitalFileDataUrl === 'string' && prod.digitalFileDataUrl.includes('base64,')) {
+            const b64 = prod.digitalFileDataUrl.split('base64,')[1];
+            pdfBytes = Buffer.from(b64, 'base64');
+          } else {
+            pdfBytes = buildRealPdfBuffer(
+              prod?.title || 'Document Numerique ZandoGo',
+              ord?.orderNumber || 'ZGO-2026',
+              fileName,
+            );
+          }
+
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -1392,8 +1518,21 @@ function mockApiPlugin(): Plugin {
         }
         if (path === '/cart/items' && method === 'POST') {
           readBody().then((body) => {
-            const foundProd = products.find((p) => p.variants.some((v: any) => v.id === body.productVariantId)) || products[0];
-            const foundVar = foundProd.variants.find((v: any) => v.id === body.productVariantId) || foundProd.variants[0];
+            const foundProd =
+              products.find(
+                (p) =>
+                  (body.productVariantId && p.variants.some((v: any) => v.id === body.productVariantId)) ||
+                  (body.productId && p.id === body.productId),
+              ) || products[0];
+            const foundVar =
+              (foundProd.variants || []).find((v: any) => v.id === body.productVariantId) ||
+              (foundProd.variants && foundProd.variants[0]) || {
+                id: `${foundProd.id}-var-default`,
+                name: 'Standard',
+                attributes: {},
+                priceOverride: foundProd.basePriceUsd,
+                stockQty: foundProd.stockQty ?? 10,
+              };
             const qty = Math.max(1, Number(body.quantity) || 1);
 
             let unitPrice = Number(foundVar.priceOverride || foundProd.basePriceUsd);
@@ -1490,31 +1629,31 @@ function mockApiPlugin(): Plugin {
           const createdJob = {
             id: `del-${orderId}`,
             status: ord.status === 'COMPLETED' ? 'DELIVERED' : 'IN_TRANSIT',
-            estimatedFee: ord.deliveryFee ?? 6.5,
-            distanceKm: 5.4,
-            pickupLat: -4.324,
-            pickupLng: 15.314,
-            dropoffLat: addresses[0]?.latitude ?? -4.3015,
-            dropoffLng: addresses[0]?.longitude ?? 15.3052,
+            estimatedFee: ord.deliveryFee ?? 3.5,
+            distanceKm: 3.4,
+            pickupLat: -1.6741,
+            pickupLng: 29.2285,
+            dropoffLat: addresses[0]?.latitude ?? -1.6815,
+            dropoffLng: addresses[0]?.longitude ?? 29.2115,
             otpCode: String(1000 + Math.floor(Math.random() * 8999)),
             agent: {
               id: 'agent-1',
               vehicleType: 'Moto Express Yamaha',
-              user: { fullName: 'Patrick Bolamba', phone: '+243 81 988 22 33' },
+              user: { fullName: 'Patrick Muhindo', phone: '+243 81 988 22 33' },
             },
             trackingPings: [
-              { lat: -4.324, lng: 15.314, recordedAt: new Date(Date.now() - 600000).toISOString() },
-              { lat: -4.313, lng: 15.309, recordedAt: new Date(Date.now() - 180000).toISOString() },
+              { lat: -1.6741, lng: 29.2285, recordedAt: new Date(Date.now() - 600000).toISOString() },
+              { lat: -1.678, lng: 29.219, recordedAt: new Date(Date.now() - 180000).toISOString() },
             ],
             subOrder: {
-              store: { storeName: ord.subOrders?.[0]?.store?.storeName || 'Boutique Victoire Wax', city: 'Kinshasa' },
+              store: { storeName: ord.subOrders?.[0]?.store?.storeName || 'Boutique Virunga Wax', city: 'Goma (Nord-Kivu)' },
               order: {
                 id: ord.id,
                 orderNumber: ord.orderNumber,
                 total: ord.total,
                 currency: ord.currency,
                 deliveryAddress: addresses[0],
-                paymentTransactions: [{ methodCode: 'MOBILE_MONEY_MPESA', status: ord.isPaid ? 'SUCCESS' : 'PENDING' }],
+                paymentTransactions: [{ methodCode: ord.paymentOperator || 'MOBILE_MONEY_MPESA', status: ord.isPaid ? 'SUCCESS' : 'PENDING' }],
               },
             },
           };
@@ -1617,8 +1756,8 @@ function mockApiPlugin(): Plugin {
                   conversationId: conv.id,
                   senderId: 'usr-driver-1',
                   content: agreed
-                    ? `Tarif de livraison accepté à $${nextFee.toFixed(2)} pour ${ord?.orderNumber || ''}. Vous pouvez procéder au paiement MaishaPay.`
-                    : `Contre-proposition du livreur : $${nextFee.toFixed(2)} pour parcourir les ${job.distanceKm || 5} km jusqu’à votre point Google Maps.`,
+                    ? `Tarif de livraison accepté à $${nextFee.toFixed(2)} pour ${ord?.orderNumber || ''}. Vous pouvez procéder au paiement Mobile Money ou Carte.`
+                    : `Contre-proposition du livreur : $${nextFee.toFixed(2)} pour parcourir les ${job.distanceKm || 4} km jusqu’à votre point Google Maps à Goma.`,
                   deliveryProposal: {
                     feeUsd: nextFee,
                     originalFeeUsd: conv.deliveryNegotiation.originalFeeUsd,
@@ -1634,7 +1773,7 @@ function mockApiPlugin(): Plugin {
               notifications.unshift({
                 id: `notif-${Date.now()}`,
                 title: agreed ? `Tarif livraison validé ($${nextFee.toFixed(2)})` : `Contre-offre livreur ($${nextFee.toFixed(2)})`,
-                body: `Livreur Patrick Bolamba — Commande ${ord?.orderNumber || ''}.`,
+                body: `Livreur Patrick Muhindo (Goma) — Commande ${ord?.orderNumber || ''}.`,
                 channel: 'SMS_AFRICASTALKING',
                 smsRecipient: currentUser.phone,
                 isRead: false,
@@ -1657,18 +1796,17 @@ function mockApiPlugin(): Plugin {
         }
         if (path === '/orders/checkout' && method === 'POST') {
           readBody().then((body) => {
-            const hasDigital = cart.items.some((i: any) => i.variant?.product?.productType === 'DIGITAL');
             const onlyDigital = cart.items.length > 0 && cart.items.every((i: any) => i.variant?.product?.productType === 'DIGITAL');
             const selectedDel = onlyDigital
               ? {
                   id: 'del-opt-digital',
                   providerName: 'ZandoGo Instant Cloud',
                   code: 'CLICK_AND_COLLECT',
-                  name: 'Livraison Numérique Immédiate (Sans frais)',
+                  name: 'Envoi Automatique Numérique (Sans frais)',
                   estimatedTime: 'Instantané après paiement',
                   feeUsd: 0,
                   feeCdf: 0,
-                  description: 'Téléchargement direct du fichier PDF sans livreur ni adresse requise.',
+                  description: 'Envoi automatique du lien de téléchargement PDF par le système sans intervention du vendeur.',
                 }
               : deliveryOptions.find((d) => d.id === body.deliveryOptionId) || deliveryOptions[0];
 
@@ -1686,18 +1824,57 @@ function mockApiPlugin(): Plugin {
 
             const digitalDownloads = cart.items
               .filter((i: any) => i.variant?.product?.productType === 'DIGITAL')
-              .map((i: any) => {
+              .map((i: any, idx: number) => {
                 const prod = products.find((p) => p.id === i.variant?.product?.id);
+                const prodId = prod?.id || i.variant?.product?.id || 'prod-3';
+                const token = `zg-${Date.now().toString(36)}-${idx}`;
                 return {
-                  productId: i.variant?.product?.id || 'prod-3',
-                  title: i.variant?.product?.title || 'Document Numérique PDF',
-                  downloadUrl: `/api/downloads/${i.variant?.product?.id || 'prod-3'}/${newOrderId}`,
+                  productId: prodId,
+                  title: prod?.title || i.variant?.product?.title || 'Document Numérique PDF',
+                  downloadUrl: `/api/downloads/${prodId}/${newOrderId}?token=${token}`,
                   fileName: prod?.digitalFileName || 'document-zandogo.pdf',
+                  token,
+                  autoDispatched: false,
+                  fileUrl: prod?.digitalFileUrl || undefined,
                 };
               });
 
             const chosenAddr = onlyDigital ? undefined : addresses.find((a) => a.id === body.deliveryAddressId) || addresses[0];
-            const distKm = chosenAddr ? haversineKm(-4.321, 15.312, chosenAddr.latitude, chosenAddr.longitude) : 0;
+            const distKm = chosenAddr ? haversineKm(-1.6741, 29.2285, chosenAddr.latitude, chosenAddr.longitude) : 0;
+
+            // Group cart items by their actual store
+            const storeGroups = new Map<string, { storeId: string; storeName: string; items: any[] }>();
+            cart.items.forEach((it: any) => {
+              const prod = products.find((p) => p.id === it.variant?.product?.id);
+              const sId = prod?.store?.id || (onlyDigital ? 'store-digital' : 'store-1');
+              const sName = prod?.store?.storeName || (onlyDigital ? 'Kivu Business Insights' : 'Boutique Virunga Wax');
+              const group = storeGroups.get(sId) || { storeId: sId, storeName: sName, items: [] };
+              group.items.push({
+                id: it.id,
+                quantity: it.quantity,
+                productTitle: it.variant?.product?.title || prod?.title,
+                unitPrice: Number(it.unitPriceSnapshot),
+                productType: prod?.productType || it.variant?.product?.productType || 'PHYSICAL',
+                pricingUnit: prod?.pricingUnit || it.variant?.product?.pricingUnit || 'UNIT',
+                variantName: it.variant?.name,
+              });
+              storeGroups.set(sId, group);
+            });
+
+            const subOrders = Array.from(storeGroups.values()).map((grp, idx) => ({
+              id: `sub-${Date.now()}-${idx}`,
+              storeId: grp.storeId,
+              status: 'PENDING',
+              autoFulfilled: false,
+              buyerName: currentUser.fullName,
+              destinationCity: grp.items.every((it) => it.productType === 'DIGITAL')
+                ? 'Envoi automatique du lien PDF'
+                : chosenAddr
+                ? `Goma (${chosenAddr.commune})`
+                : 'Goma (Nord-Kivu)',
+              store: { storeName: grp.storeName },
+              items: grp.items,
+            }));
 
             const newOrder: any = {
               id: newOrderId,
@@ -1710,36 +1887,14 @@ function mockApiPlugin(): Plugin {
               total: grandTotal,
               deliveryFee,
               noDeliveryNeeded: onlyDigital,
-              deliveryNegotiationStatus: onlyDigital ? 'NONE' : 'NONE',
+              deliveryNegotiationStatus: 'NONE',
               deliveryAddress: chosenAddr,
               currency: body.currency || 'USD',
               deliveryOption: selectedDel,
               hasDigitalItems: digitalDownloads.length > 0,
               digitalDownloads: digitalDownloads.length > 0 ? digitalDownloads : undefined,
               smsDispatches: [],
-              subOrders: [
-                {
-                  id: `sub-${Date.now()}`,
-                  storeId: 'store-1',
-                  status: 'PENDING',
-                  buyerName: currentUser.fullName,
-                  destinationCity: onlyDigital
-                    ? 'Téléchargement numérique immédiat'
-                    : chosenAddr
-                    ? `Kinshasa (${chosenAddr.commune})`
-                    : 'Kinshasa',
-                  store: { storeName: onlyDigital ? 'Kinshasa Business Insights' : 'Boutique Victoire Wax' },
-                  items: cart.items.map((it: any) => ({
-                    id: it.id,
-                    quantity: it.quantity,
-                    productTitle: it.variant?.product?.title,
-                    unitPrice: Number(it.unitPriceSnapshot),
-                    productType: it.variant?.product?.productType || 'PHYSICAL',
-                    pricingUnit: it.variant?.product?.pricingUnit || 'UNIT',
-                    variantName: it.variant?.name,
-                  })),
-                },
-              ],
+              subOrders,
             };
 
             cart.items.forEach((item: any) => {
@@ -1753,8 +1908,8 @@ function mockApiPlugin(): Plugin {
 
             if (!onlyDigital && deliveryFee >= 0 && selectedDel.code !== 'CLICK_AND_COLLECT') {
               const jobId = `del-${Date.now()}`;
-              const dropLat = chosenAddr?.latitude || -4.3015;
-              const dropLng = chosenAddr?.longitude || 15.3052;
+              const dropLat = chosenAddr?.latitude || -1.6815;
+              const dropLng = chosenAddr?.longitude || 29.2115;
               const mapsLink = `https://www.google.com/maps/search/?api=1&query=${dropLat},${dropLng}`;
 
               deliveryJobs.unshift({
@@ -1763,9 +1918,9 @@ function mockApiPlugin(): Plugin {
                 estimatedFee: deliveryFee,
                 negotiatedFeeUsd: deliveryFee,
                 feeNegotiationStatus: 'NONE',
-                distanceKm: distKm || 5.2,
-                pickupLat: -4.321,
-                pickupLng: 15.312,
+                distanceKm: distKm || 3.4,
+                pickupLat: -1.6741,
+                pickupLng: 29.2285,
                 dropoffLat: dropLat,
                 dropoffLng: dropLng,
                 clientGoogleMapsUrl: mapsLink,
@@ -1773,11 +1928,11 @@ function mockApiPlugin(): Plugin {
                 agent: {
                   id: 'agent-1',
                   vehicleType: 'Moto Express Yamaha',
-                  user: { fullName: 'Patrick Bolamba', phone: '+243 81 988 22 33' },
+                  user: { fullName: 'Patrick Muhindo', phone: '+243 81 988 22 33' },
                 },
-                trackingPings: [{ lat: -4.321, lng: 15.312, recordedAt: new Date().toISOString() }],
+                trackingPings: [{ lat: -1.6741, lng: 29.2285, recordedAt: new Date().toISOString() }],
                 subOrder: {
-                  store: { storeName: 'Boutique Victoire Wax', city: 'Kinshasa' },
+                  store: { storeName: subOrders[0]?.store?.storeName || 'Boutique Virunga Wax', city: 'Goma (Nord-Kivu)' },
                   order: {
                     id: newOrderId,
                     orderNumber,
@@ -1797,18 +1952,18 @@ function mockApiPlugin(): Plugin {
                 orderId: newOrderId,
                 orderNumber,
                 storeId: 'store-logistics',
-                storeName: 'Patrick Bolamba · Coursier Moto (Avant paiement)',
-                city: chosenAddr?.commune ? `Kinshasa (${chosenAddr.commune})` : 'Kinshasa',
+                storeName: 'Patrick Muhindo · Coursier Moto (Avant paiement)',
+                city: chosenAddr?.commune ? `Goma (${chosenAddr.commune})` : 'Goma (Nord-Kivu)',
                 productTitle: `Livraison ${orderNumber}`,
                 productImage: '/src/assets/images/express_courier_moto_1794397998233.jpg',
                 productPriceUsd: deliveryFee,
-                distanceKm: distKm || 5.2,
+                distanceKm: distKm || 3.4,
                 clientLocation: {
                   lat: dropLat,
                   lng: dropLng,
-                  label: `${chosenAddr?.commune || 'Kinshasa'} · ${chosenAddr?.quartier || ''}`,
+                  label: `${chosenAddr?.commune || 'Goma'} · ${chosenAddr?.quartier || 'Himbi'}`,
                   googleMapsUrl: mapsLink,
-                  distanceKm: distKm || 5.2,
+                  distanceKm: distKm || 3.4,
                 },
                 deliveryNegotiation: {
                   orderId: newOrderId,
@@ -1816,14 +1971,14 @@ function mockApiPlugin(): Plugin {
                   proposedFeeUsd: deliveryFee,
                   agreedFeeUsd: null,
                   status: 'NONE',
-                  distanceKm: distKm || 5.2,
+                  distanceKm: distKm || 3.4,
                 },
                 messages: [
                   {
                     id: `m-${Date.now()}`,
                     conversationId: convId,
                     senderId: 'usr-driver-1',
-                    content: `Bonjour ! Course prête pour ${orderNumber} (${distKm || 5.2} km, tarif initial $${deliveryFee.toFixed(2)}). Vous pouvez partager votre position Google Maps ou proposer un tarif avant de payer.`,
+                    content: `Bonjour ! Course prête à Goma pour ${orderNumber} (${distKm || 3.4} km, tarif initial $${deliveryFee.toFixed(2)}). Vous pouvez partager votre position Google Maps ou proposer un tarif avant de payer.`,
                     createdAt: new Date().toISOString(),
                   },
                 ],
@@ -1837,8 +1992,8 @@ function mockApiPlugin(): Plugin {
               id: `notif-${Date.now()}`,
               title: `Commande ${orderNumber} créée`,
               body: onlyDigital
-                ? `Montant : $${grandTotal.toFixed(2)}. Aucune livraison requise — lien de téléchargement PDF activé dès paiement.`
-                : `Montant total : $${grandTotal.toFixed(2)}. Discutez le tarif coursier ou réglez via MaishaPay.`,
+                ? `Montant : $${grandTotal.toFixed(2)}. Dès paiement, le système enverra automatiquement le lien de téléchargement PDF sans action du vendeur.`
+                : `Montant total : $${grandTotal.toFixed(2)}. Discutez le tarif coursier ou réglez par Airtel, M-Pesa, Orange, MTN ou Visa.`,
               isRead: false,
               createdAt: new Date().toISOString(),
             });
@@ -1860,64 +2015,191 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
+        function resolveOperatorLabel(methodCode?: string, phone?: string): { code: string; label: string } {
+          if (methodCode === 'MOBILE_MONEY_AIRTEL' || methodCode === 'AIRTEL_MONEY') {
+            return { code: 'MOBILE_MONEY_AIRTEL', label: 'Airtel Money' };
+          }
+          if (methodCode === 'MOBILE_MONEY_ORANGE' || methodCode === 'ORANGE_MONEY') {
+            return { code: 'MOBILE_MONEY_ORANGE', label: 'Orange Money' };
+          }
+          if (methodCode === 'MOBILE_MONEY_MTN' || methodCode === 'MTN_MOMO') {
+            return { code: 'MOBILE_MONEY_MTN', label: 'MTN MoMo' };
+          }
+          if (methodCode === 'CARD_STRIPE' || methodCode === 'CARD') {
+            return { code: 'CARD_STRIPE', label: 'Visa / Mastercard' };
+          }
+          if (methodCode === 'CASH_ON_DELIVERY') {
+            return { code: 'CASH_ON_DELIVERY', label: 'Espèces à la livraison' };
+          }
+          if (methodCode === 'MOBILE_MONEY_MPESA' || methodCode === 'MPESA') {
+            return { code: 'MOBILE_MONEY_MPESA', label: 'M-Pesa Vodacom' };
+          }
+          const digits = String(phone || '').replace(/[^\d+]/g, '');
+          if (digits.startsWith('+250') || digits.startsWith('250') || digits.startsWith('+256') || digits.startsWith('256')) {
+            return { code: 'MOBILE_MONEY_MTN', label: 'MTN MoMo' };
+          }
+          let local = digits.replace(/^\+?243/, '').replace(/^0/, '');
+          const p2 = local.slice(0, 2);
+          if (['97', '98', '99'].includes(p2)) return { code: 'MOBILE_MONEY_AIRTEL', label: 'Airtel Money' };
+          if (['80', '84', '85', '89'].includes(p2)) return { code: 'MOBILE_MONEY_ORANGE', label: 'Orange Money' };
+          if (p2 === '88') return { code: 'MOBILE_MONEY_MTN', label: 'MTN MoMo' };
+          return { code: 'MOBILE_MONEY_MPESA', label: 'M-Pesa Vodacom' };
+        }
+
+        function fulfillDigitalDownloadsAutomatically(
+          ord: any,
+          smsTarget: string,
+          paymentRef: string,
+          operatorLabel: string,
+        ) {
+          const originHost = req.headers.host ? `http://${req.headers.host}` : '';
+          const nowIso = new Date().toISOString();
+          if (ord.digitalDownloads && ord.digitalDownloads.length > 0) {
+            ord.digitalDownloads = ord.digitalDownloads.map((dl: any) => ({
+              ...dl,
+              autoDispatched: true,
+              autoDispatchedAt: nowIso,
+            }));
+          }
+
+          (ord.subOrders || []).forEach((so: any) => {
+            const allDigitalItems = (so.items || []).length > 0 && so.items.every((it: any) => it.productType === 'DIGITAL');
+            if (allDigitalItems && !so.autoFulfilled) {
+              so.status = 'DELIVERED';
+              so.autoFulfilled = true;
+              const targetStore = stores.find((s) => s.id === so.storeId);
+              if (targetStore) {
+                const subTotal = so.items.reduce(
+                  (sum: number, it: any) => sum + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 1),
+                  0,
+                );
+                const commRate = Number(targetStore.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+                const netAmount = Number((subTotal * (1 - commRate)).toFixed(2));
+                targetStore.balanceUsd = Number(((targetStore.balanceUsd || 0) + netAmount).toFixed(2));
+              }
+            }
+          });
+
+          const firstDl = ord.digitalDownloads?.[0];
+          const fullUrl = firstDl ? `${originHost}${firstDl.downloadUrl}` : '';
+          const smsBody = firstDl
+            ? `[SMS] ZandoGo Goma : Paiement ${operatorLabel} $${Number(ord.total).toFixed(2)} confirmé (${paymentRef}). Lien direct de votre livre (${firstDl.fileName}) envoyé automatiquement : ${fullUrl}`
+            : `[SMS] ZandoGo Goma : Commande ${ord.orderNumber} confirmée via ${operatorLabel} (${paymentRef}). Séquestre actif.`;
+
+          ord.smsDispatches = [
+            {
+              id: `sms-${Date.now()}`,
+              provider: 'AFRICASTALKING',
+              to: smsTarget,
+              message: smsBody,
+              sentAt: nowIso,
+            },
+            ...(ord.smsDispatches || []),
+          ];
+
+          notifications.unshift({
+            id: `notif-${Date.now()}`,
+            title: firstDl
+              ? `Lien PDF envoyé automatiquement (${ord.orderNumber})`
+              : `Paiement ${operatorLabel} confirmé (${paymentRef})`,
+            body: smsBody,
+            channel: 'SMS_AFRICASTALKING',
+            smsRecipient: smsTarget,
+            actionUrl: firstDl?.downloadUrl,
+            actionLabel: firstDl ? `Télécharger ${firstDl.fileName}` : undefined,
+            isRead: false,
+            createdAt: nowIso,
+          });
+        }
+
         if (path === '/payments/initiate' && method === 'POST') {
           readBody().then((body) => {
             const ord = orders.find((o) => o.id === body.orderId);
-            const maishaPayRef = `MP-RDC-${Date.now().toString().slice(-6)}`;
+            const paymentRef = `ZG-PAY-${Date.now().toString().slice(-6)}`;
             const smsTarget = body.phoneNumber || currentUser.phone || '+243820001122';
+            const op = resolveOperatorLabel(body.methodCode, smsTarget);
+            const isCash = op.code === 'CASH_ON_DELIVERY';
+
+            const baseTotal = Number(ord?.total ?? 0);
+            const transactionFeePercent = isCash
+              ? 0
+              : Number(platformPricing.paymentTransactionFeePercent ?? 3.5);
+            const transactionFeeAmount = isCash
+              ? 0
+              : Number((baseTotal * (transactionFeePercent / 100)).toFixed(2));
+            const chargedTotal = Number((baseTotal + transactionFeeAmount).toFixed(2));
+            const paidAt = new Date().toISOString();
+            const escrowReleaseAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
             if (ord) {
-              if (body.methodCode === 'CASH_ON_DELIVERY') {
+              ord.transactionFeePercent = transactionFeePercent;
+              ord.transactionFeeAmount = transactionFeeAmount;
+              ord.chargedTotal = chargedTotal;
+
+              if (isCash) {
                 ord.status = 'PROCESSING';
                 ord.isPaid = false;
                 ord.paymentStatus = 'UNPAID';
                 ord.paymentGateway = 'CASH_ON_DELIVERY';
+                ord.paymentOperator = 'CASH_ON_DELIVERY';
+
+                const smsBody = `[SMS] ZandoGo Goma : Commande ${ord.orderNumber} confirmée (paiement en espèces à la livraison · $${chargedTotal.toFixed(2)}).`;
+                ord.smsDispatches = [
+                  { id: `sms-${Date.now()}`, provider: 'AFRICASTALKING', to: smsTarget, message: smsBody, sentAt: paidAt },
+                  ...(ord.smsDispatches || []),
+                ];
+                notifications.unshift({
+                  id: `notif-${Date.now()}`,
+                  title: 'Commande confirmée + SMS envoyé',
+                  body: smsBody,
+                  channel: 'SMS_AFRICASTALKING',
+                  smsRecipient: smsTarget,
+                  isRead: false,
+                  createdAt: paidAt,
+                });
               } else {
                 ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : 'ESCROW_HELD';
                 ord.isPaid = true;
                 ord.paymentStatus = 'PAID';
-                ord.paymentGateway = 'MAISHAPAY';
-                ord.maishaPayRef = maishaPayRef;
+                ord.paidAt = paidAt;
+                ord.escrowReleaseAt = escrowReleaseAt;
+                ord.paymentGateway = op.code === 'CARD_STRIPE' ? 'CARD' : 'MOBILE_MONEY';
+                ord.paymentOperator = op.code;
+                ord.paymentRef = paymentRef;
                 ord.escrowStatus = ord.noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD';
+                fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
               }
-
-              const smsBody = ord.digitalDownloads?.length
-                ? `[Africa's Talking SMS] ZandoGo : Paiement $${Number(ord.total).toFixed(2)} confirmé via MaishaPay (${maishaPayRef}). Téléchargez votre livre : ${ord.digitalDownloads[0].fileName}`
-                : `[Africa's Talking SMS] ZandoGo : Commande ${ord.orderNumber} confirmée via MaishaPay (${maishaPayRef}). Séquestre actif.`;
-
-              const smsRecord = {
-                id: `sms-${Date.now()}`,
-                provider: 'AFRICASTALKING',
-                to: smsTarget,
-                message: smsBody,
-                sentAt: new Date().toISOString(),
-              };
-              ord.smsDispatches = [smsRecord, ...(ord.smsDispatches || [])];
-
-              notifications.unshift({
-                id: `notif-${Date.now()}`,
-                title:
-                  body.methodCode === 'CASH_ON_DELIVERY'
-                    ? 'Commande confirmée + SMS Africa’s Talking envoyé'
-                    : `Paiement MaishaPay confirmé (${maishaPayRef})`,
-                body: smsBody,
-                channel: 'SMS_AFRICASTALKING',
-                smsRecipient: smsTarget,
-                isRead: false,
-                createdAt: new Date().toISOString(),
-              });
             }
+
+            const ussdByOp: Record<string, string | undefined> = {
+              MOBILE_MONEY_MPESA: '*150*00#',
+              MOBILE_MONEY_AIRTEL: '*501#',
+              MOBILE_MONEY_ORANGE: '#144#',
+              MOBILE_MONEY_MTN: '*182#',
+            };
+            const ussdCode = ussdByOp[op.code];
+            const expiresAt = ussdCode ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : undefined;
 
             json({
               status: 'SUCCESS',
-              aggregator: 'MAISHAPAY',
-              maishaPayRef: body.methodCode === 'CASH_ON_DELIVERY' ? undefined : maishaPayRef,
+              paymentStatus: 'SUCCESS',
+              operator: op.code,
+              operatorLabel: op.label,
+              paymentRef: isCash ? undefined : paymentRef,
+              baseTotal,
+              transactionFeePercent,
+              transactionFeeAmount,
+              chargedTotal,
+              paidAt: isCash ? undefined : paidAt,
+              escrowReleaseAt: isCash ? undefined : escrowReleaseAt,
+              ussdCode,
+              expiresAt,
               smsProvider: 'AFRICASTALKING',
               smsRecipient: smsTarget,
               digitalDownloads: ord?.digitalDownloads || [],
               noDeliveryNeeded: Boolean(ord?.noDeliveryNeeded),
               order: ord,
-              method: body.methodCode === 'CASH_ON_DELIVERY' ? 'cash_on_delivery' : body.methodCode,
+              method: isCash ? 'cash_on_delivery' : op.code,
             });
           });
           return;
@@ -1942,36 +2224,50 @@ function mockApiPlugin(): Plugin {
 
         const payOrderMatch = path.match(/^\/orders\/([^/]+)\/pay$/);
         if (payOrderMatch && method === 'POST') {
-          const ord = orders.find((o) => o.id === payOrderMatch[1]);
-          const maishaPayRef = `MP-RDC-${Date.now().toString().slice(-6)}`;
-          if (ord) {
-            ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : 'ESCROW_HELD';
-            ord.isPaid = true;
-            ord.paymentStatus = 'PAID';
-            ord.paymentGateway = 'MAISHAPAY';
-            ord.maishaPayRef = maishaPayRef;
-            ord.escrowStatus = ord.noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD';
-            const smsMsg = `[Africa's Talking SMS] ZandoGo : Paiement MaishaPay (${maishaPayRef}) validé pour ${ord.orderNumber}.`;
-            ord.smsDispatches = [
-              { id: `sms-${Date.now()}`, provider: 'AFRICASTALKING', to: currentUser.phone, message: smsMsg, sentAt: new Date().toISOString() },
-              ...(ord.smsDispatches || []),
-            ];
-            notifications.unshift({
-              id: `notif-${Date.now()}`,
-              title: `Règlement MaishaPay (${maishaPayRef})`,
-              body: smsMsg,
-              channel: 'SMS_AFRICASTALKING',
-              smsRecipient: currentUser.phone,
-              isRead: false,
-              createdAt: new Date().toISOString(),
+          readBody().then((body) => {
+            const ord = orders.find((o) => o.id === payOrderMatch[1]);
+            const paymentRef = `ZG-PAY-${Date.now().toString().slice(-6)}`;
+            const smsTarget = body.phoneNumber || currentUser.phone || '+243820001122';
+            const op = resolveOperatorLabel(body.methodCode, smsTarget);
+            const feePct = Number(platformPricing.paymentTransactionFeePercent ?? 3.5);
+            const baseTotal = Number(ord?.total ?? 0);
+            const feeAmt = Number((baseTotal * (feePct / 100)).toFixed(2));
+            const chargedTotal = Number((baseTotal + feeAmt).toFixed(2));
+            const paidAt = new Date().toISOString();
+            const escrowReleaseAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+            if (ord) {
+              ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : 'ESCROW_HELD';
+              ord.isPaid = true;
+              ord.paymentStatus = 'PAID';
+              ord.paidAt = paidAt;
+              ord.escrowReleaseAt = escrowReleaseAt;
+              ord.transactionFeePercent = feePct;
+              ord.transactionFeeAmount = feeAmt;
+              ord.chargedTotal = chargedTotal;
+              ord.paymentGateway = op.code === 'CARD_STRIPE' ? 'CARD' : 'MOBILE_MONEY';
+              ord.paymentOperator = op.code;
+              ord.paymentRef = paymentRef;
+              ord.escrowStatus = ord.noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD';
+              fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
+            }
+            json({
+              success: true,
+              operator: op.code,
+              operatorLabel: op.label,
+              paymentRef,
+              transactionFeePercent: feePct,
+              transactionFeeAmount: feeAmt,
+              chargedTotal,
+              paidAt,
+              escrowReleaseAt,
+              digitalDownloads: ord?.digitalDownloads || [],
+              message: ord?.digitalDownloads?.length
+                ? `Paiement ${op.label} $${chargedTotal.toFixed(2)} (${paymentRef}) validé ! Lien de téléchargement envoyé automatiquement.`
+                : `Commande réglée via ${op.label} pour $${chargedTotal.toFixed(2)} (${paymentRef}). Décompte 48h démarré.`,
             });
-          }
-          return json({
-            success: true,
-            aggregator: 'MAISHAPAY',
-            maishaPayRef,
-            message: `Commande réglée via MaishaPay (${maishaPayRef}) et notification SMS Africa's Talking envoyée.`,
           });
+          return;
         }
 
         // --- NEGOTIATIONS ---
@@ -1992,10 +2288,10 @@ function mockApiPlugin(): Plugin {
               requestedQty: Number(body.requestedQty) || 1,
               requestedPriceUsd: Number(body.requestedPriceUsd) || 0,
               agreedPriceUsd: null,
-              transportMode: body.transportMode || 'Coursier Express Kinshasa',
+              transportMode: body.transportMode || 'Coursier Express Goma',
               requestedDeliveryFeeUsd: body.requestedDeliveryFeeUsd !== undefined ? Number(body.requestedDeliveryFeeUsd) : 3.5,
               agreedDeliveryFeeUsd: null,
-              destinationCity: body.destinationCity || 'Kinshasa',
+              destinationCity: body.destinationCity || 'Goma (Nord-Kivu)',
               currency: body.currency || 'USD',
               status: 'PENDING_VENDOR_REVIEW',
               notes: body.notes || '',
@@ -2094,7 +2390,7 @@ function mockApiPlugin(): Plugin {
           const storeId = vendorOrdersMatch[1];
           const matching = orders.flatMap((o) =>
             (o.subOrders || [])
-              .filter((so: any) => so.storeId === storeId || storeId === 'store-1')
+              .filter((so: any) => so.storeId === storeId)
               .map((so: any) => ({
                 ...so,
                 orderId: o.id,
@@ -2102,6 +2398,10 @@ function mockApiPlugin(): Plugin {
                 orderStatus: o.status,
                 isPaid: o.isPaid,
                 escrowStatus: o.escrowStatus,
+                hasDigitalItems: Boolean(
+                  o.hasDigitalItems && (so.items || []).every((it: any) => it.productType === 'DIGITAL'),
+                ),
+                autoFulfilled: Boolean(so.autoFulfilled),
                 total: o.total,
                 currency: o.currency,
                 createdAt: o.createdAt,
@@ -2137,18 +2437,26 @@ function mockApiPlugin(): Plugin {
             .filter((d) => d.storeId === targetStore.id && d.payoutFrozen && d.status === 'OPEN')
             .map((d) => ({ id: d.id, orderNumber: d.orderNumber, reason: d.reason }));
           const isBlocked = Boolean(targetStore?.payoutBlocked) || blockingDisputes.length > 0;
+          const immediateAuthorized =
+            !isBlocked &&
+            (Boolean(platformPricing.allowImmediateVendorWithdrawal) ||
+              Boolean(targetStore?.immediateWithdrawalEnabled));
 
-          const lockedEscrowUsd = orders
-            .filter((o) => o.escrowStatus === 'HELD')
-            .reduce((s, o) => s + Number(o.total || 0), 0);
+          const storeHeldOrders = orders.filter(
+            (o) =>
+              o.escrowStatus === 'HELD' &&
+              (o.subOrders || []).some((so: any) => so.storeId === targetStore.id),
+          );
+          const lockedEscrowUsd = storeHeldOrders.reduce((s, o) => s + Number(o.total || 0), 0);
           const availableBalanceUsd = Number(targetStore?.balanceUsd ?? 1840.5);
           return json({
             storeId: targetStore.id,
             storeName: targetStore.storeName,
             availableBalanceUsd,
             lockedEscrowUsd,
-            totalEarnedUsd: availableBalanceUsd + 420.0,
+            totalEarnedUsd: availableBalanceUsd + lockedEscrowUsd + 420.0,
             currency: 'USD',
+            immediateWithdrawalAuthorized: immediateAuthorized,
             payoutBlocked: isBlocked,
             payoutBlockReason: isBlocked
               ? targetStore?.payoutBlockReason ||
@@ -2157,6 +2465,33 @@ function mockApiPlugin(): Plugin {
             blockingDisputes,
             payouts,
           });
+        }
+        const adminUnlockStoreMatch = path.match(/^\/wallets\/admin\/store\/([^/]+)\/unlock-funds$/);
+        if (adminUnlockStoreMatch && method === 'POST') {
+          const st = stores.find((s) => s.id === adminUnlockStoreMatch[1]);
+          if (!st) return json({ statusCode: 404, message: 'Boutique introuvable.' }, 404);
+          if (st.payoutBlocked) {
+            return json({ statusCode: 403, message: 'Boutique bloquée pour litige en cours.' }, 403);
+          }
+          let unlockedAmount = 0;
+          orders.forEach((o) => {
+            const belongs = (o.subOrders || []).some((so: any) => so.storeId === st.id);
+            if (belongs && o.escrowStatus === 'HELD') {
+              o.escrowStatus = 'RELEASED_TO_VENDOR';
+              const comm = Number(st.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+              const net = Number((Number(o.total || 0) * (1 - comm)).toFixed(2));
+              st.balanceUsd = Number(((st.balanceUsd || 0) + net).toFixed(2));
+              unlockedAmount += net;
+            }
+          });
+          notifications.unshift({
+            id: `notif-${Date.now()}`,
+            title: `Fonds débloqués par le Super Admin (${st.storeName})`,
+            body: `$${unlockedAmount.toFixed(2)} transférés vers votre solde disponible immédiat.`,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          });
+          return json({ storeId: st.id, unlockedAmount: Number(unlockedAmount.toFixed(2)) });
         }
         if ((path === '/wallets/payout' || path === '/wallets/payouts') && method === 'POST') {
           readBody().then((body) => {
@@ -2177,9 +2512,35 @@ function mockApiPlugin(): Plugin {
               );
             }
 
+            const immediateAuthorized =
+              Boolean(platformPricing.allowImmediateVendorWithdrawal) ||
+              Boolean(targetStore?.immediateWithdrawalEnabled);
+
+            if (immediateAuthorized) {
+              orders.forEach((o) => {
+                const belongs = (o.subOrders || []).some((so: any) => so.storeId === targetStore.id);
+                if (belongs && o.escrowStatus === 'HELD') {
+                  o.escrowStatus = 'RELEASED_TO_VENDOR';
+                  const comm = Number(targetStore.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+                  const net = Number((Number(o.total || 0) * (1 - comm)).toFixed(2));
+                  targetStore.balanceUsd = Number(((targetStore.balanceUsd || 0) + net).toFixed(2));
+                }
+              });
+            }
+
             const amount = Number(body.amountUsd ?? body.amount ?? 0);
+            const currentBal = Number(targetStore?.balanceUsd ?? 0);
             if (amount <= 0) {
               return json({ statusCode: 400, message: 'Montant de retrait invalide.' }, 400);
+            }
+            if (amount > currentBal) {
+              return json(
+                {
+                  statusCode: 400,
+                  message: `Solde disponible insuffisant ($${currentBal.toFixed(2)}).`,
+                },
+                400,
+              );
             }
 
             const newPayout = {
@@ -2187,12 +2548,23 @@ function mockApiPlugin(): Plugin {
               amountUsd: amount,
               method: body.method || 'Mobile Money',
               destination: body.destination || '+243820001122',
-              status: 'REQUESTED',
+              status: immediateAuthorized ? 'PAID' : 'REQUESTED',
               createdAt: new Date().toISOString(),
             };
             payouts.unshift(newPayout);
             if (targetStore && typeof targetStore.balanceUsd === 'number') {
               targetStore.balanceUsd = Math.max(0, Number((targetStore.balanceUsd - amount).toFixed(2)));
+            }
+            if (immediateAuthorized) {
+              notifications.unshift({
+                id: `notif-${Date.now()}`,
+                title: `Retrait immédiat exécuté ($${amount.toFixed(2)})`,
+                body: `Décaissement direct vers ${newPayout.destination} (${newPayout.method}) autorisé par le Super Admin.`,
+                channel: 'SMS_AFRICASTALKING',
+                smsRecipient: newPayout.destination,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+              });
             }
             json(newPayout, 201);
           });
@@ -2210,16 +2582,60 @@ function mockApiPlugin(): Plugin {
               return json({ statusCode: 409, message: 'Ce slug de boutique est déjà utilisé.' }, 409);
             }
 
-            const feeUsd = Number(platformPricing.storeCreationFeeUsd || 0);
-            const maishaRef = `MP-STORE-${Math.floor(100000 + Math.random() * 900000)}`;
+            const validModules = ['PHYSICAL', 'DIGITAL', 'SERVICE'];
+            const requestedModules: string[] = Array.isArray(body.enabledServices)
+              ? Array.from(new Set(body.enabledServices.filter((m: string) => validModules.includes(m))))
+              : ['PHYSICAL'];
+
+            if (requestedModules.length === 0) {
+              return json(
+                { statusCode: 400, message: 'Veuillez sélectionner au moins un service payant (Bien physique, Livre PDF ou Service).' },
+                400,
+              );
+            }
+
+            const serviceFeesPaidUsd: Record<string, number> = {};
+            let modulesTotalUsd = 0;
+            requestedModules.forEach((svc) => {
+              const svcFee = getServiceModuleFeeUsd(svc);
+              serviceFeesPaidUsd[svc] = svcFee;
+              modulesTotalUsd += svcFee;
+            });
+
+            const baseFeeUsd = Number(platformPricing.storeCreationFeeUsd || 0);
+            const feeUsd = Number((baseFeeUsd + modulesTotalUsd).toFixed(2));
+            const paymentRef = `ZG-STORE-${Math.floor(100000 + Math.random() * 900000)}`;
             const smsTarget = body.customerPhone || currentUser.phone || '+243820001122';
+            const op = resolveOperatorLabel(body.paymentMethod, smsTarget);
+
+            const derivedStoreType =
+              body.storeType ||
+              (requestedModules.length === 1 && requestedModules[0] === 'DIGITAL'
+                ? 'DIGITAL'
+                : requestedModules.length === 1 && requestedModules[0] === 'SERVICE'
+                ? 'SERVICES'
+                : 'RETAIL');
 
             const newStore = {
               id: `store-${Date.now()}`,
               ownerId: currentUser.id,
               storeName: body.storeName,
               slug: body.slug,
-              storeType: body.storeType || 'RETAIL',
+              storeType: derivedStoreType,
+              isTransportAgency: Boolean(body.isTransportAgency || derivedStoreType === 'LOGISTICS'),
+              transportDestinations: Array.isArray(body.transportDestinations)
+                ? body.transportDestinations.map((td: any, idx: number) => ({
+                    id: td.id || `td-${Date.now()}-${idx}`,
+                    originCity: td.originCity || 'Goma',
+                    destinationCity: td.destinationCity || 'Bukavu',
+                    basePriceUsd: Number(td.basePriceUsd || 0),
+                    pricePerKmUsd: td.pricePerKmUsd !== undefined ? Number(td.pricePerKmUsd) : undefined,
+                    estimatedDelay: td.estimatedDelay || '24h',
+                    vehicleMode: td.vehicleMode || 'Fourgon / Fret',
+                  }))
+                : [],
+              enabledServices: requestedModules,
+              serviceFeesPaidUsd,
               description: body.description,
               status: 'ACTIVE' as const,
               fulfillmentMode: body.fulfillmentMode || 'PLATFORM_DELIVERY',
@@ -2228,8 +2644,10 @@ function mockApiPlugin(): Plugin {
               totalOrders: 0,
               payoutBlocked: false,
               payoutBlockReason: null,
+              immediateWithdrawalEnabled: false,
               creationFeePaidUsd: feeUsd,
-              maishaPayRef: maishaRef,
+              paymentRef,
+              paymentOperator: op.code,
               isCertified: false,
               certificationStatus: 'NONE',
               hasMonthlyAd: false,
@@ -2240,15 +2658,61 @@ function mockApiPlugin(): Plugin {
 
             notifications.unshift({
               id: `notif-${Date.now()}`,
-              title: `Boutique achetée & activée (${feeUsd}$ via MaishaPay)`,
-              body: `[Africa's Talking SMS] Boutique "${newStore.storeName}" créée (Réf MaishaPay : ${maishaRef}). Vous pouvez maintenant publier vos produits.`,
+              title: `Boutique achetée & activée ($${feeUsd.toFixed(2)} · ${op.label})`,
+              body: `[SMS] Boutique "${newStore.storeName}" créée (${newStore.isTransportAgency ? `Agence Transport · ${newStore.transportDestinations.length} lignes` : requestedModules.join(', ')} · Réf : ${paymentRef}).`,
               channel: 'SMS_AFRICASTALKING',
               smsRecipient: smsTarget,
               isRead: false,
               createdAt: new Date().toISOString(),
             });
 
-            json({ ...newStore, creationFeeUsd: feeUsd, maishaPayRef: maishaRef }, 201);
+            json({ ...newStore, creationFeeUsd: feeUsd, paymentRef, operator: op.code }, 201);
+          });
+          return;
+        }
+
+        const vendorStoreActivateServiceMatch = path.match(/^\/vendors\/stores\/([^/]+)\/activate-service$/);
+        if (vendorStoreActivateServiceMatch && method === 'POST') {
+          readBody().then((body) => {
+            const st = stores.find((s) => s.id === vendorStoreActivateServiceMatch[1]);
+            if (!st) {
+              return json({ statusCode: 404, message: 'Boutique introuvable.' }, 404);
+            }
+            const svc = body.service;
+            if (!['PHYSICAL', 'DIGITAL', 'SERVICE'].includes(svc)) {
+              return json({ statusCode: 400, message: 'Service inconnu.' }, 400);
+            }
+            const currentEnabled: string[] = Array.isArray(st.enabledServices) ? st.enabledServices : ['PHYSICAL'];
+            if (currentEnabled.includes(svc)) {
+              return json({ store: st, activatedService: svc, feeUsd: 0 });
+            }
+
+            const feeUsd = getServiceModuleFeeUsd(svc);
+            const paymentRef = `ZG-SVC-${Math.floor(100000 + Math.random() * 900000)}`;
+            const smsTarget = body.customerPhone || currentUser.phone || '+243820001122';
+            const op = resolveOperatorLabel(body.paymentMethod, smsTarget);
+
+            st.enabledServices = [...currentEnabled, svc];
+            st.serviceFeesPaidUsd = { ...(st.serviceFeesPaidUsd || {}), [svc]: feeUsd };
+
+            const svcLabel =
+              svc === 'PHYSICAL'
+                ? 'Biens Physiques'
+                : svc === 'DIGITAL'
+                ? 'Livres & Documents PDF'
+                : 'Services & Transport au km';
+
+            notifications.unshift({
+              id: `notif-${Date.now()}`,
+              title: `Service "${svcLabel}" activé ($${feeUsd.toFixed(2)} · ${op.label})`,
+              body: `[SMS] Le module ${svcLabel} est désormais débloqué sur "${st.storeName}" (Réf : ${paymentRef}).`,
+              channel: 'SMS_AFRICASTALKING',
+              smsRecipient: smsTarget,
+              isRead: false,
+              createdAt: new Date().toISOString(),
+            });
+
+            json({ store: st, activatedService: svc, feeUsd, paymentRef, operator: op.code });
           });
           return;
         }
@@ -2261,13 +2725,33 @@ function mockApiPlugin(): Plugin {
         if (vendorStoreProductsMatch && method === 'POST') {
           readBody().then((body) => {
             const pType = body.productType || 'PHYSICAL';
+            const store = stores.find((s) => s.id === vendorStoreProductsMatch[1]) || stores[0];
+            const enabledServices: string[] = Array.isArray(store.enabledServices)
+              ? store.enabledServices
+              : ['PHYSICAL'];
+
+            if (!enabledServices.includes(pType)) {
+              const svcLabel =
+                pType === 'DIGITAL'
+                  ? 'Livre / Document PDF'
+                  : pType === 'SERVICE'
+                  ? 'Service / Transport au km'
+                  : 'Bien Physique';
+              return json(
+                {
+                  statusCode: 403,
+                  message: `Le module "${svcLabel}" n’est pas encore acheté pour cette boutique. Activez-le par Mobile Money ou Carte avant de publier cette offre.`,
+                },
+                403,
+              );
+            }
+
             const fallbackImg =
               pType === 'DIGITAL'
                 ? '/src/assets/images/digital_business_guide_1794397996870.jpg'
                 : pType === 'SERVICE'
                 ? '/src/assets/images/internet_fiber_service_1794397997131.jpg'
                 : '/src/assets/images/marketplace_parcel_default_1794567970796.jpg';
-            const store = stores.find((s) => s.id === vendorStoreProductsMatch[1]) || stores[0];
             const cat = categories.find((c) => c.id === body.categoryId) || categories[0];
 
             const uploadedImages =
@@ -2318,8 +2802,9 @@ function mockApiPlugin(): Plugin {
                   }))
                 : undefined;
 
+            const newId = `prod-${Date.now()}`;
             const newProd = {
-              id: `prod-${Date.now()}`,
+              id: newId,
               title: body.title,
               description: body.description,
               productType: pType,
@@ -2333,6 +2818,8 @@ function mockApiPlugin(): Plugin {
               lowStockThreshold: body.lowStockThreshold !== undefined ? Number(body.lowStockThreshold) : 5,
               digitalFileName: body.digitalFileName,
               digitalFileSize: body.digitalFileSize,
+              digitalFileDataUrl: body.digitalFileDataUrl || undefined,
+              digitalFileUrl: body.digitalFileUrl || undefined,
               serviceDuration: body.serviceDuration,
               fulfillmentDetails: body.fulfillmentDetails,
               rating: 5.0,
@@ -2344,7 +2831,7 @@ function mockApiPlugin(): Plugin {
                 storeName: store.storeName,
                 slug: store.slug,
                 ownerId: store.ownerId || 'usr-1',
-                city: 'Kinshasa',
+                city: 'Goma (Nord-Kivu)',
                 verifiedSupplier: Boolean(store.isCertified),
                 isCertified: Boolean(store.isCertified),
               },
@@ -2380,17 +2867,17 @@ function mockApiPlugin(): Plugin {
             st.monthlyAdPlan = plan;
             st.monthlyAdFeeUsd = feeUsd;
             st.monthlyAdUntil = until;
-            const maishaRef = `MP-AD-${Math.floor(100000 + Math.random() * 900000)}`;
+            const paymentRef = `ZG-AD-${Math.floor(100000 + Math.random() * 900000)}`;
             notifications.unshift({
               id: `notif-${Date.now()}`,
-              title: `Publicité mensuelle activée (${feeUsd}$ via MaishaPay)`,
-              body: `Les offres de ${st.storeName} apparaissent désormais dans le carrousel d’accueil et en tête du catalogue. Réf : ${maishaRef}.`,
+              title: `Publicité mensuelle activée ($${feeUsd})`,
+              body: `Les offres de ${st.storeName} apparaissent désormais dans le carrousel d’accueil et en tête du catalogue. Réf : ${paymentRef}.`,
               channel: 'SMS_AFRICASTALKING',
               smsRecipient: currentUser.phone,
               isRead: false,
               createdAt: new Date().toISOString(),
             });
-            json({ store: st, maishaPayRef: maishaRef, feeUsd, plan });
+            json({ store: st, paymentRef, feeUsd, plan });
           });
           return;
         }
@@ -2409,17 +2896,17 @@ function mockApiPlugin(): Plugin {
             st.certificationStatus = 'ACTIVE';
             st.certificationFeeUsd = feeUsd;
             st.certifiedUntil = until;
-            const maishaRef = `MP-CERT-${Math.floor(100000 + Math.random() * 900000)}`;
+            const paymentRef = `ZG-CERT-${Math.floor(100000 + Math.random() * 900000)}`;
             notifications.unshift({
               id: `notif-${Date.now()}`,
-              title: `Certification Vendeur activée (${feeUsd}$ via MaishaPay)`,
-              body: `Le badge « Vendeur Certifié » est maintenant affiché sur tous les produits de ${st.storeName}. Réf : ${maishaRef}.`,
+              title: `Certification Vendeur activée ($${feeUsd})`,
+              body: `Le badge « Vendeur Certifié » est maintenant affiché sur tous les produits de ${st.storeName}. Réf : ${paymentRef}.`,
               channel: 'SMS_AFRICASTALKING',
               smsRecipient: currentUser.phone,
               isRead: false,
               createdAt: new Date().toISOString(),
             });
-            json({ store: st, maishaPayRef: maishaRef, feeUsd });
+            json({ store: st, paymentRef, feeUsd });
           });
           return;
         }
@@ -2451,6 +2938,29 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
+        const vendorStoreImmediateMatch = path.match(/^\/vendors\/stores\/([^/]+)\/immediate-withdrawal$/);
+        if (vendorStoreImmediateMatch && method === 'PATCH') {
+          readBody().then((body) => {
+            const st = stores.find((s) => s.id === vendorStoreImmediateMatch[1]);
+            if (st) {
+              st.immediateWithdrawalEnabled = Boolean(body.enabled);
+              notifications.unshift({
+                id: `notif-${Date.now()}`,
+                title: st.immediateWithdrawalEnabled
+                  ? `Retrait immédiat autorisé : ${st.storeName}`
+                  : `Délai standard 48h rétabli : ${st.storeName}`,
+                body: st.immediateWithdrawalEnabled
+                  ? `Le Super Admin autorise désormais les retraits immédiats sans attendre les 48h sur « ${st.storeName} ».`
+                  : `Le délai standard de 48h dès paiement s’applique désormais à « ${st.storeName} ».`,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
+            json(st || { success: true });
+          });
+          return;
+        }
+
         const vendorStoreReviewMatch = path.match(/^\/vendors\/stores\/([^/]+)\/review$/);
         if (vendorStoreReviewMatch && method === 'PATCH') {
           readBody().then((body) => {
@@ -2468,6 +2978,21 @@ function mockApiPlugin(): Plugin {
         if (vendorStoreMatch && method === 'GET') {
           const s = stores.find((st) => st.id === vendorStoreMatch[1]) || stores[0];
           return json(s);
+        }
+        if (vendorStoreMatch && method === 'PATCH') {
+          readBody().then((body) => {
+            const s = stores.find((st) => st.id === vendorStoreMatch[1]);
+            if (s) {
+              if (body.storeName !== undefined) s.storeName = body.storeName;
+              if (body.description !== undefined) s.description = body.description;
+              if (body.isTransportAgency !== undefined) s.isTransportAgency = Boolean(body.isTransportAgency);
+              if (Array.isArray(body.transportDestinations)) {
+                s.transportDestinations = body.transportDestinations;
+              }
+            }
+            json(s || { success: true });
+          });
+          return;
         }
 
         // --- KYC ---
@@ -2538,6 +3063,18 @@ function mockApiPlugin(): Plugin {
                 body.storeCreationFeeUsd !== undefined
                   ? Math.max(0, Number(body.storeCreationFeeUsd))
                   : platformPricing.storeCreationFeeUsd,
+              servicePhysicalFeeUsd:
+                body.servicePhysicalFeeUsd !== undefined
+                  ? Math.max(0, Number(body.servicePhysicalFeeUsd))
+                  : platformPricing.servicePhysicalFeeUsd,
+              serviceDigitalFeeUsd:
+                body.serviceDigitalFeeUsd !== undefined
+                  ? Math.max(0, Number(body.serviceDigitalFeeUsd))
+                  : platformPricing.serviceDigitalFeeUsd,
+              servicePrestationFeeUsd:
+                body.servicePrestationFeeUsd !== undefined
+                  ? Math.max(0, Number(body.servicePrestationFeeUsd))
+                  : platformPricing.servicePrestationFeeUsd,
               certificationMonthlyFeeUsd:
                 body.certificationMonthlyFeeUsd !== undefined
                   ? Math.max(0, Number(body.certificationMonthlyFeeUsd))
@@ -2558,6 +3095,14 @@ function mockApiPlugin(): Plugin {
                 body.defaultCommissionPercent !== undefined
                   ? Math.min(50, Math.max(0, Number(body.defaultCommissionPercent)))
                   : platformPricing.defaultCommissionPercent,
+              paymentTransactionFeePercent:
+                body.paymentTransactionFeePercent !== undefined
+                  ? Math.min(20, Math.max(0, Number(body.paymentTransactionFeePercent)))
+                  : platformPricing.paymentTransactionFeePercent,
+              allowImmediateVendorWithdrawal:
+                body.allowImmediateVendorWithdrawal !== undefined
+                  ? Boolean(body.allowImmediateVendorWithdrawal)
+                  : platformPricing.allowImmediateVendorWithdrawal,
               updatedAt: new Date().toISOString(),
             };
             stores.forEach((st) => {
@@ -2566,6 +3111,149 @@ function mockApiPlugin(): Plugin {
             json(platformPricing);
           });
           return;
+        }
+
+        // --- ANALYTICS (DIAGRAMMES VENDEUR & SUPER ADMIN) ---
+        const vendorAnalyticsMatch = path.match(/^\/analytics\/vendor\/([^/]+)$/);
+        if (vendorAnalyticsMatch && method === 'GET') {
+          const storeId = vendorAnalyticsMatch[1];
+          const targetStore = stores.find((s) => s.id === storeId) || stores[0];
+          const storeSubOrders = orders.flatMap((o) =>
+            (o.subOrders || [])
+              .filter((so: any) => so.storeId === targetStore.id)
+              .map((so: any) => ({ ...so, order: o })),
+          );
+          const storeProducts = products.filter((p) => p.store?.id === targetStore.id);
+          const commPct = Number(targetStore.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+          const grossOrderRevenue = storeSubOrders.reduce(
+            (s, so) =>
+              s +
+              (so.items || []).reduce(
+                (isum: number, it: any) => isum + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 1),
+                0,
+              ),
+            0,
+          );
+          const baselineGross = Number(Math.max(grossOrderRevenue, Number(targetStore.balanceUsd || 0) * 1.15).toFixed(2));
+          const platformComm = Number((baselineGross * commPct).toFixed(2));
+          const netVendor = Number((baselineGross - platformComm).toFixed(2));
+
+          const revenueSeries = [
+            { label: 'Lun', revenueUsd: Math.round(baselineGross * 0.11), ordersCount: 4 },
+            { label: 'Mar', revenueUsd: Math.round(baselineGross * 0.14), ordersCount: 6 },
+            { label: 'Mer', revenueUsd: Math.round(baselineGross * 0.12), ordersCount: 5 },
+            { label: 'Jeu', revenueUsd: Math.round(baselineGross * 0.16), ordersCount: 7 },
+            { label: 'Ven', revenueUsd: Math.round(baselineGross * 0.18), ordersCount: 8 },
+            { label: 'Sam', revenueUsd: Math.round(baselineGross * 0.17), ordersCount: 9 },
+            { label: 'Dim', revenueUsd: Math.round(baselineGross * 0.12), ordersCount: 5 },
+          ];
+
+          const typeCounts: Record<string, number> = { PHYSICAL: 0, DIGITAL: 0, SERVICE: 0 };
+          storeProducts.forEach((p) => {
+            typeCounts[p.productType || 'PHYSICAL'] = (typeCounts[p.productType || 'PHYSICAL'] || 0) + 1;
+          });
+          const productTypeBreakdown = [
+            { label: 'Biens Physiques', value: Math.max(typeCounts.PHYSICAL, targetStore.enabledServices?.includes('PHYSICAL') ? 3 : 0), color: '#26735B' },
+            { label: 'Livres & PDF', value: Math.max(typeCounts.DIGITAL, targetStore.enabledServices?.includes('DIGITAL') ? 2 : 0), color: '#F2B84B' },
+            { label: 'Services & Transport', value: Math.max(typeCounts.SERVICE, targetStore.enabledServices?.includes('SERVICE') ? 2 : 0), color: '#172320' },
+          ].filter((x) => x.value > 0);
+
+          const statusMap: Record<string, number> = { Payées: 0, Expédiées: 0, Livrées: 0 };
+          storeSubOrders.forEach((so) => {
+            if (so.status === 'DELIVERED') statusMap['Livrées'] += 1;
+            else if (so.status === 'SHIPPED') statusMap['Expédiées'] += 1;
+            else statusMap['Payées'] += 1;
+          });
+          const statusBreakdown = [
+            { label: 'Livrées / Terminées', value: Math.max(12, statusMap['Livrées']), color: '#26735B' },
+            { label: 'En livraison', value: Math.max(4, statusMap['Expédiées']), color: '#F2B84B' },
+            { label: 'En préparation', value: Math.max(3, statusMap['Payées']), color: '#172320' },
+          ];
+
+          const topProducts = storeProducts.slice(0, 5).map((p, idx) => ({
+            title: p.title,
+            qty: Math.max(4, 24 - idx * 4),
+            revenueUsd: Number((Number(p.basePriceUsd || 25) * Math.max(4, 24 - idx * 4)).toFixed(2)),
+          }));
+
+          return json({
+            storeId: targetStore.id,
+            storeName: targetStore.storeName,
+            kpis: {
+              grossRevenueUsd: baselineGross,
+              netVendorUsd: netVendor,
+              platformCommissionUsd: platformComm,
+              totalOrders: Math.max(storeSubOrders.length, Number(targetStore.totalOrders || 44)),
+              paidOrders: Math.max(storeSubOrders.filter((s) => s.order?.isPaid).length, Math.round(Number(targetStore.totalOrders || 44) * 0.92)),
+              averageBasketUsd: Number((baselineGross / Math.max(1, Number(targetStore.totalOrders || 18))).toFixed(2)),
+            },
+            revenueSeries,
+            productTypeBreakdown,
+            statusBreakdown,
+            topProducts,
+          });
+        }
+
+        if (path === '/analytics/admin' && method === 'GET') {
+          const feePct = Number(platformPricing.paymentTransactionFeePercent ?? 3.5);
+          const totalStoreVolume = stores.reduce((s, st) => s + Number(st.balanceUsd || 0), 0);
+          const grossVolumeUsd = Number((totalStoreVolume + orders.reduce((s, o) => s + Number(o.total || 0), 0)).toFixed(2));
+          const totalTransactionFeesUsd = Number((grossVolumeUsd * (feePct / 100)).toFixed(2));
+          const platformCommissionEarnedUsd = Number((grossVolumeUsd * (Number(platformPricing.defaultCommissionPercent || 5) / 100)).toFixed(2));
+
+          const revenueSeries = [
+            { label: 'Lun', revenueUsd: Math.round(grossVolumeUsd * 0.12), ordersCount: 18 },
+            { label: 'Mar', revenueUsd: Math.round(grossVolumeUsd * 0.15), ordersCount: 24 },
+            { label: 'Mer', revenueUsd: Math.round(grossVolumeUsd * 0.13), ordersCount: 21 },
+            { label: 'Jeu', revenueUsd: Math.round(grossVolumeUsd * 0.17), ordersCount: 29 },
+            { label: 'Ven', revenueUsd: Math.round(grossVolumeUsd * 0.16), ordersCount: 27 },
+            { label: 'Sam', revenueUsd: Math.round(grossVolumeUsd * 0.18), ordersCount: 34 },
+            { label: 'Dim', revenueUsd: Math.round(grossVolumeUsd * 0.09), ordersCount: 15 },
+          ];
+
+          const paymentMethods = [
+            { label: 'Airtel Money', count: 64, volumeUsd: Number((grossVolumeUsd * 0.34).toFixed(2)), color: '#B84C43' },
+            { label: 'M-Pesa Vodacom', count: 52, volumeUsd: Number((grossVolumeUsd * 0.31).toFixed(2)), color: '#26735B' },
+            { label: 'Orange Money', count: 31, volumeUsd: Number((grossVolumeUsd * 0.18).toFixed(2)), color: '#F2B84B' },
+            { label: 'MTN MoMo', count: 14, volumeUsd: Number((grossVolumeUsd * 0.09).toFixed(2)), color: '#172320' },
+            { label: 'Visa / Mastercard', count: 9, volumeUsd: Number((grossVolumeUsd * 0.08).toFixed(2)), color: '#4A5568' },
+          ];
+
+          const storeRevenueSeries = stores
+            .slice()
+            .sort((a, b) => Number(b.balanceUsd || 0) - Number(a.balanceUsd || 0))
+            .slice(0, 6)
+            .map((st) => ({
+              label: st.storeName.length > 16 ? `${st.storeName.slice(0, 15)}…` : st.storeName,
+              revenueUsd: Number(st.balanceUsd || 0),
+              ordersCount: Number(st.totalOrders || 0),
+            }));
+
+          const regionalBreakdown = [
+            { label: 'Goma & Nord-Kivu', value: 46, color: '#26735B' },
+            { label: 'Kinshasa', value: 24, color: '#F2B84B' },
+            { label: 'Lubumbashi & Katanga', value: 15, color: '#172320' },
+            { label: 'Bukavu & Sud-Kivu', value: 9, color: '#B84C43' },
+            { label: 'Rwanda / Burundi / Ouganda', value: 6, color: '#5A7D7C' },
+          ];
+
+          return json({
+            kpis: {
+              grossVolumeUsd,
+              totalOrders: stores.reduce((s, st) => s + Number(st.totalOrders || 0), 0) + orders.length,
+              activeStores: stores.filter((s) => s.status === 'ACTIVE').length,
+              totalStores: stores.length,
+              openDisputes: disputes.filter((d) => d.status === 'OPEN').length,
+              paymentTransactionFeePercent: feePct,
+              totalTransactionFeesUsd,
+              platformCommissionEarnedUsd,
+              allowImmediateVendorWithdrawal: Boolean(platformPricing.allowImmediateVendorWithdrawal),
+            },
+            revenueSeries,
+            paymentMethods,
+            storeRevenueSeries,
+            regionalBreakdown,
+          });
         }
 
         if (path === '/finance/exchange-rates' && method === 'GET') {
@@ -2742,7 +3430,7 @@ function mockApiPlugin(): Plugin {
               orderNumber: body.orderNumber,
               storeId: body.storeId || 'store-1',
               storeName: body.storeName || 'Boutique Partenaire ZandoGo',
-              city: body.city || 'Kinshasa',
+              city: body.city || 'Goma (Nord-Kivu)',
               productId: body.productId,
               productTitle: body.productTitle || 'Demande d’information produit',
               productImage: body.productImage || '/src/assets/images/marketplace_parcel_default_1794567970796.jpg',
@@ -2754,7 +3442,7 @@ function mockApiPlugin(): Plugin {
                   senderId: body.type === 'CUSTOMER_DELIVERY' ? 'usr-driver-1' : 'usr-vendor-1',
                   content:
                     body.type === 'CUSTOMER_DELIVERY'
-                      ? 'Bonjour ! Partagez votre lien Google Maps et proposons un tarif juste pour votre livraison.'
+                      ? 'Bonjour ! Partagez votre lien Google Maps à Goma et proposons un tarif juste pour votre livraison.'
                       : 'Bonjour ! Comment pouvons-nous vous aider concernant cette offre ?',
                   createdAt: new Date().toISOString(),
                 },
@@ -2770,10 +3458,10 @@ function mockApiPlugin(): Plugin {
         if (chatLocationMatch && method === 'POST') {
           readBody().then((body) => {
             const conv = conversations.find((c) => c.id === chatLocationMatch[1]);
-            const lat = Number(body.lat) || -4.325;
-            const lng = Number(body.lng) || 15.322;
+            const lat = Number(body.lat) || -1.6741;
+            const lng = Number(body.lng) || 29.2285;
             const googleMapsUrl = body.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-            const distKm = haversineKm(-4.321, 15.312, lat, lng);
+            const distKm = haversineKm(-1.6741, 29.2285, lat, lng);
             const locPayload = {
               lat,
               lng,
@@ -2823,8 +3511,8 @@ function mockApiPlugin(): Plugin {
               conversationId: chatDeliveryOfferMatch[1],
               senderId: currentUser.id,
               content: agreed
-                ? `Tarif de livraison accepté à $${feeUsd.toFixed(2)}. Commande prête pour règlement MaishaPay !`
-                : `Proposition de tarif livraison : $${feeUsd.toFixed(2)} (${conv?.distanceKm || 5.2} km).`,
+                ? `Tarif de livraison accepté à $${feeUsd.toFixed(2)}. Commande prête pour règlement Mobile Money ou Carte !`
+                : `Proposition de tarif livraison : $${feeUsd.toFixed(2)} (${conv?.distanceKm || 3.4} km).`,
               deliveryProposal: {
                 feeUsd,
                 originalFeeUsd: conv?.deliveryNegotiation?.originalFeeUsd ?? 6.5,
@@ -2902,7 +3590,97 @@ function mockApiPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), mockApiPlugin()],
+  plugins: [
+    react(),
+    mockApiPlugin(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: [
+        'favicon.ico',
+        'apple-touch-icon.png',
+        'icon.svg',
+        'pwa-192x192.png',
+        'pwa-512x512.png',
+        'pwa-maskable-512x512.png',
+      ],
+      manifest: {
+        id: '/',
+        name: 'ZandoGo — Place de Marché RDC & Environs',
+        short_name: 'ZandoGo',
+        description:
+          'Place de marché B2B & B2C en RDC : Mobile Money, cartes bancaires, agences de transport, livres numériques et séquestre garanti.',
+        theme_color: '#172320',
+        background_color: '#F5F2EB',
+        display: 'standalone',
+        orientation: 'portrait-primary',
+        start_url: '/',
+        scope: '/',
+        lang: 'fr',
+        icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
+        runtimeCaching: [
+          {
+            urlPattern: /^\/api\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gstatic-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+        ],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
+    }),
+  ],
   server: {
     host: '0.0.0.0',
     port: 3000,

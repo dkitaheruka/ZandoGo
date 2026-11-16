@@ -164,7 +164,7 @@ export function VendorNegotiationsPage() {
                           <span className="text-[10px] font-mono text-encre/40">ID: #{neg.id}</span>
                         </div>
                         <p className="text-xs text-encre/60 mt-0.5">
-                          Acheteur : <strong className="text-nuit">{neg.buyerName}</strong> · Destination : <span className="text-seve font-semibold">{neg.destinationCity || 'Kinshasa'}</span>
+                          Acheteur : <strong className="text-nuit">{neg.buyerName}</strong> · Destination : <span className="text-seve font-semibold">{neg.destinationCity || 'Goma (Nord-Kivu)'}</span>
                         </p>
                         {neg.transportMode && (
                           <p className="text-xs text-encre/70 mt-0.5 flex items-center gap-1 font-display">

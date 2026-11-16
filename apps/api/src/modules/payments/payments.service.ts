@@ -1,18 +1,32 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { FinanceService } from '../finance/finance.service';
+import { WalletsService } from '../wallets/wallets.service';
 import { CinetPayService } from './cinetpay.service';
-import { MaishaPayService } from './maishapay.service';
+import { MaishaPayMobileOperator, MaishaPayService } from './maishapay.service';
 import { StripeService } from './stripe.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+
+const OPERATOR_LABELS: Record<string, string> = {
+  MOBILE_MONEY_MPESA: 'M-Pesa Vodacom',
+  MOBILE_MONEY_AIRTEL: 'Airtel Money',
+  MOBILE_MONEY_ORANGE: 'Orange Money',
+  MOBILE_MONEY_MTN: 'MTN MoMo',
+  CARD_STRIPE: 'Carte Visa / Mastercard',
+  CASH_ON_DELIVERY: 'Espèces à la livraison',
+};
 
 @Injectable()
 export class PaymentsService {
@@ -25,6 +39,9 @@ export class PaymentsService {
     private readonly maishapay: MaishaPayService,
     private readonly stripe: StripeService,
     private readonly config: ConfigService,
+    private readonly finance: FinanceService,
+    @Inject(forwardRef(() => WalletsService))
+    private readonly wallets: WalletsService,
   ) {}
 
   async initiatePayment(user: AuthenticatedUser, dto: InitiatePaymentDto) {
@@ -37,22 +54,31 @@ export class PaymentsService {
       throw new BadRequestException('Cette commande a déjà été payée ou annulée');
     }
 
+    const baseTotal = Number(order.total);
+    const isCash = dto.methodCode === 'CASH_ON_DELIVERY';
+    const pricing = await this.finance.getPlatformPricing();
+    const transactionFeePercent = isCash ? 0 : Number(pricing.paymentTransactionFeePercent ?? 3.5);
+    const transactionFeeAmount = isCash
+      ? 0
+      : Number((baseTotal * (transactionFeePercent / 100)).toFixed(2));
+    const chargedTotal = Number((baseTotal + transactionFeeAmount).toFixed(2));
+
     const transaction = await this.prisma.paymentTransaction.create({
       data: {
         orderId: order.id,
         methodCode: dto.methodCode,
-        amount: order.total,
+        amount: chargedTotal,
         currency: order.currency,
         status: 'INITIATED',
       },
     });
 
     // --- Paiement à la livraison : pas de flux financier immédiat ---
-    if (dto.methodCode === 'CASH_ON_DELIVERY') {
+    if (isCash) {
       await this.prisma.$transaction([
         this.prisma.paymentTransaction.update({
           where: { id: transaction.id },
-          data: { status: 'PENDING' }, // sera confirmé par le livreur à la remise
+          data: { status: 'PENDING' },
         }),
         this.prisma.order.update({ where: { id: order.id }, data: { status: 'PROCESSING' } }),
         this.prisma.orderSubOrder.updateMany({
@@ -70,57 +96,98 @@ export class PaymentsService {
         }),
       ]);
 
-      return { method: 'cash_on_delivery', message: 'Commande confirmée, paiement à la livraison' };
+      return {
+        method: 'cash_on_delivery',
+        operator: 'CASH_ON_DELIVERY',
+        operatorLabel: OPERATOR_LABELS.CASH_ON_DELIVERY,
+        baseTotal,
+        transactionFeePercent: 0,
+        transactionFeeAmount: 0,
+        chargedTotal: baseTotal,
+        message: 'Commande confirmée, paiement à la livraison',
+      };
     }
 
-    // --- Mobile Money via MaishaPay (agrégateur principal RDC) ou CinetPay ---
+    const appUrl = this.config.get<string>('APP_URL') ?? '';
+    const operatorLabel = OPERATOR_LABELS[dto.methodCode] || 'Mobile Money';
+
+    // --- Mobile Money (M-Pesa Vodacom, Airtel Money, Orange Money, MTN MoMo) ---
     if (
       dto.methodCode === 'MOBILE_MONEY_ORANGE' ||
       dto.methodCode === 'MOBILE_MONEY_AIRTEL' ||
-      dto.methodCode === 'MOBILE_MONEY_MPESA'
+      dto.methodCode === 'MOBILE_MONEY_MPESA' ||
+      dto.methodCode === 'MOBILE_MONEY_MTN'
     ) {
       if (!dto.phoneNumber) {
         throw new BadRequestException('Le numéro de téléphone Mobile Money est requis');
       }
 
-      const appUrl = this.config.get<string>('APP_URL');
-      const useMaishaPay = Boolean(this.config.get<string>('MAISHAPAY_API_KEY'));
+      const usePrimaryGateway = Boolean(
+        this.config.get<string>('MAISHAPAY_API_KEY') ||
+          this.config.get<string>('MAISHAPAY_BEARER_TOKEN'),
+      );
+      const useCinetPayOnly = !usePrimaryGateway && Boolean(this.config.get<string>('CINETPAY_API_KEY'));
 
-      if (useMaishaPay) {
-        const provider =
+      if (!useCinetPayOnly) {
+        const provider: MaishaPayMobileOperator =
           dto.methodCode === 'MOBILE_MONEY_AIRTEL'
             ? 'AIRTEL'
             : dto.methodCode === 'MOBILE_MONEY_ORANGE'
             ? 'ORANGE'
+            : dto.methodCode === 'MOBILE_MONEY_MTN'
+            ? 'MTN'
             : 'MPESA';
+
         const mpRes = await this.maishapay.initiateMobileMoneyPayment({
           transactionReference: transaction.id,
-          amount: Number(order.total),
+          amount: chargedTotal,
           currency: order.currency as 'USD' | 'CDF',
           provider,
           customerPhone: dto.phoneNumber,
           customerName: user.email || 'Client ZandoGo',
-          callbackUrl: `${appUrl}/api/payments/webhooks/maishapay`,
+          customerEmail: user.email || 'client@zandogo.cd',
+          description: `Commande ZandoGo ${order.orderNumber} (Total ${chargedTotal} ${order.currency})`,
+          callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
+          metadata: {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            operator: dto.methodCode,
+            baseTotal,
+            transactionFeePercent,
+            transactionFeeAmount,
+            chargedTotal,
+          },
         });
+
         await this.prisma.paymentTransaction.update({
           where: { id: transaction.id },
           data: {
             status: 'PENDING',
-            providerReference: mpRes.transactionId || `MP-${transaction.id}`,
-            rawProviderPayload: mpRes as any,
+            providerReference: mpRes.transactionId,
+            rawProviderPayload: mpRes.raw as any,
           },
         });
+
         return {
           method: dto.methodCode,
-          aggregator: 'MAISHAPAY',
-          maishaPayRef: mpRes.transactionId,
+          operator: dto.methodCode,
+          operatorLabel,
+          transactionId: transaction.id,
+          paymentRef: mpRes.transactionId,
+          paymentStatus: mpRes.paymentStatus,
+          ussdCode: mpRes.ussdCode,
+          expiresAt: mpRes.expiresAt,
           paymentUrl: mpRes.paymentPageUrl,
+          baseTotal,
+          transactionFeePercent,
+          transactionFeeAmount,
+          chargedTotal,
         };
       }
 
       const result = await this.cinetpay.initiatePayment({
         transactionId: transaction.id,
-        amount: Number(order.total),
+        amount: chargedTotal,
         currency: order.currency as 'USD' | 'CDF',
         description: `Commande ${order.orderNumber}`,
         customerPhone: dto.phoneNumber,
@@ -128,45 +195,78 @@ export class PaymentsService {
         notifyUrl: `${appUrl}/api/payments/webhooks/cinetpay`,
       });
 
+      const paymentRef = result.data?.payment_token || `ZG-PAY-${transaction.id.slice(-10)}`;
       await this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
         data: {
           status: 'PENDING',
-          providerReference: result.data?.payment_token,
+          providerReference: paymentRef,
           rawProviderPayload: result as any,
         },
       });
 
-      return { method: dto.methodCode, paymentUrl: result.data?.payment_url };
+      return {
+        method: dto.methodCode,
+        operator: dto.methodCode,
+        operatorLabel,
+        transactionId: transaction.id,
+        paymentRef,
+        paymentStatus: 'PENDING',
+        paymentUrl: result.data?.payment_url,
+        baseTotal,
+        transactionFeePercent,
+        transactionFeeAmount,
+        chargedTotal,
+      };
     }
 
-    // --- Carte bancaire via MaishaPay ou Stripe ---
+    // --- Carte bancaire Visa / Mastercard ---
     if (dto.methodCode === 'CARD_STRIPE') {
-      const useMaishaPay = Boolean(this.config.get<string>('MAISHAPAY_API_KEY'));
-      if (useMaishaPay) {
-        const appUrl = this.config.get<string>('APP_URL');
-        const mpCard = await this.maishapay.initiateCardPayment({
+      const usePrimaryGateway = Boolean(
+        this.config.get<string>('MAISHAPAY_API_KEY') ||
+          this.config.get<string>('MAISHAPAY_BEARER_TOKEN') ||
+          !this.config.get<string>('STRIPE_SECRET_KEY'),
+      );
+
+      if (usePrimaryGateway) {
+        const cardRes = await this.maishapay.initiateCardPayment({
           transactionReference: transaction.id,
-          amount: Number(order.total),
+          amount: chargedTotal,
           currency: order.currency as 'USD' | 'CDF',
           customerName: user.email || 'Client ZandoGo',
           customerEmail: user.email || 'client@zandogo.cd',
-          callbackUrl: `${appUrl}/api/payments/webhooks/maishapay`,
+          customerPhone: dto.phoneNumber,
+          customerCity: 'Goma',
+          cardProvider: 'VISA',
+          callbackUrl: `${appUrl}/api/payments/callbacks/card`,
         });
+
         await this.prisma.paymentTransaction.update({
           where: { id: transaction.id },
-          data: { status: 'PENDING', providerReference: mpCard.transactionId },
+          data: {
+            status: 'PENDING',
+            providerReference: cardRes.transactionId,
+            rawProviderPayload: cardRes.raw as any,
+          },
         });
+
         return {
-          method: 'card_maishapay',
-          aggregator: 'MAISHAPAY',
-          maishaPayRef: mpCard.transactionId,
-          paymentUrl: mpCard.paymentPageUrl,
+          method: 'CARD_STRIPE',
+          operator: 'CARD_STRIPE',
+          operatorLabel,
+          transactionId: transaction.id,
+          paymentRef: cardRes.transactionId,
+          paymentStatus: cardRes.paymentStatus,
+          paymentUrl: cardRes.paymentPageUrl,
+          baseTotal,
+          transactionFeePercent,
+          transactionFeeAmount,
+          chargedTotal,
         };
       }
 
       const intent = await this.stripe.createPaymentIntent({
-        amount: Number(order.total),
+        amount: chargedTotal,
         currency: 'usd',
         orderId: order.id,
       });
@@ -176,21 +276,238 @@ export class PaymentsService {
         data: { status: 'PENDING', providerReference: intent.id },
       });
 
-      return { method: 'card_stripe', clientSecret: intent.client_secret };
+      return {
+        method: 'CARD_STRIPE',
+        operator: 'CARD_STRIPE',
+        operatorLabel,
+        transactionId: transaction.id,
+        clientSecret: intent.client_secret,
+        baseTotal,
+        transactionFeePercent,
+        transactionFeeAmount,
+        chargedTotal,
+      };
     }
 
     throw new BadRequestException('Moyen de paiement non pris en charge');
   }
 
   /**
-   * Ne fait JAMAIS confiance au contenu du webhook seul : on rappelle
-   * systématiquement l'API de vérification CinetPay avec le transaction_id
-   * reçu avant de valider quoi que ce soit.
+   * Webhook C2B / B2C unifié (vérification HMAC-SHA256 + contre-vérification serveur).
+   */
+  async handleGatewayWebhook(
+    rawBody: Buffer | string | undefined,
+    signatureHeader: string | undefined,
+    payload: Record<string, any>,
+  ) {
+    if (rawBody !== undefined) {
+      const validSig = this.maishapay.verifyWebhookSignature(rawBody, signatureHeader);
+      if (!validSig) {
+        this.logger.warn('Signature webhook invalide détectée');
+        throw new UnauthorizedException('Signature invalide');
+      }
+    }
+
+    const eventType = String(payload?.type || '').toLowerCase();
+    const data = (payload?.data as Record<string, any>) || payload;
+    const providerTxId = String(
+      data?.transaction_id || data?.transactionId || data?.operatorRefId || '',
+    );
+    const merchantRef = String(
+      data?.reference || data?.transactionRefId || data?.originatingTransactionId || '',
+    );
+
+    // --- Événements B2C (décaissement vendeurs / livreurs) ---
+    if (eventType.startsWith('b2c.transfer.')) {
+      if (merchantRef) {
+        const existingPayout = await this.prisma.payoutRequest.findUnique({
+          where: { id: merchantRef },
+          include: { wallet: true },
+        });
+        if (existingPayout && existingPayout.status !== 'PAID' && existingPayout.status !== 'REJECTED') {
+          const isPaid = eventType === 'b2c.transfer.success';
+          await this.prisma.$transaction(async (tx) => {
+            await tx.payoutRequest.update({
+              where: { id: existingPayout.id },
+              data: {
+                status: isPaid ? 'PAID' : 'REJECTED',
+                processedAt: new Date(),
+              },
+            });
+            if (!isPaid) {
+              const amount = Number(existingPayout.amount);
+              const nextBalance = Number(existingPayout.wallet.balance) + amount;
+              await tx.wallet.update({
+                where: { id: existingPayout.walletId },
+                data: { balance: nextBalance },
+              });
+              await tx.walletTransaction.create({
+                data: {
+                  walletId: existingPayout.walletId,
+                  type: 'CREDIT',
+                  amount,
+                  currency: existingPayout.wallet.currency,
+                  referenceType: 'REFUND',
+                  referenceId: existingPayout.id,
+                  status: 'AVAILABLE',
+                  balanceAfter: nextBalance,
+                },
+              });
+            }
+          });
+        }
+      }
+      return { received: true };
+    }
+
+    // --- Événements C2B (collecte commandes) ---
+    const transaction = await this.prisma.paymentTransaction.findFirst({
+      where: {
+        OR: [
+          ...(merchantRef ? [{ id: merchantRef }] : []),
+          ...(providerTxId ? [{ providerReference: providerTxId }] : []),
+        ],
+      },
+    });
+
+    if (!transaction) {
+      this.logger.warn(`Webhook paiement : transaction introuvable (ref=${merchantRef}, tx=${providerTxId})`);
+      return { received: true };
+    }
+
+    const rawStatus = String(data?.payment_status || payload?.status || '').toUpperCase();
+    const isSuccessEvent = eventType === 'transaction.success' || rawStatus === 'SUCCESS';
+    const isFailEvent =
+      eventType === 'transaction.failed' ||
+      eventType === 'transaction.cancelled' ||
+      rawStatus === 'FAILED' ||
+      rawStatus === 'CANCELLED' ||
+      rawStatus === 'EXPIRED';
+
+    if (isSuccessEvent) {
+      // Contre-vérification systématique auprès de /transaction/rest/v2/check si clés actives
+      const checkId = providerTxId || transaction.providerReference || transaction.id;
+      const check = await this.maishapay.checkTransactionStatus(checkId, !providerTxId);
+      if (!check.verified || check.paymentStatus === 'SUCCESS') {
+        await this.markPaymentSuccess(transaction.id, { webhook: payload, check: check.raw });
+      }
+    } else if (isFailEvent) {
+      await this.markPaymentFailed(transaction.id, payload);
+    }
+
+    return { received: true };
+  }
+
+  /**
+   * Callback GET après redirection carte 3DS (?status=200&description=APPROVED&transactionRefId=...&operatorRefId=...)
+   */
+  async handleCardRedirectCallback(query: {
+    status?: string;
+    description?: string;
+    transactionRefId?: string;
+    operatorRefId?: string;
+  }) {
+    const refId = query.transactionRefId;
+    const opId = query.operatorRefId;
+    if (!refId && !opId) {
+      throw new BadRequestException('Référence de transaction manquante');
+    }
+
+    const transaction = await this.prisma.paymentTransaction.findFirst({
+      where: {
+        OR: [
+          ...(refId ? [{ id: refId }] : []),
+          ...(opId ? [{ providerReference: opId }] : []),
+        ],
+      },
+    });
+    if (!transaction) {
+      throw new NotFoundException('Transaction introuvable');
+    }
+
+    const statusCode = Number(query.status || 0);
+    const desc = String(query.description || '').toUpperCase();
+
+    if (statusCode === 200 && desc === 'APPROVED') {
+      const check = await this.maishapay.checkTransactionStatus(opId || transaction.id, !opId);
+      if (!check.verified || check.paymentStatus === 'SUCCESS') {
+        await this.markPaymentSuccess(transaction.id, { callbackQuery: query, check: check.raw });
+      }
+      return {
+        status: 'SUCCESS',
+        paymentStatus: 'SUCCESS',
+        orderId: transaction.orderId,
+        paymentRef: opId || transaction.providerReference,
+        operator: transaction.methodCode,
+        operatorLabel: OPERATOR_LABELS[transaction.methodCode] || 'Carte Visa / Mastercard',
+      };
+    }
+
+    await this.markPaymentFailed(transaction.id, { callbackQuery: query });
+    return {
+      status: desc === 'CANCELED' ? 'CANCELLED' : 'FAILED',
+      paymentStatus: desc === 'CANCELED' ? 'CANCELLED' : 'FAILED',
+      orderId: transaction.orderId,
+      paymentRef: opId || transaction.providerReference,
+      operator: transaction.methodCode,
+      operatorLabel: OPERATOR_LABELS[transaction.methodCode] || 'Carte Visa / Mastercard',
+    };
+  }
+
+  /**
+   * Vérification de statut authentifiée (pollable par l'utilisateur ou l'admin).
+   */
+  async checkPaymentStatus(user: AuthenticatedUser, idOrOrderId: string) {
+    const transaction = await this.prisma.paymentTransaction.findFirst({
+      where: {
+        OR: [{ id: idOrOrderId }, { orderId: idOrOrderId }, { providerReference: idOrOrderId }],
+      },
+      include: { order: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!transaction) throw new NotFoundException('Transaction introuvable');
+    if (transaction.order.customerId !== user.id) {
+      throw new ForbiddenException("Cette transaction ne vous appartient pas");
+    }
+
+    if (transaction.status === 'PENDING' || transaction.status === 'INITIATED') {
+      const checkId = transaction.providerReference || transaction.id;
+      const liveCheck = await this.maishapay.checkTransactionStatus(
+        checkId,
+        !transaction.providerReference,
+      );
+      if (liveCheck.verified && liveCheck.paymentStatus === 'SUCCESS') {
+        await this.markPaymentSuccess(transaction.id, liveCheck.raw);
+      } else if (
+        liveCheck.verified &&
+        (liveCheck.paymentStatus === 'FAILED' ||
+          liveCheck.paymentStatus === 'CANCELLED' ||
+          liveCheck.paymentStatus === 'EXPIRED')
+      ) {
+        await this.markPaymentFailed(transaction.id, liveCheck.raw);
+      }
+    }
+
+    const updated = await this.prisma.paymentTransaction.findUnique({ where: { id: transaction.id } });
+    return {
+      transactionId: transaction.id,
+      orderId: transaction.orderId,
+      status: updated?.status || transaction.status,
+      paymentStatus: updated?.status || transaction.status,
+      operator: transaction.methodCode,
+      operatorLabel: OPERATOR_LABELS[transaction.methodCode] || 'Mobile Money',
+      paymentRef: transaction.providerReference,
+      confirmedAt: updated?.confirmedAt,
+    };
+  }
+
+  /**
+   * Contre-vérification de secours CinetPay.
    */
   async handleCinetPayWebhook(payload: { cpm_trans_id?: string; transaction_id?: string }) {
     const transactionId = payload.cpm_trans_id ?? payload.transaction_id;
     if (!transactionId) {
-      this.logger.warn('Webhook CinetPay reçu sans transaction_id');
+      this.logger.warn('Webhook de secours reçu sans transaction_id');
       return { received: true };
     }
 
@@ -231,12 +548,13 @@ export class PaymentsService {
     const transaction = await this.prisma.paymentTransaction.findUnique({
       where: { id: transactionId },
     });
-    if (!transaction || transaction.status === 'SUCCESS') return; // idempotence
+    if (!transaction || transaction.status === 'SUCCESS') return;
 
+    const confirmedAt = new Date();
     await this.prisma.$transaction([
       this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
-        data: { status: 'SUCCESS', confirmedAt: new Date(), rawProviderPayload: rawPayload as any },
+        data: { status: 'SUCCESS', confirmedAt, rawProviderPayload: rawPayload as any },
       }),
       this.prisma.order.update({ where: { id: transaction.orderId }, data: { status: 'PAID' } }),
       this.prisma.orderSubOrder.updateMany({
@@ -248,10 +566,15 @@ export class PaymentsService {
           orderId: transaction.orderId,
           fromStatus: 'PENDING_PAYMENT',
           toStatus: 'PAID',
-          note: `Paiement confirmé via ${transaction.methodCode}`,
+          note: `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — délai 48h démarré`,
         },
       }),
     ]);
+
+    // Le délai de 48 heures commence dès la confirmation du paiement
+    await this.wallets.creditOrderFundsOnPayment(transaction.orderId, confirmedAt).catch((err) => {
+      this.logger.warn(`Crédit wallet différé (${transaction.orderId}) : ${String(err)}`);
+    });
 
     await this.audit.log({
       action: 'payment.success',
@@ -261,11 +584,6 @@ export class PaymentsService {
     });
   }
 
-  /**
-   * Un paiement en échec libère automatiquement le stock réservé à la
-   * commande (voir le point de vigilance signalé dans le document
-   * d'architecture) — sans cela, le stock resterait bloqué indéfiniment.
-   */
   private async markPaymentFailed(transactionId: string, rawPayload: unknown) {
     const transaction = await this.prisma.paymentTransaction.findUnique({
       where: { id: transactionId },
@@ -298,7 +616,7 @@ export class PaymentsService {
           orderId: transaction.orderId,
           fromStatus: 'PENDING_PAYMENT',
           toStatus: 'CANCELLED',
-          note: `Échec du paiement via ${transaction.methodCode} — stock restauré`,
+          note: `Échec du paiement via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — stock restauré`,
         },
       });
     });
@@ -311,11 +629,6 @@ export class PaymentsService {
     });
   }
 
-  /**
-   * Appelé par le module `delivery` au moment de la remise en cash.
-   * Crée une transaction géolocalisée et horodatée, distincte du flux
-   * carte/mobile money, mais suit exactement le même schéma de traçabilité.
-   */
   async confirmCashOnDelivery(orderId: string, lat: number, lng: number) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Commande introuvable');

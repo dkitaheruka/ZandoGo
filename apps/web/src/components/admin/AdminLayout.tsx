@@ -11,11 +11,14 @@ import {
   ShoppingBag,
   ChevronLeft,
   ChevronRight,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
+import { PWAInstallButton } from '../PWAInstallButton';
 
 const ADMIN_NAV = [
   { to: '/admin', label: 'Vue d’ensemble & KPIs', icon: LayoutDashboard },
+  { to: '/admin/analytics', label: 'Analyses & Diagrammes', icon: BarChart3 },
   { to: '/admin/stores', label: 'Boutiques & Entreprises', icon: Store },
   { to: '/admin/kyc', label: 'Vérifications KYC', icon: ShieldCheck },
   { to: '/admin/disputes', label: 'Litiges & Séquestres', icon: Scale },
@@ -113,6 +116,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-4">
+            <PWAInstallButton variant="dark" compact />
+
             <div className="flex items-center gap-2 text-xs bg-white/5 border border-white/10 px-3 py-1.5 rounded-full">
               <span className="h-2 w-2 rounded-full bg-seve" />
               <span className="text-brume/80 font-mono text-[11px] tabular-nums">Système Opérationnel</span>

@@ -23,7 +23,7 @@ export function AgentsReviewPage() {
       vehicleType: 'MOTO_YAMAHA',
       user: {
         id: 'usr-moto',
-        fullName: 'Patrick Bolamba',
+        fullName: 'Patrick Muhindo',
         email: 'patrick.moto@example.cd',
         phone: '+243819882233',
         kycDocuments: [{ id: 'k-1', status: 'APPROVED' }],
@@ -68,7 +68,7 @@ export function AgentsReviewPage() {
               Agrément des Transporteurs & Coursiers
             </h1>
             <p className="mt-1 text-xs text-brume/70">
-              Validation des motards et entreprises de fret partenaires assurant les livraisons à Kinshasa.
+              Validation des motards et entreprises de fret partenaires assurant les livraisons à Goma (Nord-Kivu) et dans la région du Kivu.
             </p>
           </div>
           <span className="font-display text-xs text-brume/60 tabular-nums">

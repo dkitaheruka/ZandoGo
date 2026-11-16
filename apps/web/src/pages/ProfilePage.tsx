@@ -1,21 +1,49 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Plus, Trash2, CheckCircle2, ShieldCheck, Store, Bike, Heart, User as UserIcon } from 'lucide-react';
+import { MapPin, Plus, Trash2, CheckCircle2, ShieldCheck, Store, Bike, Heart, User as UserIcon, Mail, Pencil } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { useStore } from '../lib/store-context';
 import type { Address, Product } from '../lib/types';
+
+const GOMA_COORDS: Record<string, { lat: number; lng: number }> = {
+  'Goma — Himbi': { lat: -1.6815, lng: 29.2115 },
+  'Goma — Les Volcans': { lat: -1.6741, lng: 29.2285 },
+  'Goma — Katindo': { lat: -1.6660, lng: 29.2180 },
+  'Goma — Keshero / Lac Vert': { lat: -1.6620, lng: 29.1850 },
+  'Karisimbi — Birere': { lat: -1.6685, lng: 29.2420 },
+  'Karisimbi — Ndosho / Mabanga': { lat: -1.6460, lng: 29.2080 },
+  'Sake (Masisi)': { lat: -1.5736, lng: 29.0439 },
+  'Bukavu (Sud-Kivu)': { lat: -2.5083, lng: 28.8608 },
+  'Butembo (Nord-Kivu)': { lat: 0.1416, lng: 29.2912 },
+  'Beni (Nord-Kivu)': { lat: 0.4911, lng: 29.4731 },
+  'Bunia (Ituri)': { lat: 1.5594, lng: 30.2522 },
+  'Kisangani (Tshopo)': { lat: 0.5153, lng: 25.1910 },
+  Lubumbashi: { lat: -11.6609, lng: 27.4794 },
+  'Kolwezi (Lualaba)': { lat: -10.7148, lng: 25.4667 },
+  Kinshasa: { lat: -4.3217, lng: 15.3125 },
+  'Matadi (Kongo-Central)': { lat: -5.8167, lng: 13.4500 },
+  'Gisenyi / Kigali (Rwanda)': { lat: -1.7028, lng: 29.2564 },
+  'Bujumbura (Burundi)': { lat: -3.3822, lng: 29.3644 },
+  'Kampala (Ouganda)': { lat: 0.3476, lng: 32.5825 },
+};
 
 export function ProfilePage() {
   const { user } = useAuth();
   const { currency, setCurrency, wishlistIds, formatPrimaryPrice } = useStore();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [commune, setCommune] = useState('Gombe');
+  const [commune, setCommune] = useState('Goma — Himbi');
   const [quartier, setQuartier] = useState('');
   const [referencePoint, setReferencePoint] = useState('');
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [lookupEmail, setLookupEmail] = useState(user?.email || '');
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCommune, setEditCommune] = useState('');
+  const [editQuartier, setEditQuartier] = useState('');
+  const [editRefPoint, setEditRefPoint] = useState('');
 
   function loadAddresses() {
     api
@@ -37,12 +65,14 @@ export function ProfilePage() {
     if (!quartier.trim()) return;
     setSaving(true);
     try {
+      const gps = GOMA_COORDS[commune] || { lat: -1.6741, lng: 29.2285 };
       await api.post('/users/me/addresses', {
         commune,
         quartier: quartier.trim(),
         referencePoint: referencePoint.trim(),
-        latitude: -4.315,
-        longitude: 15.308,
+        email: user?.email || undefined,
+        latitude: gps.lat,
+        longitude: gps.lng,
         isDefault: addresses.length === 0,
       });
       setQuartier('');
@@ -53,6 +83,44 @@ export function ProfilePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleLookupByEmail() {
+    if (!lookupEmail.trim()) return;
+    setLookupBusy(true);
+    try {
+      const { data } = await api.get<Address[]>('/users/me/addresses/by-email', {
+        params: { email: lookupEmail.trim() },
+      });
+      if (data && data.length > 0) {
+        setAddresses(data);
+        setNotice(`${data.length} adresse(s) récupérée(s) pour ${lookupEmail.trim()}.`);
+      } else {
+        setNotice(`Aucune adresse trouvée pour ${lookupEmail.trim()}.`);
+      }
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
+  function startEdit(addr: Address) {
+    setEditingId(addr.id);
+    setEditCommune(addr.commune || '');
+    setEditQuartier(addr.quartier || '');
+    setEditRefPoint(addr.referencePoint || '');
+  }
+
+  async function handleSaveEdit(id: string) {
+    if (!editQuartier.trim()) return;
+    await api.patch(`/users/me/addresses/${id}`, {
+      commune: editCommune.trim(),
+      quartier: editQuartier.trim(),
+      referencePoint: editRefPoint.trim(),
+    });
+    setEditingId(null);
+    setNotice('Adresse mise à jour ✓');
+    loadAddresses();
+    setTimeout(() => setNotice(null), 3000);
   }
 
   async function handleSetDefault(id: string) {
@@ -163,6 +231,30 @@ export function ProfilePage() {
             <span>Carnet d’Adresses RDC ({addresses.length})</span>
           </h2>
 
+          <div className="p-3.5 rounded-card bg-white border border-encre/15 space-y-2 text-xs">
+            <label className="flex items-center gap-1.5 font-display font-bold text-nuit">
+              <Mail className="w-3.5 h-3.5 text-seve" />
+              <span>Récupérer mes adresses par e-mail</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                type="email"
+                value={lookupEmail}
+                onChange={(e) => setLookupEmail(e.target.value)}
+                placeholder="votre.email@exemple.com"
+                className="flex-1 min-w-[180px] rounded-card border border-encre/20 bg-brume/30 px-3 py-1.5 text-xs text-nuit outline-none focus:border-seve"
+              />
+              <button
+                type="button"
+                disabled={lookupBusy || !lookupEmail.trim()}
+                onClick={handleLookupByEmail}
+                className="px-3.5 py-1.5 rounded-card bg-nuit text-brume font-display font-bold text-xs hover:bg-seve transition disabled:opacity-50"
+              >
+                {lookupBusy ? 'Recherche…' : 'Récupérer'}
+              </button>
+            </div>
+          </div>
+
           {addresses.length === 0 ? (
             <div className="p-6 rounded-card bg-white border border-dashed border-encre/20 text-xs text-encre/60">
               Aucune adresse enregistrée pour le moment.
@@ -172,45 +264,100 @@ export function ProfilePage() {
               {addresses.map((addr) => (
                 <div
                   key={addr.id}
-                  className={`p-4 rounded-card bg-white border shadow-xs flex items-start justify-between gap-4 ${
+                  className={`p-4 rounded-card bg-white border shadow-xs ${
                     addr.isDefault ? 'border-seve ring-1 ring-seve/20' : 'border-encre/10'
                   }`}
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-display font-bold text-sm text-nuit">
-                        {[addr.commune, addr.quartier].filter(Boolean).join(' — ')}
-                      </p>
-                      {addr.isDefault && (
-                        <span className="px-2 py-0.5 rounded-full bg-seve/10 text-seve text-[10px] font-bold">
-                          Par défaut
-                        </span>
-                      )}
+                  {editingId === addr.id ? (
+                    <div className="space-y-2 text-xs">
+                      <input
+                        type="text"
+                        value={editCommune}
+                        onChange={(e) => setEditCommune(e.target.value)}
+                        placeholder="Commune / Ville"
+                        className="w-full rounded-card border border-encre/20 px-3 py-1.5 outline-none focus:border-seve"
+                      />
+                      <input
+                        type="text"
+                        value={editQuartier}
+                        onChange={(e) => setEditQuartier(e.target.value)}
+                        placeholder="Quartier"
+                        className="w-full rounded-card border border-encre/20 px-3 py-1.5 outline-none focus:border-seve"
+                      />
+                      <input
+                        type="text"
+                        value={editRefPoint}
+                        onChange={(e) => setEditRefPoint(e.target.value)}
+                        placeholder="Point de repère"
+                        className="w-full rounded-card border border-encre/20 px-3 py-1.5 outline-none focus:border-seve"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEdit(addr.id)}
+                          className="px-3 py-1.5 rounded-card bg-seve text-brume font-display font-bold"
+                        >
+                          Enregistrer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          className="px-3 py-1.5 text-encre/60 hover:text-nuit"
+                        >
+                          Annuler
+                        </button>
+                      </div>
                     </div>
-                    {addr.referencePoint && (
-                      <p className="text-xs text-encre/65 mt-1">Repère : {addr.referencePoint}</p>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-display font-bold text-sm text-nuit">
+                            {[addr.commune, addr.quartier].filter(Boolean).join(' — ')}
+                          </p>
+                          {addr.isDefault && (
+                            <span className="px-2 py-0.5 rounded-full bg-seve/10 text-seve text-[10px] font-bold">
+                              Par défaut
+                            </span>
+                          )}
+                        </div>
+                        {addr.referencePoint && (
+                          <p className="text-xs text-encre/65 mt-1">Repère : {addr.referencePoint}</p>
+                        )}
+                        {addr.email && (
+                          <p className="text-[11px] font-mono text-seve mt-0.5">{addr.email}</p>
+                        )}
+                      </div>
 
-                  <div className="flex items-center gap-2 shrink-0 text-xs">
-                    {!addr.isDefault && (
-                      <button
-                        type="button"
-                        onClick={() => handleSetDefault(addr.id)}
-                        className="text-seve hover:underline font-medium"
-                      >
-                        Définir par défaut
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAddress(addr.id)}
-                      className="p-1.5 text-encre/40 hover:text-wax rounded-lg"
-                      title="Supprimer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-2 shrink-0 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(addr)}
+                          className="inline-flex items-center gap-1 text-seve hover:underline font-medium"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Modifier</span>
+                        </button>
+                        {!addr.isDefault && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefault(addr.id)}
+                            className="text-encre/70 hover:underline font-medium"
+                          >
+                            Par défaut
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAddress(addr.id)}
+                          className="p-1.5 text-encre/40 hover:text-wax rounded-lg"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -227,14 +374,25 @@ export function ProfilePage() {
               onChange={(e) => setCommune(e.target.value)}
               className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 text-xs text-nuit outline-none focus:border-seve"
             >
-              <option value="Gombe">Kinshasa — Gombe</option>
-              <option value="Ngaliema">Kinshasa — Ngaliema</option>
-              <option value="Limete">Kinshasa — Limete</option>
-              <option value="Lingwala">Kinshasa — Lingwala</option>
-              <option value="Kintambo">Kinshasa — Kintambo</option>
-              <option value="Lubumbashi">Lubumbashi</option>
-              <option value="Goma">Goma</option>
-              <option value="Matadi">Matadi</option>
+              <option value="Goma — Himbi">Goma — Himbi</option>
+              <option value="Goma — Les Volcans">Goma — Les Volcans (Centre-Ville)</option>
+              <option value="Goma — Katindo">Goma — Katindo / Terminus</option>
+              <option value="Goma — Keshero / Lac Vert">Goma — Keshero / Lac Vert</option>
+              <option value="Karisimbi — Birere">Karisimbi — Birere / Kituku</option>
+              <option value="Karisimbi — Ndosho / Mabanga">Karisimbi — Ndosho / Mabanga</option>
+              <option value="Sake (Masisi)">Sake (Territoire de Masisi)</option>
+              <option value="Bukavu (Sud-Kivu)">Bukavu (Sud-Kivu)</option>
+              <option value="Butembo (Nord-Kivu)">Butembo (Nord-Kivu)</option>
+              <option value="Beni (Nord-Kivu)">Beni (Nord-Kivu)</option>
+              <option value="Bunia (Ituri)">Bunia (Ituri)</option>
+              <option value="Kisangani (Tshopo)">Kisangani (Tshopo)</option>
+              <option value="Lubumbashi">Lubumbashi (Haut-Katanga)</option>
+              <option value="Kolwezi (Lualaba)">Kolwezi (Lualaba)</option>
+              <option value="Kinshasa">Kinshasa (Toutes communes)</option>
+              <option value="Matadi (Kongo-Central)">Matadi (Kongo-Central)</option>
+              <option value="Gisenyi / Kigali (Rwanda)">Gisenyi / Kigali (Rwanda)</option>
+              <option value="Bujumbura (Burundi)">Bujumbura (Burundi)</option>
+              <option value="Kampala (Ouganda)">Kampala (Ouganda)</option>
             </select>
           </div>
 
@@ -244,7 +402,7 @@ export function ProfilePage() {
               required
               value={quartier}
               onChange={(e) => setQuartier(e.target.value)}
-              placeholder="ex: Avenue Colonel Mondjiba"
+              placeholder="ex: Avenue du Tourisme / Boulevard Kanyamuhanga"
               className="w-full rounded-card border border-encre/20 bg-brume/30 px-3.5 py-2 text-xs text-encre outline-none focus:border-seve"
             />
           </div>

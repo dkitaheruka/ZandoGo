@@ -21,13 +21,14 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store-context';
+import { PaymentOperatorStrip } from '../components/PaymentOperatorLogos';
 import type { Product } from '../lib/types';
 
 const INITIAL_SPONSORED_FALLBACK: Product[] = [
   {
     id: 'prod-1',
     title: 'Pagne Super Wax Vlisco Original (6 yards)',
-    description: 'Véritable wax hollandais de qualité premium, motifs vibrants traditionnels de Kinshasa. Achat dès 1 pièce ou tarif de gros négociable.',
+    description: 'Véritable wax hollandais de qualité premium disponible à Goma (Himbi). Achat dès 1 pièce ou tarif de gros négociable.',
     productType: 'PHYSICAL',
     pricingUnit: 'UNIT',
     audience: 'WOMEN',
@@ -41,12 +42,12 @@ const INITIAL_SPONSORED_FALLBACK: Product[] = [
     ],
     images: [{ id: 'img-1', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Pagne Super Wax Vlisco Original' }],
     variants: [],
-    store: { id: 'store-1', storeName: 'Boutique Victoire Wax', slug: 'victoire-wax', city: 'Kinshasa', isCertified: true, hasMonthlyAd: true },
+    store: { id: 'store-1', storeName: 'Boutique Virunga Wax', slug: 'virunga-wax', city: 'Goma (Himbi)', isCertified: true, hasMonthlyAd: true },
   },
   {
     id: 'prod-6',
     title: 'Smartphone Tecno Camon 30 Premier 5G (512GB)',
-    description: 'Triple capteur photo Sony 50MP, charge 70W ultra-rapide, écran AMOLED 120Hz. Garantie officielle Carlcare 13 mois.',
+    description: 'Triple capteur photo Sony 50MP, charge 70W ultra-rapide, écran AMOLED 120Hz. Disponible au dépôt Goma · Les Volcans.',
     productType: 'PHYSICAL',
     pricingUnit: 'UNIT',
     audience: 'UNISEX',
@@ -60,12 +61,12 @@ const INITIAL_SPONSORED_FALLBACK: Product[] = [
     ],
     images: [{ id: 'img-tecno', url: '/src/assets/images/smartphone_camon_pro_1794567971555.jpg', altText: 'Smartphone Camon 30 Premier 5G' }],
     variants: [],
-    store: { id: 'store-2', storeName: 'Kin Digital Gombe', slug: 'kin-digital', city: 'Lubumbashi', isCertified: true, hasMonthlyAd: true },
+    store: { id: 'store-2', storeName: 'Kivu Digital & Tech', slug: 'kivu-digital', city: 'Goma (Les Volcans)', isCertified: true, hasMonthlyAd: true },
   },
   {
     id: 'prod-5',
     title: 'Transport & Course Express Moto Dédiée (Tarif au km)',
-    description: 'Transport urbain Kinshasa facturé au kilomètre réel via Google Maps avec suivi GPS du coursier et négociation directe.',
+    description: 'Transport urbain à Goma & Karisimbi facturé au kilomètre réel via Google Maps avec suivi GPS du coursier et négociation directe.',
     productType: 'SERVICE',
     pricingUnit: 'KM',
     audience: 'PRO',
@@ -79,12 +80,12 @@ const INITIAL_SPONSORED_FALLBACK: Product[] = [
     ],
     images: [{ id: 'img-courier', url: '/src/assets/images/express_courier_moto_1794397998233.jpg', altText: 'Coursier Moto Express au km' }],
     variants: [],
-    store: { id: 'store-logistics', storeName: 'Kota Express Logistique', slug: 'kota-express', city: 'Kinshasa', isCertified: true, hasMonthlyAd: true },
+    store: { id: 'store-logistics', storeName: 'Nyiragongo Express Logistique', slug: 'nyiragongo-express', city: 'Goma (Birere)', isCertified: true, hasMonthlyAd: true },
   },
   {
     id: 'prod-8',
     title: 'Pack 10 Clés USB 64GB Kingston Metal + Étui',
-    description: 'Clés USB 3.2 en acier brossé haute résistance pour entreprises, écoles et revendeurs. Prix unitaire ou tarif de gros négociable.',
+    description: 'Clés USB 3.2 en acier brossé haute résistance pour ONG, entreprises, écoles et revendeurs du Nord-Kivu.',
     productType: 'PHYSICAL',
     pricingUnit: 'UNIT',
     audience: 'PRO',
@@ -98,7 +99,7 @@ const INITIAL_SPONSORED_FALLBACK: Product[] = [
     ],
     images: [{ id: 'img-usb', url: '/src/assets/images/usb_kingston_bundle_1794567970257.jpg', altText: 'Pack Clés USB 64GB Kingston' }],
     variants: [],
-    store: { id: 'store-2', storeName: 'Kin Digital Gombe', slug: 'kin-digital', city: 'Kinshasa', isCertified: true, hasMonthlyAd: true },
+    store: { id: 'store-2', storeName: 'Kivu Digital & Tech', slug: 'kivu-digital', city: 'Goma (Les Volcans)', isCertified: true, hasMonthlyAd: true },
   },
 ];
 
@@ -153,15 +154,15 @@ export function LandingPage() {
             <div>
               <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-safran/15 text-safran text-xs font-mono mb-6 border border-safran/30">
                 <Globe className="w-3.5 h-3.5 text-safran" />
-                <span>Place Commerciale RDC · Détail & Gros Sans Frontières</span>
+                <span>Siège Goma (Nord-Kivu) · Détail, Gros B2B dans toute la RDC & environs</span>
               </div>
 
               <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.06] tracking-tight">
-                Achetez et vendez en toute confiance sur <span className="text-seve">Zando</span><span className="text-safran">Go</span>.
+                Achetez et vendez partout en <span className="text-seve">RDC</span> et ses environs sur <span className="text-safran">ZandoGo</span>.
               </h1>
 
               <p className="mt-6 text-brume/80 text-base sm:text-lg leading-relaxed max-w-xl">
-                La plateforme commerciale nationale de la RDC. Vente au <strong>détail dès 1 pièce</strong>, <strong>vendeurs certifiés</strong>, <strong>négociation du prix & de la livraison</strong> avec point Google Maps, et <strong>paiement séquestre MaishaPay</strong>.
+                Basée à Goma et active dans les 26 provinces de la RDC et les pays voisins. Vente au <strong>détail dès 1 pièce</strong>, <strong>vendeurs certifiés</strong>, <strong>négociation du prix & du transport</strong> avec point Google Maps, et règlement direct <strong>Airtel Money, M-Pesa Vodacom, Orange Money, MTN MoMo & Cartes</strong> sous séquestre.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -196,7 +197,7 @@ export function LandingPage() {
                     <ShieldCheck className="w-4 h-4 text-seve shrink-0" />
                     <span>Séquestre 100%</span>
                   </span>
-                  Fonds retenus via MaishaPay jusqu'à livraison confirmée
+                  Fonds retenus sous séquestre jusqu'à livraison confirmée
                 </div>
 
                 <div>
@@ -204,7 +205,7 @@ export function LandingPage() {
                     <Handshake className="w-4 h-4 text-safran shrink-0" />
                     <span>Prix & Transport</span>
                   </span>
-                  Discutez le tarif produit & la course avec Google Maps
+                  Discutez le tarif produit & la livraison partout en RDC avec Google Maps
                 </div>
 
                 <div>
@@ -214,6 +215,13 @@ export function LandingPage() {
                   </span>
                   Boutiques contrôlées identifiables sur chaque fiche
                 </div>
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center gap-3">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-brume/60">
+                  Paiements acceptés :
+                </span>
+                <PaymentOperatorStrip compact dark />
               </div>
             </div>
 
@@ -291,7 +299,7 @@ export function LandingPage() {
                       )}
                     </span>
                     <span className="text-safran/90 shrink-0 font-mono">
-                      {currentSlide.store?.city || 'Kinshasa'}
+                      {currentSlide.store?.city || 'Goma (Nord-Kivu)'}
                     </span>
                   </div>
 
@@ -401,7 +409,7 @@ export function LandingPage() {
             </div>
             <h3 className="font-display font-bold text-nuit text-sm mb-1.5">Livres PDF Sans Livraison</h3>
             <p className="text-xs text-encre/70 leading-relaxed">
-              Aucune adresse ni livreur requis : dès le règlement MaishaPay, recevez directement le lien de téléchargement de votre livre.
+              Aucune adresse ni livreur requis : dès validation de votre paiement Mobile Money ou Carte, recevez directement le lien de téléchargement de votre livre.
             </p>
           </Link>
 
@@ -496,7 +504,7 @@ export function LandingPage() {
                   <div>
                     <div className="flex items-center gap-1.5 text-[11px] text-encre/60 mb-1">
                       <span className="font-medium text-encre/80 truncate">{item.store.storeName}</span>
-                      <span>· {item.store.city || 'Kinshasa'}</span>
+                      <span>· {item.store.city || 'Goma (Nord-Kivu)'}</span>
                     </div>
 
                     {item.store.isCertified && (
@@ -578,8 +586,8 @@ export function LandingPage() {
             {
               step: '04',
               icon: CreditCard,
-              title: 'Paiement MaishaPay & Séquestre',
-              desc: 'Le client paie via MaishaPay (Mobile Money ou Carte). L’argent reste bloqué sur le séquestre ZandoGo et un SMS Africa’s Talking confirme l’opération.',
+              title: 'Mobile Money / Carte & Séquestre',
+              desc: 'Le client paie via Airtel Money, M-Pesa Vodacom, Orange Money, MTN MoMo ou Carte bancaire. L’argent reste bloqué sur le séquestre ZandoGo et un SMS confirme l’opération.',
             },
             {
               step: '05',
@@ -641,7 +649,7 @@ export function LandingPage() {
 
           <div className="bg-white/5 border border-white/10 rounded-card p-6 font-mono text-xs text-brume/80 space-y-3 backdrop-blur-xs">
             <div className="flex justify-between items-center pb-2 border-b border-white/10 text-brume font-semibold">
-              <span>RÉSEAU MARCHAND ZANDOGO RDC</span>
+              <span>RÉSEAU MARCHAND ZANDOGO · GOMA (NORD-KIVU)</span>
               <span className="text-seve font-bold">EN SERVICE</span>
             </div>
             <div className="flex justify-between">
@@ -652,9 +660,9 @@ export function LandingPage() {
               <span className="text-brume/60">Certification Vendeur (Payante) :</span>
               <span className="text-seve font-bold">Badge sur 100% des produits</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-brume/60">Agrégateur Paiement :</span>
-              <span className="text-brume font-semibold">MaishaPay RDC (Séquestre)</span>
+            <div className="space-y-2 pt-1">
+              <span className="text-brume/60 block">Opérateurs de Paiement & Séquestre :</span>
+              <PaymentOperatorStrip compact dark />
             </div>
             <div className="flex justify-between">
               <span className="text-brume/60">Notifications Temps Réel :</span>

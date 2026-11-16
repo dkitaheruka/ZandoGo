@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Package, FileText, Sparkles, Layers, Heart, Scale, MapPin } from 'lucide-react';
+import { Search, Package, FileText, Sparkles, Layers, Heart, Scale, MapPin, Truck } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store-context';
@@ -33,6 +33,7 @@ export function ProductListPage() {
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<SortKey>('RELEVANCE');
   const [favoritesOnly, setFavoritesOnly] = useState<boolean>(urlFavorites);
+  const [transportOnly, setTransportOnly] = useState<boolean>(searchParams.get('transport') === '1');
   const [retryKey, setRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +135,12 @@ export function ProductListPage() {
       if (audienceFilter !== 'ALL' && p.audience !== audienceFilter) return false;
       if (selectedCity !== 'ALL' && p.store.city !== selectedCity) return false;
       if (favoritesOnly && !wishlistIds.includes(p.id)) return false;
+      if (
+        transportOnly &&
+        !(p.store.isTransportAgency || (p.store.transportDestinations && p.store.transportDestinations.length > 0))
+      ) {
+        return false;
+      }
       return true;
     })
     .slice()
@@ -160,7 +167,7 @@ export function ProductListPage() {
             Offres & Catalogues RDC
           </h1>
           <p className="mt-2 text-xs text-encre/70 max-w-xl">
-            Fournisseurs et commerçants vérifiés dans toute la République (Kinshasa, Lubumbashi, Goma, Matadi, Kisangani). Vente au détail dès 1 pièce et en gros avec transport suivi.
+            Fournisseurs et commerçants vérifiés basés à Goma (Nord-Kivu) avec expédition vers Bukavu, Butembo, Beni, Sake, Lubumbashi et Kinshasa. Vente au détail dès 1 pièce et en gros avec transport suivi.
           </p>
         </div>
 
@@ -231,6 +238,19 @@ export function ProductListPage() {
 
           {/* City, Sort, Favorites */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setTransportOnly((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card border transition font-medium ${
+                transportOnly
+                  ? 'bg-seve text-brume border-seve font-bold'
+                  : 'bg-white text-encre/80 border-encre/15 hover:border-seve'
+              }`}
+            >
+              <Truck className="w-3.5 h-3.5" />
+              <span>Agences de Transport</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setFavoritesOnly((v) => !v)}
@@ -380,6 +400,7 @@ export function ProductListPage() {
                 setAudienceFilter('ALL');
                 setSelectedCity('ALL');
                 setFavoritesOnly(false);
+                setTransportOnly(false);
                 setSearchParams(new URLSearchParams());
               }}
               className="mt-4 px-5 py-2.5 rounded-card bg-seve text-brume font-display font-medium text-xs hover:bg-seve/90 transition"

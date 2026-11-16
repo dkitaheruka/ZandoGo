@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
 
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTarget = searchParams.get('redirect') || '/';
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -25,7 +27,7 @@ export function RegisterPage() {
         password,
         preferredCurrency: currency,
       });
-      navigate('/');
+      navigate(redirectTarget, { replace: true });
     } catch (reason) {
       const message = (reason as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
       setError(
@@ -46,8 +48,8 @@ export function RegisterPage() {
 
         <form onSubmit={submit} className="mt-6 space-y-4 text-xs">
           <Field label="Nom complet" value={fullName} onChange={setFullName} required autoComplete="name" />
-          <Field label="Adresse email (facultatif si téléphone renseigné)" value={email} onChange={setEmail} type="email" autoComplete="email" />
-          <Field label="Téléphone (facultatif si email renseigné)" value={phone} onChange={setPhone} type="tel" autoComplete="tel" />
+          <Field label="Adresse e-mail (requise pour acheter & retrouver vos adresses)" value={email} onChange={setEmail} type="email" required autoComplete="email" />
+          <Field label="Téléphone (+243 / SMS Africa's Talking)" value={phone} onChange={setPhone} type="tel" autoComplete="tel" />
 
           <div>
             <label htmlFor="register-password" className="mb-1.5 block font-semibold text-encre/80">Mot de passe (10 caractères minimum)</label>
@@ -89,7 +91,13 @@ export function RegisterPage() {
         </form>
 
         <p className="mt-6 text-xs text-encre/60 text-center">
-          Déjà inscrit ? <Link to="/login" className="text-seve font-semibold hover:underline">Se connecter</Link>
+          Déjà inscrit ?{' '}
+          <Link
+            to={searchParams.get('redirect') ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : '/login'}
+            className="text-seve font-semibold hover:underline"
+          >
+            Se connecter
+          </Link>
         </p>
       </div>
     </div>

@@ -16,13 +16,24 @@ import {
   Search,
   MessageSquare,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store-context';
-import type { Order } from '../lib/types';
+import { useAuth } from '../lib/auth-context';
+import {
+  PaymentMethodSelector,
+  PaymentOperatorBadge,
+  OPERATOR_META,
+  detectOperatorFromPhone,
+  type PaymentMethodCodeType,
+} from '../components/PaymentOperatorLogos';
+import type { Order, PlatformPricing } from '../lib/types';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { formatPrimaryPrice, exchangeRate } = useStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +42,9 @@ export function OrdersListPage() {
   const [filterTab, setFilterTab] = useState<'ALL' | 'UNPAID' | 'PAID' | 'COMPLETED'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [expandedPayOrderId, setExpandedPayOrderId] = useState<string | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodCodeType>('MOBILE_MONEY_MPESA');
+  const [payPhone, setPayPhone] = useState(user?.phone || '+243820001122');
 
   // Dispute modal state
   const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
@@ -41,6 +55,8 @@ export function OrdersListPage() {
 
   // Invoice modal state
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [copiedDownloadId, setCopiedDownloadId] = useState<string | null>(null);
+  const [pricing, setPricing] = useState<PlatformPricing | null>(null);
 
   function load() {
     setLoading(true);
@@ -54,16 +70,26 @@ export function OrdersListPage() {
 
   useEffect(() => {
     load();
+    api
+      .get<PlatformPricing>('/platform/pricing')
+      .then(({ data }) => {
+        if (data) setPricing(data);
+      })
+      .catch(() => {});
   }, []);
 
   async function handlePayOrder(orderId: string) {
     setPayingOrderId(orderId);
     setActionMessage(null);
     try {
-      const { data } = await api.post(`/orders/${orderId}/pay`);
+      const { data } = await api.post(`/orders/${orderId}/pay`, {
+        methodCode: selectedMethod,
+        phoneNumber: payPhone || '+243820001122',
+      });
+      setExpandedPayOrderId(null);
       setActionMessage(
         data?.message ||
-          'Paiement validé via MaishaPay RDC ! Notification SMS Africa’s Talking envoyée et séquestre activé.',
+          `Paiement validé via ${OPERATOR_META[selectedMethod]?.label || 'Mobile Money'} ! Notification SMS Africa’s Talking envoyée et séquestre activé.`,
       );
       load();
     } catch {
@@ -80,10 +106,10 @@ export function OrdersListPage() {
         orderId: order.id,
         orderNumber: order.orderNumber,
         storeId: 'store-logistics',
-        storeName: 'Patrick Bolamba · Coursier Moto (Avant paiement)',
+        storeName: 'Patrick Muhindo · Coursier Moto Goma (Avant paiement)',
         productTitle: `Livraison ${order.orderNumber}`,
         productImage: '/src/assets/images/express_courier_moto_1794397998233.jpg',
-        productPriceUsd: order.deliveryFee ?? 6.5,
+        productPriceUsd: order.deliveryFee ?? 3.5,
       });
       navigate('/chat', { state: { conversationId: data.id } });
     } catch {
@@ -348,10 +374,29 @@ export function OrdersListPage() {
                         <span>Clôturée & Fonds versés</span>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-seve bg-seve/10 border border-seve/25 px-2.5 py-0.5 rounded-full mt-1">
-                        <ShieldCheck className="w-3 h-3 text-seve" />
-                        <span>Payée — Séquestre Actif</span>
-                      </span>
+                      <div className="flex flex-col items-end gap-1 mt-1">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-seve bg-seve/10 border border-seve/25 px-2.5 py-0.5 rounded-full">
+                          <ShieldCheck className="w-3 h-3 text-seve" />
+                          <span>Payée — Séquestre Actif</span>
+                        </span>
+                        {(order.escrowReleaseAt || order.paidAt) && (
+                          <span className="text-[10px] font-mono text-encre/60">
+                            {(() => {
+                              const rel =
+                                order.escrowReleaseAt ||
+                                new Date(new Date(order.paidAt!).getTime() + 48 * 3600 * 1000).toISOString();
+                              const msLeft = new Date(rel).getTime() - Date.now();
+                              if (msLeft <= 0) return 'Délai 48h écoulé';
+                              return `Délai 48h : ${Math.floor(msLeft / 3600000)}h ${Math.floor((msLeft % 3600000) / 60000)}m restantes`;
+                            })()}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {order.chargedTotal && order.chargedTotal > Number(order.total) && (
+                      <p className="text-[10px] font-mono text-encre/60 mt-1">
+                        Débité : {formatPrimaryPrice(order.chargedTotal)} (dont {order.transactionFeePercent ?? 3.5}% frais)
+                      </p>
                     )}
                   </div>
                 </div>
@@ -383,39 +428,148 @@ export function OrdersListPage() {
                   ))}
                 </div>
 
-                {/* Digital Download Attachment */}
+                {/* Digital Download Attachment (Automatic System Delivery) */}
                 {order.digitalDownloads && order.digitalDownloads.length > 0 && !isUnpaid && (
-                  <div className="p-3.5 rounded-card bg-safran/15 border border-safran/40 flex flex-wrap items-center justify-between gap-3 my-2">
-                    <div className="flex items-center gap-2 text-xs">
-                      <FileText className="w-4 h-4 text-seve shrink-0" />
-                      <div>
-                        <p className="font-display font-semibold text-nuit">
-                          Livre / PDF débloqué (aucune livraison requise) :
-                        </p>
-                        <p className="text-encre/80">{order.digitalDownloads[0].title}</p>
-                      </div>
+                  <div className="p-4 rounded-card bg-safran/15 border border-safran/40 space-y-2.5 my-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-display font-bold text-nuit">
+                        <FileText className="w-4 h-4 text-seve shrink-0" />
+                        <span>Livre / Document PDF envoyé automatiquement par le système</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-seve text-brume text-[10px] font-display font-bold">
+                        Sans intervention vendeur
+                      </span>
                     </div>
-                    <a
-                      href={order.digitalDownloads[0].downloadUrl}
-                      download={order.digitalDownloads[0].fileName}
-                      onClick={() =>
-                        setActionMessage(`Téléchargement du fichier PDF démarré : ${order.digitalDownloads?.[0]?.fileName}`)
-                      }
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-semibold transition"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Télécharger ({order.digitalDownloads[0].fileName})</span>
-                    </a>
+                    <div className="space-y-2">
+                      {order.digitalDownloads.map((dl) => {
+                        const fullLink = `${window.location.origin}${dl.downloadUrl}`;
+                        const copyKey = `${order.id}-${dl.productId}`;
+                        return (
+                          <div
+                            key={dl.productId}
+                            className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-card bg-white border border-encre/10"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-display font-semibold text-xs text-nuit">{dl.title}</p>
+                              <p className="text-[11px] font-mono text-encre/60 truncate">{dl.fileName}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(fullLink).catch(() => {});
+                                  setCopiedDownloadId(copyKey);
+                                  setTimeout(() => setCopiedDownloadId(null), 2000);
+                                }}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-card border border-encre/15 hover:border-safran text-[11px] font-semibold text-nuit transition"
+                              >
+                                {copiedDownloadId === copyKey ? (
+                                  <Check className="w-3.5 h-3.5 text-seve" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                                <span>{copiedDownloadId === copyKey ? 'Lien copié' : 'Copier le lien'}</span>
+                              </button>
+                              <a
+                                href={dl.downloadUrl}
+                                download={dl.fileName}
+                                onClick={() =>
+                                  setActionMessage(`Téléchargement du fichier PDF démarré : ${dl.fileName}`)
+                                }
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-semibold transition"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Télécharger ({dl.fileName})</span>
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {order.maishaPayRef && (
+                {(order.paymentRef || order.paymentOperator) && (
                   <div className="text-[11px] font-mono text-encre/60 flex flex-wrap items-center gap-3 pb-2">
-                    <span>
-                      MaishaPay Réf : <strong className="text-nuit">{order.maishaPayRef}</strong>
-                    </span>
-                    <span>·</span>
+                    <PaymentOperatorBadge operator={order.paymentOperator} refCode={order.paymentRef} />
                     <span className="text-seve">SMS Africa’s Talking envoyé ✓</span>
+                  </div>
+                )}
+
+                {isUnpaid && expandedPayOrderId === order.id && (
+                  <div className="my-3 p-4 rounded-card bg-brume/80 border border-seve/30 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-display font-bold text-nuit">
+                        Choisissez votre opérateur de paiement
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedPayOrderId(null)}
+                        className="text-xs text-encre/50 hover:text-nuit"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+                    <PaymentMethodSelector
+                      value={selectedMethod}
+                      onChange={setSelectedMethod}
+                      includeCash={!order.noDeliveryNeeded}
+                      autoDetectedCode={detectOperatorFromPhone(payPhone)}
+                    />
+                    {(() => {
+                      const pct =
+                        selectedMethod === 'CASH_ON_DELIVERY'
+                          ? 0
+                          : Number(pricing?.paymentTransactionFeePercent ?? 3.5);
+                      const baseAmt = Number(order.total || 0);
+                      const feeAmt = Number(((baseAmt * pct) / 100).toFixed(2));
+                      const exactAmt = Number((baseAmt + feeAmt).toFixed(2));
+                      return (
+                        <div className="p-3 rounded-card bg-white border border-encre/15 text-xs space-y-1">
+                          <div className="flex justify-between text-encre/70">
+                            <span>Sous-total commande</span>
+                            <span className="font-mono">{formatPrimaryPrice(baseAmt)}</span>
+                          </div>
+                          <div className="flex justify-between text-encre/70">
+                            <span>Frais de transaction paiement ({pct}%)</span>
+                            <span className="font-mono">+{formatPrimaryPrice(feeAmt)}</span>
+                          </div>
+                          <div className="flex justify-between font-display font-bold text-nuit pt-1 border-t border-encre/10">
+                            <span>Total exact débité de votre compte</span>
+                            <span className="text-seve">{formatPrimaryPrice(exactAmt)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <input
+                        type="tel"
+                        value={payPhone}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setPayPhone(next);
+                          const detected = detectOperatorFromPhone(next);
+                          if (detected && selectedMethod !== 'CARD_STRIPE' && selectedMethod !== 'CASH_ON_DELIVERY') {
+                            setSelectedMethod(detected);
+                          }
+                        }}
+                        placeholder="+243 820 001 122"
+                        className="flex-1 min-w-[180px] rounded-card border border-encre/20 bg-white px-3 py-2 text-xs font-mono text-nuit outline-none focus:border-seve"
+                      />
+                      <button
+                        type="button"
+                        disabled={payingOrderId === order.id}
+                        onClick={() => handlePayOrder(order.id)}
+                        className="inline-flex items-center gap-2 px-5 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition shadow-xs disabled:opacity-50"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>
+                          {payingOrderId === order.id
+                            ? 'Validation…'
+                            : `Payer (${OPERATOR_META[selectedMethod]?.shortLabel || 'Mobile Money'})`}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -425,12 +579,12 @@ export function OrdersListPage() {
                     {isUnpaid ? (
                       <span className="text-encre font-medium flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 text-safran" />
-                        <span>Négociez la livraison avec le livreur ou réglez via MaishaPay.</span>
+                        <span>Négociez la livraison avec le livreur ou réglez par Mobile Money / Carte.</span>
                       </span>
                     ) : (
                       <span className="text-seve font-medium flex items-center gap-1.5">
                         <ShieldCheck className="w-3.5 h-3.5 text-seve" />
-                        <span>Fonds sécurisés via MaishaPay jusqu’à validation.</span>
+                        <span>Fonds sécurisés sous séquestre jusqu’à validation.</span>
                       </span>
                     )}
                   </div>
@@ -460,11 +614,21 @@ export function OrdersListPage() {
                       <button
                         type="button"
                         disabled={payingOrderId === order.id}
-                        onClick={() => handlePayOrder(order.id)}
+                        onClick={() =>
+                          expandedPayOrderId === order.id
+                            ? handlePayOrder(order.id)
+                            : setExpandedPayOrderId(order.id)
+                        }
                         className="inline-flex items-center gap-2 px-5 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition shadow-xs disabled:opacity-50"
                       >
                         <CreditCard className="w-4 h-4" />
-                        <span>{payingOrderId === order.id ? 'MaishaPay…' : 'Payer via MaishaPay'}</span>
+                        <span>
+                          {payingOrderId === order.id
+                            ? 'Paiement en cours…'
+                            : expandedPayOrderId === order.id
+                            ? `Payer via ${OPERATOR_META[selectedMethod]?.shortLabel}`
+                            : 'Choisir opérateur & Payer'}
+                        </span>
                       </button>
                     )}
 
@@ -489,7 +653,7 @@ export function OrdersListPage() {
                       </>
                     )}
 
-                    {!isUnpaid && !isCompleted && (
+                    {!isUnpaid && !isCompleted && !order.noDeliveryNeeded && (
                       <Link
                         to={`/orders/${order.id}/tracking`}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card border border-encre/20 hover:border-seve text-xs font-semibold text-encre transition"
@@ -594,7 +758,7 @@ export function OrdersListPage() {
                   <span className="h-7 w-7 rounded-lg bg-nuit text-safran font-display font-bold text-xs flex items-center justify-center">
                     ZG
                   </span>
-                  <span className="font-display font-extrabold text-base text-nuit">ZandoGo RDC</span>
+                  <span className="font-display font-extrabold text-base text-nuit">ZandoGo Goma</span>
                 </div>
                 <p className="text-[11px] font-mono text-encre/55 mt-1">
                   Bordereau Officiel · {invoiceOrder.orderNumber}
@@ -616,10 +780,19 @@ export function OrdersListPage() {
                 <span className="text-encre/60">Taux de référence :</span>
                 <span className="font-mono text-nuit">1 USD = {exchangeRate.toLocaleString('fr-FR')} CDF</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-encre/60">Statut Séquestre :</span>
                 <span className="font-semibold text-seve">{invoiceOrder.status}</span>
               </div>
+              {(invoiceOrder.paymentOperator || invoiceOrder.paymentRef) && (
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-encre/60">Paiement :</span>
+                  <PaymentOperatorBadge
+                    operator={invoiceOrder.paymentOperator}
+                    refCode={invoiceOrder.paymentRef}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="border-t border-b border-encre/10 py-3 space-y-2 text-xs">
@@ -637,17 +810,27 @@ export function OrdersListPage() {
                 <span>Frais logistiques ({invoiceOrder.deliveryOption?.name || 'Standard'})</span>
                 <span className="font-mono tabular-nums">${(invoiceOrder.deliveryFee || 0).toFixed(2)}</span>
               </div>
+              {invoiceOrder.transactionFeeAmount !== undefined && invoiceOrder.transactionFeeAmount > 0 && (
+                <div className="flex justify-between text-encre/60">
+                  <span>Frais de transaction paiement ({invoiceOrder.transactionFeePercent ?? 3.5}%)</span>
+                  <span className="font-mono tabular-nums">+${Number(invoiceOrder.transactionFeeAmount).toFixed(2)}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-baseline justify-between">
               <div>
-                <span className="font-display font-bold text-sm text-nuit block">Total Facturé</span>
+                <span className="font-display font-bold text-sm text-nuit block">Total Exact Débité</span>
                 <span className="text-[11px] font-mono text-encre/55 tabular-nums">
-                  ≈ {Math.round(Number(invoiceOrder.total) * exchangeRate).toLocaleString('fr-FR')} CDF
+                  ≈{' '}
+                  {Math.round(
+                    Number(invoiceOrder.chargedTotal ?? invoiceOrder.total) * exchangeRate,
+                  ).toLocaleString('fr-FR')}{' '}
+                  CDF
                 </span>
               </div>
               <span className="font-display text-2xl font-extrabold text-nuit tabular-nums">
-                ${Number(invoiceOrder.total).toFixed(2)}
+                ${Number(invoiceOrder.chargedTotal ?? invoiceOrder.total).toFixed(2)}
               </span>
             </div>
 

@@ -69,7 +69,7 @@ export function ExchangeRatePage() {
             Taux de Change Officiel (USD / CDF)
           </h1>
           <p className="mt-1 text-xs text-brume/70">
-            Fixation de la parité monétaire appliquée aux conversions automatiques des catalogues et paniers à Kinshasa.
+            Fixation de la parité monétaire appliquée aux conversions automatiques des catalogues et paniers à Goma (Nord-Kivu) et dans toute la RDC.
           </p>
         </div>
 

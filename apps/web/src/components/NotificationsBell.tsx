@@ -77,17 +77,30 @@ export function NotificationsBell() {
             <p className="p-4 text-sm text-encre/50">Aucune notification.</p>
           ) : (
             notifications.map((n) => (
-              <button
+              <div
                 key={n.id}
                 onClick={() => markRead(n)}
-                className={`block w-full text-left p-4 border-b border-encre/5 hover:bg-brume transition-colors ${
+                className={`block w-full text-left p-4 border-b border-encre/5 hover:bg-brume transition-colors cursor-pointer ${
                   n.isRead ? '' : 'bg-safran/10'
                 }`}
               >
                 <p className="text-sm font-medium text-nuit">{n.title}</p>
-                <p className="text-xs text-encre/60 mt-0.5">{n.body}</p>
-                <p className="text-[11px] text-encre/40 mt-1">{new Date(n.createdAt).toLocaleString('fr-FR')}</p>
-              </button>
+                <p className="text-xs text-encre/60 mt-0.5 break-words">{n.body}</p>
+                {n.actionUrl && (
+                  <a
+                    href={n.actionUrl}
+                    download
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      markRead(n);
+                    }}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card bg-seve hover:bg-seve/90 text-brume text-[11px] font-display font-bold transition"
+                  >
+                    <span>{n.actionLabel || 'Télécharger le fichier'}</span>
+                  </a>
+                )}
+                <p className="text-[11px] text-encre/40 mt-1.5">{new Date(n.createdAt).toLocaleString('fr-FR')}</p>
+              </div>
             ))
           )}
         </div>

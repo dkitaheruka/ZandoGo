@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -23,9 +23,33 @@ export class UsersController {
     return this.usersService.listAddresses(user);
   }
 
+  @Get('me/addresses/by-email')
+  listAddressesByEmail(@CurrentUser() user: AuthenticatedUser, @Query('email') email: string) {
+    return this.usersService.listAddressesByEmail(user, email || user.email || '');
+  }
+
   @Post('me/addresses')
   createAddress(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAddressDto) {
     return this.usersService.createAddress(user, dto);
+  }
+
+  @Patch('me/addresses/:id')
+  updateAddress(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateAddressDto,
+  ) {
+    return this.usersService.updateAddress(user, id, dto);
+  }
+
+  @Patch('me/addresses/:id/default')
+  setDefaultAddress(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.usersService.setDefaultAddress(user, id);
+  }
+
+  @Delete('me/addresses/:id')
+  deleteAddress(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.usersService.deleteAddress(user, id);
   }
 
   /** Exemple de route réservée aux admins, pour valider le RBAC */

@@ -1,15 +1,21 @@
 import { FormEvent, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth-context';
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const redirectTarget =
+    searchParams.get('redirect') ||
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ||
+    '/';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -18,8 +24,7 @@ export function LoginPage() {
     try {
       const isEmail = identifier.includes('@');
       await login(isEmail ? { email: identifier } : { phone: identifier }, password);
-      const returnTo = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
-      navigate(returnTo ?? '/', { replace: true });
+      navigate(redirectTarget, { replace: true });
     } catch (err: any) {
       // 429 = trop de tentatives (limitation de débit) : à distinguer d'un mauvais mot de passe,
       // sinon l'utilisateur réessaie et prolonge son propre blocage.
@@ -37,7 +42,9 @@ export function LoginPage() {
     <div className="mx-auto max-w-md px-6 py-16">
       <div className="rounded-card bg-white border border-encre/10 p-8 shadow-xs">
         <h1 className="font-display text-3xl font-bold text-nuit">Se connecter</h1>
-        <p className="mt-2 text-xs text-encre/60">Retrouvez vos commandes et vos échanges sur ZandoGo.</p>
+        <p className="mt-2 text-xs text-encre/60">
+          Connectez-vous avec votre e-mail ou téléphone pour commander, payer et récupérer vos adresses de livraison.
+        </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-xs">
           <div>
@@ -82,7 +89,10 @@ export function LoginPage() {
 
         <p className="mt-6 text-xs text-encre/60 text-center">
           Pas encore de compte ?{' '}
-          <Link to="/register" className="text-seve font-semibold hover:underline">
+          <Link
+            to={searchParams.get('redirect') ? `/register?redirect=${encodeURIComponent(redirectTarget)}` : '/register'}
+            className="text-seve font-semibold hover:underline"
+          >
             Créer un compte
           </Link>
         </p>

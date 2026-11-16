@@ -76,6 +76,17 @@ export class VendorsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Patch(':id/immediate-withdrawal')
+  setImmediateWithdrawal(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { enabled: boolean },
+  ) {
+    return this.vendors.setImmediateWithdrawal(admin, id, Boolean(body.enabled));
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleName.VENDOR_OWNER)
   @Post(':id/subscribe-ad')
   subscribeAd(
@@ -95,6 +106,22 @@ export class VendorsController {
     @Body() body: { billing?: string },
   ) {
     return this.vendors.subscribeCertification(user, id, body.billing ?? 'MONTHLY');
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER)
+  @Post(':id/activate-service')
+  activateService(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      service: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
+      paymentMethod?: string;
+      customerPhone?: string;
+    },
+  ) {
+    return this.vendors.activateStoreService(user, id, body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

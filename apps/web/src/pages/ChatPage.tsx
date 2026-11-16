@@ -24,12 +24,13 @@ interface EnrichedConversation extends Conversation {
   negotiationId?: string;
 }
 
-const KINSHASA_ZONES = [
-  { label: 'Gombe · Boulevard 30 Juin', lat: -4.3015, lng: 15.3052 },
-  { label: 'Ngaliema · Macampagne', lat: -4.3412, lng: 15.2654 },
-  { label: 'Limete · 7ème Rue Industrielle', lat: -4.3592, lng: 15.3442 },
-  { label: 'Kalamu · Rond-Point Victoire', lat: -4.3376, lng: 15.3081 },
-  { label: 'Matete · Marché Central', lat: -4.3845, lng: 15.3612 },
+const GOMA_ZONES = [
+  { label: 'Goma · Himbi (Av. du Tourisme)', lat: -1.6815, lng: 29.2115 },
+  { label: 'Goma · Les Volcans (Signers)', lat: -1.6741, lng: 29.2285 },
+  { label: 'Goma · Katindo / Terminus', lat: -1.6660, lng: 29.2180 },
+  { label: 'Karisimbi · Birere / Kituku', lat: -1.6685, lng: 29.2420 },
+  { label: 'Karisimbi · Ndosho / Mabanga', lat: -1.6460, lng: 29.2080 },
+  { label: 'Goma · Keshero / Lac Vert', lat: -1.6620, lng: 29.1850 },
 ];
 
 function extractGoogleMapsCoords(raw: string): { lat: number; lng: number } | null {
@@ -242,7 +243,7 @@ export function ChatPage() {
 
         <div className="flex items-center gap-2 text-xs font-mono bg-nuit text-brume px-3.5 py-2 rounded-card border border-white/10 shadow-xs">
           <ShieldCheck className="w-3.5 h-3.5 text-safran" />
-          <span className="text-safran font-semibold">Séquestre MaishaPay Actif</span>
+          <span className="text-safran font-semibold">Paiement & Séquestre Actif</span>
         </div>
       </div>
 
@@ -510,7 +511,7 @@ export function ChatPage() {
                       </p>
                       <span className="text-[10px] text-seve font-mono font-semibold block mt-0.5">
                         ${activeNegotiation.agreedDeliveryFeeUsd ?? activeNegotiation.requestedDeliveryFeeUsd ?? 3.5} (
-                        {activeNegotiation.destinationCity || 'Kinshasa'})
+                        {activeNegotiation.destinationCity || 'Goma (Nord-Kivu)'})
                       </span>
                     </div>
                   </div>
@@ -671,11 +672,11 @@ export function ChatPage() {
                         { lat: pos.coords.latitude, lng: pos.coords.longitude },
                         'Ma position GPS en direct',
                       ),
-                    () => handleSendLocation({ lat: -4.325, lng: 15.322 }, 'Position Kinshasa Centre'),
+                    () => handleSendLocation({ lat: -1.6741, lng: 29.2285 }, 'Position Goma Centre (Les Volcans)'),
                     { timeout: 5000 },
                   );
                 } else {
-                  handleSendLocation({ lat: -4.325, lng: 15.322 }, 'Position Kinshasa Centre');
+                  handleSendLocation({ lat: -1.6741, lng: 29.2285 }, 'Position Goma Centre (Les Volcans)');
                 }
               }}
               className="w-full py-2.5 px-4 rounded-card bg-seve text-brume font-display font-bold text-xs hover:bg-seve/90 transition flex items-center justify-center gap-2"
@@ -686,10 +687,10 @@ export function ChatPage() {
 
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-encre/60">
-                Ou sélectionner un repère Kinshasa :
+                Ou sélectionner un repère à Goma (Nord-Kivu) :
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {KINSHASA_ZONES.map((z) => (
+                {GOMA_ZONES.map((z) => (
                   <button
                     key={z.label}
                     type="button"
@@ -712,14 +713,14 @@ export function ChatPage() {
                   type="text"
                   value={mapsUrlInput}
                   onChange={(e) => setMapsUrlInput(e.target.value)}
-                  placeholder="https://www.google.com/maps/@-4.331,15.312,15z"
+                  placeholder="https://www.google.com/maps/@-1.6741,29.2285,15z"
                   className="flex-1 rounded-card border border-encre/20 px-3 py-2 text-xs outline-none focus:border-seve"
                 />
                 <button
                   type="button"
                   disabled={!mapsUrlInput.trim() || deliveryBusy}
                   onClick={() => {
-                    const parsed = extractGoogleMapsCoords(mapsUrlInput.trim()) || { lat: -4.329, lng: 15.314 };
+                    const parsed = extractGoogleMapsCoords(mapsUrlInput.trim()) || { lat: -1.6741, lng: 29.2285 };
                     handleSendLocation(parsed, 'Lien Google Maps client', mapsUrlInput.trim());
                   }}
                   className="px-4 py-2 rounded-card bg-nuit text-brume text-xs font-display font-bold disabled:opacity-40"

@@ -14,9 +14,11 @@ import {
   LogOut,
   Lock,
   Check,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
+import { PWAInstallButton } from '../PWAInstallButton';
 import type { NegotiationOffer, VendorStore } from '../../lib/types';
 
 export function VendorLayout({
@@ -70,6 +72,8 @@ export function VendorLayout({
       navigate(`/vendor/${targetId}/negotiations`);
     } else if (location.pathname.includes('/orders')) {
       navigate(`/vendor/${targetId}/orders`);
+    } else if (location.pathname.includes('/analytics')) {
+      navigate(`/vendor/${targetId}/analytics`);
     } else {
       navigate(`/vendor/${targetId}/products`);
     }
@@ -107,6 +111,12 @@ export function VendorLayout({
       href: `/vendor/${storeId}/products/new`,
       icon: PlusCircle,
       active: location.pathname.includes('/products/new'),
+    },
+    {
+      label: 'Analyses & Diagrammes',
+      href: `/vendor/${storeId}/analytics`,
+      icon: BarChart3,
+      active: location.pathname.includes('/analytics'),
     },
   ];
 
@@ -270,6 +280,8 @@ export function VendorLayout({
           </div>
 
           <div className="flex items-center gap-4 text-xs">
+            <PWAInstallButton variant="header" compact />
+
             <Link
               to="/products"
               target="_blank"

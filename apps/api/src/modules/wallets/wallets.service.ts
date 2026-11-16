@@ -1,16 +1,23 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { FinanceService } from '../finance/finance.service';
+import { MaishaPayService } from '../payments/maishapay.service';
 import { RequestPayoutDto } from './dto/request-payout.dto';
 
-const RETENTION_HOURS = 48; // règle de gestion validée
+const RETENTION_HOURS = 48; // règle de gestion validée : 48h à compter du paiement
 
 @Injectable()
 export class WalletsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService,
+    private readonly finance: FinanceService,
+    @Inject(forwardRef(() => MaishaPayService))
+    private readonly maishaPay: MaishaPayService,
   ) {}
 
   private async writeLedgerEntry(
@@ -47,23 +54,55 @@ export class WalletsService {
   }
 
   /**
-   * Appelé par le module `delivery` au moment où une sous-commande passe en
-   * DELIVERED (jamais avant : voir la règle de gestion sur la rétention).
-   * Crédite le vendeur en LOCKED (déblocage automatique 48h plus tard) et
-   * la plateforme immédiatement (sa commission ne subit pas de rétention).
+   * Appelé immédiatement à la confirmation du paiement client (Mobile Money / Carte) :
+   * le délai de rétention de 48 heures commence dès `paidAt`, sauf si le Super Admin
+   * autorise un retrait immédiat.
+   */
+  async creditOrderFundsOnPayment(orderId: string, paidAt: Date) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { subOrders: true },
+    });
+    if (!order) throw new NotFoundException('Commande introuvable');
+
+    for (const subOrder of order.subOrders) {
+      await this.creditSubOrderIdempotent(subOrder.id, paidAt);
+    }
+  }
+
+  /**
+   * Idempotent : appelé soit à la confirmation du paiement (`paidAt`), soit à la
+   * livraison (`deliveredAt` pour les commandes cash à la livraison).
+   * Évite tout double crédit si les fonds ont déjà été comptabilisés au paiement.
    */
   async creditOrderFundsOnDelivery(subOrderId: string, deliveredAt: Date) {
+    return this.creditSubOrderIdempotent(subOrderId, deliveredAt);
+  }
+
+  private async creditSubOrderIdempotent(subOrderId: string, anchorDate: Date) {
+    const existing = await this.prisma.walletTransaction.findFirst({
+      where: { referenceType: 'ORDER_PAYOUT', referenceId: subOrderId },
+    });
+    if (existing) {
+      return existing;
+    }
+
     const subOrder = await this.prisma.orderSubOrder.findUnique({
       where: { id: subOrderId },
       include: { order: true },
     });
     if (!subOrder) throw new NotFoundException('Sous-commande introuvable');
 
-    const vendorAmount = Number(subOrder.subtotal) - Number(subOrder.commissionAmount);
-    const availableAt = new Date(deliveredAt.getTime() + RETENTION_HOURS * 60 * 60 * 1000);
+    const vendorAmount = Math.max(0, Number(subOrder.subtotal) - Number(subOrder.commissionAmount));
+    const availableAt = new Date(anchorDate.getTime() + RETENTION_HOURS * 60 * 60 * 1000);
 
     return this.prisma.$transaction(async (tx) => {
-      const vendorWallet = await tx.wallet.findUnique({
+      const again = await tx.walletTransaction.findFirst({
+        where: { referenceType: 'ORDER_PAYOUT', referenceId: subOrderId },
+      });
+      if (again) return again;
+
+      const vendorWallet = await tx.wallet.upsert({
         where: {
           ownerType_ownerId_currency: {
             ownerType: 'VENDOR',
@@ -71,10 +110,14 @@ export class WalletsService {
             currency: subOrder.order.currency,
           },
         },
+        update: {},
+        create: {
+          ownerType: 'VENDOR',
+          ownerId: subOrder.storeId,
+          currency: subOrder.order.currency,
+          balance: 0,
+        },
       });
-      if (!vendorWallet) {
-        throw new BadRequestException('Le vendeur ne possède pas de wallet dans cette devise');
-      }
 
       const platformWallet = await tx.wallet.upsert({
         where: {
@@ -287,12 +330,68 @@ export class WalletsService {
   }
 
   /**
-   * Le retrait ne peut porter que sur le solde AVAILABLE (fonds dont le
-   * délai de rétention de 48h est écoulé et sans litige ouvert) — jamais
-   * sur le solde total du wallet, qui peut inclure des fonds encore LOCKED.
+   * Action manuelle Super Admin : libère immédiatement tous les fonds LOCKED d'une boutique
+   * (hors commandes ayant un litige ouvert) afin que le vendeur puisse retirer sur-le-champ.
+   */
+  async unlockStoreFundsImmediately(admin: AuthenticatedUser, storeId: string) {
+    const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    if (store.payoutBlocked) {
+      throw new ForbiddenException('Impossible de libérer les fonds : la boutique est bloquée pour litige.');
+    }
+
+    const wallets = await this.prisma.wallet.findMany({
+      where: { ownerType: 'VENDOR', ownerId: storeId },
+    });
+    const walletIds = wallets.map((w) => w.id);
+    if (walletIds.length === 0) return { storeId, unlockedCount: 0, unlockedAmountUsd: 0 };
+
+    const lockedTxs = await this.prisma.walletTransaction.findMany({
+      where: { walletId: { in: walletIds }, status: 'LOCKED', type: 'CREDIT' },
+    });
+
+    let unlockedCount = 0;
+    let unlockedAmount = 0;
+    for (const tx of lockedTxs) {
+      if (tx.referenceType === 'ORDER_PAYOUT' && tx.referenceId) {
+        const sub = await this.prisma.orderSubOrder.findUnique({ where: { id: tx.referenceId } });
+        if (sub) {
+          const openDispute = await this.prisma.dispute.findFirst({
+            where: {
+              orderId: sub.orderId,
+              status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+            },
+          });
+          if (openDispute) continue;
+        }
+      }
+      await this.prisma.walletTransaction.update({
+        where: { id: tx.id },
+        data: { status: 'AVAILABLE', availableAt: new Date() },
+      });
+      unlockedCount += 1;
+      unlockedAmount += Number(tx.amount);
+    }
+
+    await this.audit.log({
+      actorUserId: admin.id,
+      action: 'wallet.admin_unlock_funds',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { unlockedCount, unlockedAmount },
+    });
+
+    return { storeId, unlockedCount, unlockedAmount: Number(unlockedAmount.toFixed(2)) };
+  }
+
+  /**
+   * Le retrait porte sur le solde AVAILABLE (ou sur les fonds LOCKED si le Super Admin a
+   * activé le retrait immédiat globalement ou pour cette boutique, sans litige ouvert).
    */
   async requestPayout(user: AuthenticatedUser, dto: RequestPayoutDto) {
     const wallet = await this.assertOwnership(user, dto.walletId);
+    const pricing = await this.finance.getPlatformPricing();
+    let immediateAuthorized = Boolean(pricing.allowImmediateVendorWithdrawal);
 
     if (wallet.ownerType === 'VENDOR') {
       const store = await this.prisma.vendorStore.findUnique({ where: { id: wallet.ownerId } });
@@ -317,37 +416,133 @@ export class WalletsService {
           `Retraits bloqués en raison du litige pertinent sur la commande ${blockingDispute.order.orderNumber}.`,
         );
       }
+
+      const storeImmediateSetting = await this.prisma.platformSetting.findUnique({
+        where: { key: `store_immediate_withdrawal:${wallet.ownerId}` },
+      });
+      if ((storeImmediateSetting?.value as { enabled?: boolean } | null)?.enabled) {
+        immediateAuthorized = true;
+      }
     }
 
-    const availableBalance = await this.prisma.walletTransaction.aggregate({
-      where: { walletId: wallet.id, status: 'AVAILABLE' },
-      _sum: { amount: true },
-    });
+    // Si le retrait immédiat est activé par le Super Admin, on libère les crédits en attente (hors litige)
+    if (immediateAuthorized && wallet.ownerType === 'VENDOR') {
+      const lockedTxs = await this.prisma.walletTransaction.findMany({
+        where: { walletId: wallet.id, status: 'LOCKED', type: 'CREDIT' },
+      });
+      for (const tx of lockedTxs) {
+        await this.prisma.walletTransaction.update({
+          where: { id: tx.id },
+          data: { status: 'AVAILABLE', availableAt: new Date() },
+        });
+      }
+    } else {
+      // Libérer les fonds dont le délai de 48h (calculé depuis le paiement) est écoulé
+      const maturedTxs = await this.prisma.walletTransaction.findMany({
+        where: { walletId: wallet.id, status: 'LOCKED', type: 'CREDIT', availableAt: { lte: new Date() } },
+      });
+      for (const tx of maturedTxs) {
+        await this.prisma.walletTransaction.update({
+          where: { id: tx.id },
+          data: { status: 'AVAILABLE' },
+        });
+      }
+    }
 
-    const balance = Number(availableBalance._sum.amount ?? 0);
+    const [creditsAgg, debitsAgg] = await Promise.all([
+      this.prisma.walletTransaction.aggregate({
+        where: { walletId: wallet.id, status: 'AVAILABLE', type: 'CREDIT' },
+        _sum: { amount: true },
+      }),
+      this.prisma.walletTransaction.aggregate({
+        where: { walletId: wallet.id, status: 'AVAILABLE', type: 'DEBIT' },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const balance = Number(creditsAgg._sum.amount ?? 0) - Number(debitsAgg._sum.amount ?? 0);
     if (dto.amount > balance) {
       throw new BadRequestException(
-        `Solde disponible insuffisant (disponible : ${balance} ${wallet.currency})`,
+        `Solde disponible insuffisant (disponible : ${balance.toFixed(2)} ${wallet.currency})`,
       );
     }
 
-    const payout = await this.prisma.payoutRequest.create({
-      data: {
-        walletId: wallet.id,
-        amount: dto.amount,
-        method: dto.method,
-        status: 'REQUESTED',
-      },
+    const payout = await this.prisma.$transaction(async (tx) => {
+      const createdPayout = await tx.payoutRequest.create({
+        data: {
+          walletId: wallet.id,
+          amount: dto.amount,
+          method: dto.method,
+          status: immediateAuthorized ? 'APPROVED' : 'REQUESTED',
+        },
+      });
+
+      await this.writeLedgerEntry(
+        tx,
+        wallet.id,
+        'DEBIT',
+        dto.amount,
+        'WITHDRAWAL',
+        createdPayout.id,
+        'AVAILABLE',
+        null,
+      );
+
+      return createdPayout;
     });
+
+    const appUrl = this.config.get<string>('APP_URL') ?? '';
+    const b2cPhone = dto.phoneNumber || dto.method.match(/\+?\d{9,15}/)?.[0];
+    let paymentRef: string | undefined;
+
+    if (b2cPhone) {
+      try {
+        const b2c = await this.maishaPay.initiateB2cTransfer({
+          amount: dto.amount,
+          currency: wallet.currency as 'USD' | 'CDF',
+          recipientPhone: b2cPhone,
+          operator: dto.operator || dto.method,
+          reference: payout.id,
+          description: `Retrait marchand ZandoGo (${wallet.currency})`,
+          callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
+        });
+        paymentRef = b2c.transactionId;
+        if (immediateAuthorized || b2c.status === 'SUCCESS') {
+          await this.prisma.payoutRequest.update({
+            where: { id: payout.id },
+            data: { status: b2c.status === 'SUCCESS' ? 'PAID' : 'APPROVED', processedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        // Remboursement compensatoire atomique si l'appel de décaissement échoue
+        await this.prisma.$transaction(async (tx) => {
+          await tx.payoutRequest.update({
+            where: { id: payout.id },
+            data: { status: 'REJECTED', processedAt: new Date() },
+          });
+          await this.writeLedgerEntry(
+            tx,
+            wallet.id,
+            'CREDIT',
+            dto.amount,
+            'REFUND',
+            payout.id,
+            'AVAILABLE',
+            null,
+          );
+        });
+        throw err;
+      }
+    }
 
     await this.audit.log({
       actorUserId: user.id,
       action: 'payout_request.create',
       entityType: 'PayoutRequest',
       entityId: payout.id,
-      afterState: { amount: dto.amount, method: dto.method },
+      afterState: { amount: dto.amount, method: dto.method, paymentRef, immediateAuthorized },
     });
 
-    return payout;
+    return { ...payout, paymentRef, immediateAuthorized };
   }
 }

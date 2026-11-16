@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState, type ChangeEvent } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import {
   Package,
   FileText,
@@ -11,11 +11,21 @@ import {
   Palette,
   Layers,
   Route,
+  Lock,
+  CheckCircle2,
+  Upload,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
 import { api } from '../../lib/api';
 import { acceptAttribute, validateFile } from '../../lib/upload';
-import type { AudienceSegment, PricingUnit, ProductType } from '../../lib/types';
+import type {
+  AudienceSegment,
+  PlatformPricing,
+  PricingUnit,
+  ProductType,
+  StoreServiceModule,
+  VendorStore,
+} from '../../lib/types';
 
 interface Category {
   id: string;
@@ -62,9 +72,21 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export function CreateProductPage() {
   const { storeId = 'store-1' } = useParams<{ storeId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [productType, setProductType] = useState<ProductType>('PHYSICAL');
+  const [storeInfo, setStoreInfo] = useState<VendorStore | null>(null);
+  const [pricing, setPricing] = useState<PlatformPricing | null>(null);
+  const [activatingService, setActivatingService] = useState<StoreServiceModule | null>(null);
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
+
+  const requestedType = searchParams.get('type') as ProductType | null;
+  const [productType, setProductType] = useState<ProductType>(
+    requestedType && ['PHYSICAL', 'DIGITAL', 'SERVICE'].includes(requestedType) ? requestedType : 'PHYSICAL',
+  );
   const [pricingUnit, setPricingUnit] = useState<PricingUnit>('UNIT');
   const [audience, setAudience] = useState<AudienceSegment>('UNISEX');
   const [title, setTitle] = useState('');
@@ -75,6 +97,8 @@ export function CreateProductPage() {
   const [lowStockThreshold, setLowStockThreshold] = useState('5');
   const [digitalFileName, setDigitalFileName] = useState('');
   const [digitalFileSize, setDigitalFileSize] = useState('15 Mo');
+  const [digitalFileDataUrl, setDigitalFileDataUrl] = useState<string>('');
+  const [digitalFileUrl, setDigitalFileUrl] = useState('');
   const [serviceDuration, setServiceDuration] = useState('');
   const [fulfillmentDetails, setFulfillmentDetails] = useState('');
 
@@ -98,7 +122,27 @@ export function CreateProductPage() {
       setCategories(data || []);
       if (data && data[0]) setCategoryId(data[0].id);
     });
-  }, []);
+    api
+      .get<VendorStore>(`/vendors/stores/${storeId}`)
+      .then(({ data }) => {
+        if (data) {
+          setStoreInfo(data);
+          const enabled: StoreServiceModule[] = data.enabledServices?.length
+            ? data.enabledServices
+            : ['PHYSICAL'];
+          if (!requestedType && enabled.length > 0 && !enabled.includes(productType)) {
+            setProductType(enabled[0]);
+          }
+        }
+      })
+      .catch(() => {});
+    api
+      .get<PlatformPricing>('/platform/pricing')
+      .then(({ data }) => {
+        if (data) setPricing(data);
+      })
+      .catch(() => {});
+  }, [storeId]);
 
   useEffect(() => {
     if (productType === 'PHYSICAL' || productType === 'DIGITAL') {
@@ -107,6 +151,75 @@ export function CreateProductPage() {
       setPricingUnit('KM');
     }
   }, [productType, pricingUnit]);
+
+  const enabledServices: StoreServiceModule[] = storeInfo?.enabledServices?.length
+    ? storeInfo.enabledServices
+    : ['PHYSICAL'];
+  const isCurrentTypeUnlocked = enabledServices.includes(productType);
+
+  function getServiceFeeUsd(svc: StoreServiceModule): number {
+    if (!pricing) return svc === 'DIGITAL' ? 10 : svc === 'SERVICE' ? 20 : 15;
+    if (svc === 'DIGITAL') return Number(pricing.serviceDigitalFeeUsd ?? 10);
+    if (svc === 'SERVICE') return Number(pricing.servicePrestationFeeUsd ?? 20);
+    return Number(pricing.servicePhysicalFeeUsd ?? 15);
+  }
+
+  async function handleUnlockService(svc: StoreServiceModule) {
+    setActivatingService(svc);
+    setActivationMessage(null);
+    setError(null);
+    try {
+      const { data } = await api.post<{
+        store: VendorStore;
+        feeUsd: number;
+        paymentRef?: string;
+      }>(`/vendors/stores/${storeId}/activate-service`, { service: svc });
+      if (data?.store) setStoreInfo(data.store);
+      setActivationMessage(
+        `Service débloqué (${data.paymentRef || 'OK'} · $${data.feeUsd.toFixed(2)}). Vous pouvez publier votre offre maintenant !`,
+      );
+    } catch {
+      setError('Impossible d’activer ce service pour cette boutique.');
+    } finally {
+      setActivatingService(null);
+    }
+  }
+
+  async function handleCreateCategory() {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    setCreatingCategory(true);
+    setError(null);
+    try {
+      const { data } = await api.post<Category>('/categories', { name: trimmed });
+      if (data?.id) {
+        setCategories((prev) => (prev.some((c) => c.id === data.id) ? prev : [...prev, data]));
+        setCategoryId(data.id);
+        setNewCategoryName('');
+        setNewCategoryOpen(false);
+        setActivationMessage(`Catégorie « ${data.name} » ajoutée au catalogue ZandoGo.`);
+      }
+    } catch {
+      setError('Impossible de créer cette catégorie.');
+    } finally {
+      setCreatingCategory(false);
+    }
+  }
+
+  async function handlePdfSelect(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDigitalFileName(file.name);
+    const sizeMb = Math.max(0.1, file.size / (1024 * 1024));
+    setDigitalFileSize(`${sizeMb.toFixed(1)} Mo`);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setDigitalFileDataUrl(dataUrl);
+    } catch {
+      // keep metadata even if browser blocks read
+    }
+    e.target.value = '';
+  }
 
   async function handleImageSelect(e: ChangeEvent<HTMLInputElement>) {
     setImageUploadError(null);
@@ -236,6 +349,12 @@ export function CreateProductPage() {
         }))
         .sort((a, b) => a.minQty - b.minQty);
 
+      if (!isCurrentTypeUnlocked) {
+        setError('Veuillez d’abord activer et payer ce service sur votre boutique avant de publier.');
+        setLoading(false);
+        return;
+      }
+
       await api.post(`/vendors/stores/${storeId}/products`, {
         title,
         slug,
@@ -252,6 +371,8 @@ export function CreateProductPage() {
         priceTiers: validTiers.length > 0 ? validTiers : undefined,
         digitalFileName: productType === 'DIGITAL' ? digitalFileName : undefined,
         digitalFileSize: productType === 'DIGITAL' ? digitalFileSize : undefined,
+        digitalFileDataUrl: productType === 'DIGITAL' && digitalFileDataUrl ? digitalFileDataUrl : undefined,
+        digitalFileUrl: productType === 'DIGITAL' && digitalFileUrl.trim() ? digitalFileUrl.trim() : undefined,
         serviceDuration: productType === 'SERVICE' ? serviceDuration : undefined,
         fulfillmentDetails: productType === 'SERVICE' ? fulfillmentDetails : undefined,
       });
@@ -287,45 +408,86 @@ export function CreateProductPage() {
           </p>
         </div>
 
-        {/* Offering Type Selector */}
+        {/* Offering Type Selector with Paid Service Module Lock */}
         <div className="p-1.5 bg-encre/10 rounded-card flex flex-wrap gap-1 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setProductType('PHYSICAL')}
-            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
-              productType === 'PHYSICAL'
-                ? 'bg-white text-nuit shadow-xs font-display font-bold'
-                : 'text-encre/70 hover:text-nuit'
-            }`}
-          >
-            <Package className="w-4 h-4 text-seve" />
-            <span>Bien Physique (Tailles / Couleurs / Stock)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setProductType('DIGITAL')}
-            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
-              productType === 'DIGITAL'
-                ? 'bg-white text-nuit shadow-xs font-display font-bold'
-                : 'text-encre/70 hover:text-nuit'
-            }`}
-          >
-            <FileText className="w-4 h-4 text-seve" />
-            <span>Livre / Document PDF (0$ livraison)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setProductType('SERVICE')}
-            className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
-              productType === 'SERVICE'
-                ? 'bg-white text-nuit shadow-xs font-display font-bold'
-                : 'text-encre/70 hover:text-nuit'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-safran" />
-            <span>Service / Transport (au km ou forfait)</span>
-          </button>
+          {(
+            [
+              {
+                key: 'PHYSICAL' as const,
+                label: 'Bien Physique (Tailles / Couleurs)',
+                icon: Package,
+                iconClass: 'text-seve',
+              },
+              {
+                key: 'DIGITAL' as const,
+                label: 'Livre / Document PDF (Envoi auto)',
+                icon: FileText,
+                iconClass: 'text-seve',
+              },
+              {
+                key: 'SERVICE' as const,
+                label: 'Service / Transport (au km)',
+                icon: Sparkles,
+                iconClass: 'text-safran',
+              },
+            ] as const
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const unlocked = enabledServices.includes(tab.key);
+            const fee = getServiceFeeUsd(tab.key);
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setProductType(tab.key)}
+                className={`flex-1 py-2.5 px-4 rounded-card transition flex items-center justify-center gap-2 ${
+                  productType === tab.key
+                    ? 'bg-white text-nuit shadow-xs font-display font-bold'
+                    : 'text-encre/70 hover:text-nuit'
+                }`}
+              >
+                {unlocked ? <Icon className={`w-4 h-4 ${tab.iconClass}`} /> : <Lock className="w-3.5 h-3.5 text-wax" />}
+                <span>{tab.label}</span>
+                {!unlocked && (
+                  <span className="px-1.5 py-0.5 rounded bg-safran/30 text-nuit text-[10px] font-mono font-bold">
+                    +${fee}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
+
+        {activationMessage && (
+          <div className="p-3.5 rounded-card bg-seve/10 border border-seve/30 text-xs text-seve font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{activationMessage}</span>
+          </div>
+        )}
+
+        {!isCurrentTypeUnlocked && (
+          <div className="p-5 rounded-card bg-nuit text-brume border border-safran/40 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+            <div className="space-y-1 max-w-xl">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-safran font-bold">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Service non inclus lors de l’achat de « {storeInfo?.storeName || 'cette boutique'} »</span>
+              </div>
+              <p className="text-xs text-brume/80 leading-relaxed">
+                Votre boutique n’a pas encore activé ce type d’offre. Vous pouvez l’activer et le payer immédiatement par Mobile Money ou Carte pour y publier ce type de produit.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={activatingService === productType}
+              onClick={() => handleUnlockService(productType)}
+              className="px-4 py-2.5 rounded-card bg-safran hover:bg-safran/90 text-nuit font-display font-bold text-xs transition shrink-0 disabled:opacity-50"
+            >
+              {activatingService === productType
+                ? 'Activation en cours…'
+                : `Payer & Activer ($${getServiceFeeUsd(productType).toFixed(2)})`}
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-white border border-encre/10 rounded-card p-6 shadow-xs space-y-6">
           {/* Mandatory Catalog Photo Upload */}
@@ -393,7 +555,7 @@ export function CreateProductPage() {
                 minLength={3}
                 placeholder={
                   productType === 'SERVICE'
-                    ? 'ex: Transport Utilitaire & Fret Express Kinshasa (par km)'
+                    ? 'ex: Transport Utilitaire & Fret Express Goma / Nord-Kivu (par km)'
                     : productType === 'DIGITAL'
                     ? 'ex: Manuel Comptable & Fiscal OHADA RDC (PDF)'
                     : 'ex: Robe Portefeuille Wax Chic ou Chemise Lin Homme'
@@ -424,9 +586,19 @@ export function CreateProductPage() {
           {/* Category + Base Price */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
-                Catégorie du catalogue *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70">
+                  Catégorie du catalogue *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setNewCategoryOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 text-[11px] font-display font-bold text-seve hover:underline"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{newCategoryOpen ? 'Fermer' : 'Nouvelle catégorie'}</span>
+                </button>
+              </div>
               <select
                 required
                 value={categoryId}
@@ -439,6 +611,26 @@ export function CreateProductPage() {
                   </option>
                 ))}
               </select>
+
+              {newCategoryOpen && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="ex: Pièces Auto, Cosmétiques, Fret..."
+                    className="flex-1 rounded-card border border-seve/40 bg-white px-3 py-1.5 text-xs text-nuit outline-none focus:border-seve"
+                  />
+                  <button
+                    type="button"
+                    disabled={creatingCategory || !newCategoryName.trim()}
+                    onClick={handleCreateCategory}
+                    className="px-3 py-1.5 rounded-card bg-seve text-brume text-xs font-display font-bold hover:bg-seve/90 disabled:opacity-50"
+                  >
+                    {creatingCategory ? 'Ajout…' : 'Ajouter'}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>
@@ -530,16 +722,23 @@ export function CreateProductPage() {
 
                         <div>
                           <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Couleur
+                            Couleur (prédéfinie ou personnalisée)
                           </label>
-                          <input
-                            type="text"
-                            value={v.color}
-                            onChange={(e) => updateVariant(v.id, { color: e.target.value })}
-                            placeholder="ex: Vert Sève"
-                            className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
-                          />
-                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="w-5 h-5 rounded-full border border-encre/25 shrink-0"
+                              style={{ backgroundColor: v.colorHex || '#172320' }}
+                              title={v.colorHex}
+                            />
+                            <input
+                              type="text"
+                              value={v.color}
+                              onChange={(e) => updateVariant(v.id, { color: e.target.value })}
+                              placeholder="Nom ex: Vert Kivu"
+                              className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                             {COLOR_PRESETS.map((cp) => (
                               <button
                                 key={cp.hex}
@@ -547,11 +746,42 @@ export function CreateProductPage() {
                                 title={cp.name}
                                 onClick={() => updateVariant(v.id, { color: cp.name, colorHex: cp.hex })}
                                 className={`w-4 h-4 rounded-full border ${
-                                  v.colorHex === cp.hex ? 'ring-2 ring-seve ring-offset-1 border-nuit' : 'border-encre/25'
+                                  v.colorHex?.toLowerCase() === cp.hex.toLowerCase()
+                                    ? 'ring-2 ring-seve ring-offset-1 border-nuit'
+                                    : 'border-encre/25'
                                 }`}
                                 style={{ backgroundColor: cp.hex }}
                               />
                             ))}
+                          </div>
+                          {/* Couleur personnalisée libre */}
+                          <div className="mt-2 pt-1.5 border-t border-encre/10 flex items-center gap-2">
+                            <label
+                              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-seve cursor-pointer"
+                              title="Choisir une couleur personnalisée"
+                            >
+                              <input
+                                type="color"
+                                value={/^#[0-9A-Fa-f]{6}$/.test(v.colorHex) ? v.colorHex : '#26735B'}
+                                onChange={(e) => {
+                                  const pickedHex = e.target.value.toUpperCase();
+                                  const isPresetName = COLOR_PRESETS.some((cp) => cp.name === v.color);
+                                  updateVariant(v.id, {
+                                    colorHex: pickedHex,
+                                    color: !v.color.trim() || isPresetName ? `Personnalisée (${pickedHex})` : v.color,
+                                  });
+                                }}
+                                className="w-6 h-5 p-0 border border-encre/20 rounded cursor-pointer bg-transparent"
+                              />
+                              <span>Couleur perso</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={v.colorHex}
+                              onChange={(e) => updateVariant(v.id, { colorHex: e.target.value })}
+                              placeholder="#RRGGBB"
+                              className="w-20 rounded border border-encre/20 px-1.5 py-0.5 text-[10px] font-mono text-nuit outline-none focus:border-seve"
+                            />
                           </div>
                         </div>
 
@@ -633,13 +863,25 @@ export function CreateProductPage() {
           {/* Contextual Fields: Digital PDF */}
           {productType === 'DIGITAL' && (
             <div className="p-4 rounded-card bg-seve/5 border border-seve/20 space-y-4">
-              <div>
-                <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider">
-                  Livre ou Document Numérique Téléchargeable (Livraison automatique 0$)
-                </h3>
-                <p className="text-[11px] text-encre/70 mt-0.5">
-                  Dès la confirmation du paiement via MaishaPay, l’acheteur reçoit immédiatement son lien de téléchargement sécurisé sans adresse physique ni livreur.
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider">
+                    Livre / Document PDF — Envoi Automatique par le Système (0$ livraison)
+                  </h3>
+                  <p className="text-[11px] text-encre/75 mt-0.5 leading-relaxed">
+                    Dès que le client règle sa commande par Mobile Money ou Carte, <strong>le système envoie automatiquement le lien de téléchargement</strong> (dans son espace, par notification et par SMS) <strong>sans aucune intervention du vendeur</strong>.
+                  </p>
+                </div>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card bg-nuit hover:bg-nuit/90 text-safran text-xs font-display font-bold transition shrink-0">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{digitalFileDataUrl ? 'PDF chargé ✓' : 'Importer le PDF'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handlePdfSelect}
+                    className="hidden"
+                  />
+                </label>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -666,6 +908,18 @@ export function CreateProductPage() {
                     className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-encre/80 mb-1">
+                  Lien cloud externe optionnel (si hébergé sur Google Drive / S3)
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={digitalFileUrl}
+                  onChange={(e) => setDigitalFileUrl(e.target.value)}
+                  className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs font-mono outline-none focus:border-seve"
+                />
               </div>
             </div>
           )}
@@ -731,7 +985,7 @@ export function CreateProductPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder={pricingUnit === 'KM' ? 'ex: Grand Kinshasa (Gombe ↔ N’Djili)' : 'ex: Intervention sous 24h'}
+                    placeholder={pricingUnit === 'KM' ? 'ex: Grand Goma (Les Volcans ↔ Himbi ↔ Ndosho)' : 'ex: Intervention sous 24h'}
                     value={serviceDuration}
                     onChange={(e) => setServiceDuration(e.target.value)}
                     className="w-full rounded-card border border-encre/20 bg-white px-3.5 py-2 text-xs outline-none focus:border-seve"
@@ -853,10 +1107,14 @@ export function CreateProductPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isCurrentTypeUnlocked}
             className="w-full rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold py-3.5 text-xs transition shadow-xs disabled:opacity-50"
           >
-            {loading ? 'Publication en cours…' : 'Publier l’offre sur la place de marché ZandoGo'}
+            {!isCurrentTypeUnlocked
+              ? 'Activez ce module de service ci-dessus pour publier'
+              : loading
+              ? 'Publication en cours…'
+              : 'Publier l’offre sur la place de marché ZandoGo'}
           </button>
         </form>
       </div>

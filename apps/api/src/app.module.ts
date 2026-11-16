@@ -17,6 +17,7 @@ import { DisputesModule } from './modules/disputes/disputes.module';
 import { AdsModule } from './modules/ads/ads.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     AdsModule,
     RealtimeModule,
     UploadsModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

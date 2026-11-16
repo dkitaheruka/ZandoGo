@@ -15,10 +15,24 @@ import {
   CheckCircle2,
   CreditCard,
   Lock,
+  FileText,
+  Sparkles,
+  BarChart3,
+  Zap,
+  Trash2,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
+import { PaymentOperatorStrip } from '../../components/PaymentOperatorLogos';
 import { api } from '../../lib/api';
-import type { NegotiationOffer, PlatformPricing, Product, VendorStore, WalletSummary } from '../../lib/types';
+import type {
+  NegotiationOffer,
+  PlatformPricing,
+  Product,
+  StoreServiceModule,
+  TransportDestination,
+  VendorStore,
+  WalletSummary,
+} from '../../lib/types';
 
 const SALES_TREND_7D = [
   { day: 'Lun', amount: 185 },
@@ -42,8 +56,11 @@ export function VendorDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedAdPlan, setSelectedAdPlan] = useState<'ESSENTIAL_29' | 'PRO_CAROUSEL_59'>('PRO_CAROUSEL_59');
   const [certBilling, setCertBilling] = useState<'MONTHLY' | 'QUARTERLY'>('MONTHLY');
-  const [billingBusy, setBillingBusy] = useState<'AD' | 'CERT' | null>(null);
+  const [billingBusy, setBillingBusy] = useState<'AD' | 'CERT' | StoreServiceModule | null>(null);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [isTransportAgencyDraft, setIsTransportAgencyDraft] = useState(false);
+  const [destinationsDraft, setDestinationsDraft] = useState<TransportDestination[]>([]);
+  const [savingDestinations, setSavingDestinations] = useState(false);
 
   function load(selectedId?: string) {
     setLoading(true);
@@ -95,6 +112,13 @@ export function VendorDashboardPage() {
 
   const primaryStore = stores.find((s) => s.id === activeStoreId) || stores[0];
   const primaryStoreId = primaryStore?.id || activeStoreId;
+
+  useEffect(() => {
+    if (primaryStore) {
+      setIsTransportAgencyDraft(Boolean(primaryStore.isTransportAgency));
+      setDestinationsDraft(primaryStore.transportDestinations || []);
+    }
+  }, [primaryStore?.id, primaryStore?.isTransportAgency]);
   const blockedStores = stores.filter((s) => s.payoutBlocked);
   const totalBalance = wallet
     ? wallet.availableBalanceUsd + wallet.lockedEscrowUsd
@@ -110,13 +134,13 @@ export function VendorDashboardPage() {
     setBillingBusy('AD');
     setBillingNotice(null);
     try {
-      const { data } = await api.post<{ store: VendorStore; maishaPayRef: string; feeUsd: number }>(
+      const { data } = await api.post<{ store: VendorStore; paymentRef?: string; feeUsd: number }>(
         `/vendors/stores/${primaryStoreId}/subscribe-ad`,
         { plan: selectedAdPlan },
       );
       setStores((prev) => prev.map((s) => (s.id === data.store.id ? data.store : s)));
       setBillingNotice(
-        `Publicité mensuelle activée pour « ${data.store.storeName} » via MaishaPay (${data.maishaPayRef} · $${data.feeUsd}/mois).`,
+        `Publicité mensuelle activée pour « ${data.store.storeName} » (${data.paymentRef || 'OK'} · $${data.feeUsd}/mois).`,
       );
     } catch {
       setBillingNotice('Impossible d’activer la publicité mensuelle pour le moment.');
@@ -129,13 +153,13 @@ export function VendorDashboardPage() {
     setBillingBusy('CERT');
     setBillingNotice(null);
     try {
-      const { data } = await api.post<{ store: VendorStore; maishaPayRef: string; feeUsd: number }>(
+      const { data } = await api.post<{ store: VendorStore; paymentRef?: string; feeUsd: number }>(
         `/vendors/stores/${primaryStoreId}/subscribe-certification`,
         { billing: certBilling },
       );
       setStores((prev) => prev.map((s) => (s.id === data.store.id ? data.store : s)));
       setBillingNotice(
-        `Certification Vendeur payée pour « ${data.store.storeName} » via MaishaPay (${data.maishaPayRef} · $${data.feeUsd}).`,
+        `Certification Vendeur payée pour « ${data.store.storeName} » (${data.paymentRef || 'OK'} · $${data.feeUsd}).`,
       );
     } catch {
       setBillingNotice('Impossible d’activer la certification pour le moment.');
@@ -143,6 +167,101 @@ export function VendorDashboardPage() {
       setBillingBusy(null);
     }
   }
+
+  async function handleActivateServiceModule(service: StoreServiceModule) {
+    setBillingBusy(service);
+    setBillingNotice(null);
+    try {
+      const { data } = await api.post<{
+        store: VendorStore;
+        activatedService: StoreServiceModule;
+        feeUsd: number;
+        paymentRef?: string;
+      }>(`/vendors/stores/${primaryStoreId}/activate-service`, { service });
+      setStores((prev) => prev.map((s) => (s.id === data.store.id ? data.store : s)));
+      const label =
+        service === 'PHYSICAL'
+          ? 'Biens Physiques'
+          : service === 'DIGITAL'
+          ? 'Livres & Documents PDF'
+          : 'Services & Transport au km';
+      setBillingNotice(
+        `Module « ${label} » payé et activé pour « ${data.store.storeName} » (${data.paymentRef || 'OK'} · $${data.feeUsd}).`,
+      );
+    } catch {
+      setBillingNotice('Impossible d’activer ce module pour le moment.');
+    } finally {
+      setBillingBusy(null);
+    }
+  }
+
+  async function handleSaveTransportRoutes() {
+    if (!primaryStore) return;
+    setSavingDestinations(true);
+    setBillingNotice(null);
+    try {
+      const cleaned = isTransportAgencyDraft
+        ? destinationsDraft.filter((d) => d.originCity.trim() && d.destinationCity.trim())
+        : [];
+      const { data } = await api.patch<VendorStore>(`/vendors/stores/${primaryStore.id}`, {
+        isTransportAgency: isTransportAgencyDraft,
+        transportDestinations: cleaned,
+      });
+      setStores((prev) =>
+        prev.map((s) =>
+          s.id === primaryStore.id
+            ? {
+                ...s,
+                ...(data || {}),
+                isTransportAgency: isTransportAgencyDraft,
+                transportDestinations: cleaned,
+              }
+            : s,
+        ),
+      );
+      setBillingNotice(
+        `Destinations Agence de Transport mises à jour pour « ${primaryStore.storeName} » (${cleaned.length} ligne(s)).`,
+      );
+    } catch {
+      setBillingNotice('Impossible d’enregistrer les destinations de transport.');
+    } finally {
+      setSavingDestinations(false);
+    }
+  }
+
+  const activeStoreServices: StoreServiceModule[] = primaryStore?.enabledServices?.length
+    ? primaryStore.enabledServices
+    : ['PHYSICAL'];
+
+  const storeModulesMeta: {
+    key: StoreServiceModule;
+    label: string;
+    desc: string;
+    priceUsd: number;
+    icon: typeof Package;
+  }[] = [
+    {
+      key: 'PHYSICAL',
+      label: 'Biens Physiques',
+      desc: 'Stock, variantes (tailles & couleurs personnalisées) et livraison.',
+      priceUsd: pricing?.servicePhysicalFeeUsd ?? 15,
+      icon: Package,
+    },
+    {
+      key: 'DIGITAL',
+      label: 'Livres & Documents PDF',
+      desc: 'Envoi automatique du lien de téléchargement après paiement client.',
+      priceUsd: pricing?.serviceDigitalFeeUsd ?? 10,
+      icon: FileText,
+    },
+    {
+      key: 'SERVICE',
+      label: 'Services & Transport au km',
+      desc: 'Prestations facturées au kilomètre, à l’heure ou au forfait.',
+      priceUsd: pricing?.servicePrestationFeeUsd ?? 20,
+      icon: Sparkles,
+    },
+  ];
 
   return (
     <VendorLayout storeId={primaryStoreId} storeName={primaryStore?.storeName || 'Mes Boutiques'}>
@@ -177,6 +296,13 @@ export function VendorDashboardPage() {
                 ))}
               </select>
             )}
+            <Link
+              to={`/vendor/${primaryStoreId}/analytics`}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-card border border-seve/35 bg-seve/10 hover:bg-seve/20 text-seve font-display font-bold text-xs transition"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Analyses & Diagrammes</span>
+            </Link>
             <Link
               to={`/vendor/${primaryStoreId}/products/new`}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-card border border-encre/15 bg-white hover:border-safran text-nuit font-display font-bold text-xs transition"
@@ -234,6 +360,12 @@ export function VendorDashboardPage() {
               <TrendingUp className="w-3 h-3" />
               <span>Disponible : ${(wallet?.availableBalanceUsd ?? totalBalance).toFixed(2)}</span>
             </span>
+            {wallet?.immediateWithdrawalAuthorized && (
+              <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-seve/15 text-seve text-[10px] font-display font-bold">
+                <Zap className="w-3 h-3 text-safran" />
+                <span>Retrait immédiat activé par Super Admin</span>
+              </span>
+            )}
           </div>
 
           <div className="p-5 rounded-card bg-white border border-encre/10 shadow-xs">
@@ -284,6 +416,254 @@ export function VendorDashboardPage() {
             </Link>
           </div>
         </div>
+
+        {/* Paid Store Service Modules (À la carte activation) */}
+        {primaryStore && (
+          <div className="rounded-card bg-white border border-encre/10 p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-nuit">
+                  Services & Modules de la Boutique — {primaryStore.storeName}
+                </h2>
+                <p className="text-xs text-encre/65">
+                  Les services non choisis lors de l’achat de la boutique restent verrouillés jusqu’à leur activation payante par Mobile Money ou Carte (tarifs configurés par l’admin).
+                </p>
+              </div>
+              <span className="text-[11px] font-mono text-seve font-semibold">
+                {activeStoreServices.length}/3 service(s) actif(s)
+              </span>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4">
+              {storeModulesMeta.map((mod) => {
+                const Icon = mod.icon;
+                const enabled = activeStoreServices.includes(mod.key);
+                return (
+                  <div
+                    key={mod.key}
+                    className={`p-4 rounded-card border flex flex-col justify-between gap-3 ${
+                      enabled ? 'border-seve/35 bg-seve/5' : 'border-encre/15 bg-brume/40'
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 font-display font-bold text-xs text-nuit">
+                          <Icon className={`w-4 h-4 ${enabled ? 'text-seve' : 'text-encre/50'}`} />
+                          <span>{mod.label}</span>
+                        </span>
+                        {enabled ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-seve text-brume text-[10px] font-display font-bold">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Activé</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-encre/10 text-encre/70 text-[10px] font-mono">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>${mod.priceUsd}</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-encre/70 leading-relaxed">{mod.desc}</p>
+                    </div>
+
+                    {enabled ? (
+                      <Link
+                        to={`/vendor/${primaryStoreId}/products/new?type=${mod.key}`}
+                        className="w-full text-center px-3 py-2 rounded-card bg-white border border-seve/30 text-seve hover:bg-seve hover:text-brume font-display font-bold text-[11px] transition"
+                      >
+                        Publier ({mod.label}) &rarr;
+                      </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={billingBusy === mod.key || !pricing}
+                        onClick={() => handleActivateServiceModule(mod.key)}
+                        className="w-full px-3 py-2 rounded-card bg-safran hover:bg-safran/90 text-nuit font-display font-bold text-[11px] transition disabled:opacity-50 shadow-xs"
+                      >
+                        {billingBusy === mod.key
+                          ? 'Activation en cours…'
+                          : `Activer ce service ($${mod.priceUsd.toFixed(2)})`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Transport Agency Routes & Destinations Management */}
+        {primaryStore && (
+          <div className="rounded-card bg-white border border-encre/10 p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-nuit flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-seve" />
+                  <span>Agence de Transport & Lignes Nationales RDC — {primaryStore.storeName}</span>
+                </h2>
+                <p className="text-xs text-encre/65">
+                  Les agences de transport peuvent déclarer ici leurs différentes destinations, tarifs et délais à travers tout le pays.
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs font-display font-bold text-nuit cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isTransportAgencyDraft}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setIsTransportAgencyDraft(next);
+                    if (next && destinationsDraft.length === 0) {
+                      setDestinationsDraft([
+                        {
+                          id: `dest-${Date.now()}`,
+                          originCity: 'Goma',
+                          destinationCity: 'Bukavu',
+                          basePriceUsd: 18,
+                          pricePerKmUsd: 0.45,
+                          estimatedDelay: '6h - 12h',
+                          vehicleMode: 'Cargo / Express',
+                        },
+                      ]);
+                    }
+                  }}
+                  className="accent-seve h-4 w-4"
+                />
+                <span>Activer le profil Agence de Transport</span>
+              </label>
+            </div>
+
+            {isTransportAgencyDraft && (
+              <div className="space-y-3 pt-2 border-t border-encre/10">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono text-encre/65">
+                    {destinationsDraft.length} destination(s) configurée(s)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDestinationsDraft((prev) => [
+                          ...prev,
+                          {
+                            id: `dest-${Date.now()}`,
+                            originCity: 'Goma',
+                            destinationCity: '',
+                            basePriceUsd: 20,
+                            pricePerKmUsd: 0.5,
+                            estimatedDelay: '24h - 48h',
+                            vehicleMode: 'Camion / Fret',
+                          },
+                        ])
+                      }
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-card border border-encre/20 bg-brume/50 text-xs font-display font-bold text-nuit hover:border-seve"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-seve" />
+                      <span>Nouvelle destination</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingDestinations}
+                      onClick={handleSaveTransportRoutes}
+                      className="px-4 py-1.5 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-bold transition disabled:opacity-50"
+                    >
+                      {savingDestinations ? 'Enregistrement…' : 'Enregistrer les destinations'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {destinationsDraft.map((dest) => (
+                    <div
+                      key={dest.id}
+                      className="grid sm:grid-cols-6 gap-2 p-3 rounded-card bg-brume/40 border border-encre/10 text-xs items-center"
+                    >
+                      <input
+                        type="text"
+                        placeholder="Départ"
+                        value={dest.originCity}
+                        onChange={(e) =>
+                          setDestinationsDraft((prev) =>
+                            prev.map((d) => (d.id === dest.id ? { ...d, originCity: e.target.value } : d)),
+                          )
+                        }
+                        className="rounded-card border border-encre/20 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Destination"
+                        value={dest.destinationCity}
+                        onChange={(e) =>
+                          setDestinationsDraft((prev) =>
+                            prev.map((d) => (d.id === dest.id ? { ...d, destinationCity: e.target.value } : d)),
+                          )
+                        }
+                        className="rounded-card border border-encre/20 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Véhicule / Mode"
+                        value={dest.vehicleMode}
+                        onChange={(e) =>
+                          setDestinationsDraft((prev) =>
+                            prev.map((d) => (d.id === dest.id ? { ...d, vehicleMode: e.target.value } : d)),
+                          )
+                        }
+                        className="rounded-card border border-encre/20 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        step="0.5"
+                        placeholder="Base ($)"
+                        value={dest.basePriceUsd}
+                        onChange={(e) =>
+                          setDestinationsDraft((prev) =>
+                            prev.map((d) => (d.id === dest.id ? { ...d, basePriceUsd: Number(e.target.value) } : d)),
+                          )
+                        }
+                        className="rounded-card border border-encre/20 bg-white px-2.5 py-1.5 text-xs font-bold outline-none focus:border-seve"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Délai"
+                        value={dest.estimatedDelay}
+                        onChange={(e) =>
+                          setDestinationsDraft((prev) =>
+                            prev.map((d) => (d.id === dest.id ? { ...d, estimatedDelay: e.target.value } : d)),
+                          )
+                        }
+                        className="rounded-card border border-encre/20 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                      />
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDestinationsDraft((prev) => prev.filter((d) => d.id !== dest.id))
+                          }
+                          className="p-1.5 text-wax hover:bg-wax/10 rounded-lg"
+                          title="Supprimer la ligne"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isTransportAgencyDraft && primaryStore.isTransportAgency && (
+              <button
+                type="button"
+                disabled={savingDestinations}
+                onClick={handleSaveTransportRoutes}
+                className="px-4 py-1.5 rounded-card bg-wax text-white text-xs font-display font-bold"
+              >
+                Confirmer la désactivation du profil agence
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Paid Certification & Monthly Ad Visibility Section (Dynamic Admin Pricing) */}
         <div className="grid lg:grid-cols-2 gap-6">
@@ -348,11 +728,13 @@ export function VendorDashboardPage() {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10">
-              <span className="text-[11px] text-brume/65 flex items-center gap-1.5">
-                <CreditCard className="w-3.5 h-3.5 text-safran" />
-                <span>Paiement mensuel MaishaPay RDC + alerte SMS</span>
-              </span>
+            <div className="space-y-3 pt-2 border-t border-white/10">
+              <PaymentOperatorStrip compact dark />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-[11px] text-brume/65 flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-safran" />
+                  <span>Airtel, M-Pesa, Orange, MTN, Visa + alerte SMS</span>
+                </span>
               <button
                 type="button"
                 disabled={billingBusy === 'AD' || !pricing}
@@ -365,6 +747,7 @@ export function VendorDashboardPage() {
                   ? `Renouveler ($${selectedAdPlan === 'ESSENTIAL_29' ? adEssentialPrice : adProPrice}/mois)`
                   : `Activer la publicité ($${selectedAdPlan === 'ESSENTIAL_29' ? adEssentialPrice : adProPrice}/mois)`}
               </button>
+              </div>
             </div>
           </div>
 
@@ -441,7 +824,7 @@ export function VendorDashboardPage() {
                 className="px-4 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition disabled:opacity-50"
               >
                 {billingBusy === 'CERT'
-                  ? 'Traitement MaishaPay…'
+                  ? 'Traitement en cours…'
                   : primaryStore?.isCertified
                   ? `Prolonger Certification ($${certBilling === 'QUARTERLY' ? certQuarterlyPrice : certMonthlyPrice})`
                   : `Payer la certification ($${certBilling === 'QUARTERLY' ? certQuarterlyPrice : certMonthlyPrice})`}
@@ -570,6 +953,17 @@ export function VendorDashboardPage() {
                   <p className="mt-3 text-xs text-encre/70 line-clamp-2 leading-relaxed">
                     {store.description || 'Commerce grossiste et détail sur la place de marché ZandoGo.'}
                   </p>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {(store.enabledServices?.length ? store.enabledServices : ['PHYSICAL']).map((svc) => (
+                      <span
+                        key={svc}
+                        className="px-2 py-0.5 rounded bg-brume border border-encre/10 text-[10px] font-mono font-semibold text-nuit"
+                      >
+                        {svc === 'PHYSICAL' ? 'Biens Physiques' : svc === 'DIGITAL' ? 'Livres PDF' : 'Services / Km'}
+                      </span>
+                    ))}
+                  </div>
 
                   <div className="mt-6 pt-4 border-t border-encre/10 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">

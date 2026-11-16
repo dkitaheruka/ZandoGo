@@ -1,5 +1,6 @@
 import { Link, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -26,6 +27,8 @@ import { AgentsReviewPage } from './pages/admin/AgentsReviewPage';
 import { DeliveryHomePage } from './pages/delivery/DeliveryHomePage';
 import { VendorNegotiationsPage } from './pages/vendor/VendorNegotiationsPage';
 import { VendorOrdersPage } from './pages/vendor/VendorOrdersPage';
+import { VendorAnalyticsPage } from './pages/vendor/VendorAnalyticsPage';
+import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
 import { ProfilePage } from './pages/ProfilePage';
 
 export default function App() {
@@ -75,6 +78,14 @@ export default function App() {
           element={
             <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
               <VendorOrdersPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendor/:storeId/analytics"
+          element={
+            <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
+              <VendorAnalyticsPage />
             </RequireAuth>
           }
         />
@@ -134,6 +145,14 @@ export default function App() {
             </RequireAuth>
           }
         />
+        <Route
+          path="/admin/analytics"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminAnalyticsPage />
+            </RequireAuth>
+          }
+        />
         <Route path="/delivery" element={<RequireAuth><DeliveryHomePage /></RequireAuth>} />
         <Route
           path="*"
@@ -149,6 +168,7 @@ export default function App() {
           }
         />
       </Routes>
+      <OfflineIndicator />
     </Layout>
   );
 }
