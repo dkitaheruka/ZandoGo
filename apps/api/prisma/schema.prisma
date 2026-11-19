@@ -239,6 +239,7 @@ model User {
   adCampaigns        AdCampaign[]
   exchangeRatesSet   ExchangeRate[]
   reviews            Review[]
+  assistantSessions  AssistantSession[]
 
   @@map("users")
 }
@@ -349,11 +350,13 @@ model Product {
   description   String?
   basePriceUsd  Decimal       @db.Decimal(12, 2)
   basePriceCdf  Decimal       @db.Decimal(16, 2)
-  status        ProductStatus @default(DRAFT)
-  isFeatured    Boolean       @default(false)
-  boostedUntil  DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  status           ProductStatus @default(DRAFT)
+  isFeatured       Boolean       @default(false)
+  boostedUntil     DateTime?
+  videoUrl         String?
+  videoDurationSec Int?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   store    VendorStore       @relation(fields: [storeId], references: [id])
   category Category          @relation(fields: [categoryId], references: [id])
@@ -823,6 +826,8 @@ model Message {
   conversationId String
   senderId       String
   content        String
+  sourceLanguage String?   @default("fr")
+  translations   Json?
   attachmentUrl  String?
   sentAt         DateTime  @default(now())
   readAt         DateTime?
@@ -885,3 +890,56 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
+
+// ----------------------------------------------------------------------------
+// ASSISTANT IA & JOURNAL DES MESSAGES PERSONNALISÉS
+// ----------------------------------------------------------------------------
+
+model AssistantSession {
+  id          String   @id @default(uuid())
+  userId      String
+  roleContext String   @default("CLIENT")
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AssistantMessage[]
+
+  @@index([userId, roleContext])
+  @@map("assistant_sessions")
+}
+
+model AssistantMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  role      String   // 'user' | 'assistant'
+  content   String
+  engine    String?  // 'ollama' | 'gemini' | 'none'
+  model     String?
+  createdAt DateTime @default(now())
+
+  session AssistantSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("assistant_messages")
+}
+
+model AiMessageLog {
+  id            String   @id @default(uuid())
+  scenario      String
+  channel       String   // 'inapp' | 'sms'
+  recipientRole String   // 'CLIENT' | 'VENDOR' | 'DELIVERY'
+  recipientName String?
+  personalized  Boolean  @default(false)
+  engine        String   @default("none")
+  model         String?
+  finalText     String
+  latencyMs     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([scenario, createdAt])
+  @@index([createdAt])
+  @@map("ai_message_logs")
+}
+

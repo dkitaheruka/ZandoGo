@@ -11,13 +11,16 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { AssistantService } from '../assistant/assistant.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { FinanceService } from '../finance/finance.service';
+import { AfricasTalkingSmsService } from '../realtime/africastalking-sms.service';
+import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { WalletsService } from '../wallets/wallets.service';
-import { CinetPayService } from './cinetpay.service';
 import { MaishaPayMobileOperator, MaishaPayService } from './maishapay.service';
 import { StripeService } from './stripe.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+import { shouldConfirmGatewayPayment } from '../../common/security-rules';
 
 const OPERATOR_LABELS: Record<string, string> = {
   MOBILE_MONEY_MPESA: 'M-Pesa Vodacom',
@@ -35,11 +38,13 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly cinetpay: CinetPayService,
     private readonly maishapay: MaishaPayService,
     private readonly stripe: StripeService,
     private readonly config: ConfigService,
     private readonly finance: FinanceService,
+    private readonly assistant: AssistantService,
+    private readonly notifications: NotificationsGateway,
+    private readonly sms: AfricasTalkingSmsService,
     @Inject(forwardRef(() => WalletsService))
     private readonly wallets: WalletsService,
   ) {}
@@ -96,6 +101,30 @@ export class PaymentsService {
         }),
       ]);
 
+      const amountLabel = `${baseTotal.toFixed(2)} ${order.currency}`;
+      const cashFallback = `Merci pour votre commande ${order.orderNumber} (${amountLabel}) ! Le règlement se fera en espèces à la livraison.`;
+      const cashMsg = await this.assistant.composeContextualMessage({
+        scenario: 'ORDER_CASH_CONFIRMED',
+        channel: 'inapp',
+        recipientRole: 'CLIENT',
+        facts: {
+          orderNumber: order.orderNumber,
+          amountLabel,
+          paymentMethod: 'Espèces à la livraison',
+        },
+        requiredTokens: [order.orderNumber, amountLabel],
+        fallbackText: cashFallback,
+      });
+      await this.notifications
+        .notifyUser({
+          userId: user.id,
+          type: 'order.cash_confirmed',
+          title: `Commande ${order.orderNumber} enregistrée`,
+          body: cashMsg.text,
+          data: { orderId: order.id, orderNumber: order.orderNumber },
+        })
+        .catch(() => {});
+
       return {
         method: 'cash_on_delivery',
         operator: 'CASH_ON_DELIVERY',
@@ -111,7 +140,7 @@ export class PaymentsService {
     const appUrl = this.config.get<string>('APP_URL') ?? '';
     const operatorLabel = OPERATOR_LABELS[dto.methodCode] || 'Mobile Money';
 
-    // --- Mobile Money (M-Pesa Vodacom, Airtel Money, Orange Money, MTN MoMo) ---
+    // --- Mobile Money RDC (M-Pesa Vodacom, Airtel Money, Orange Money, MTN MoMo) via MaishaPay ---
     if (
       dto.methodCode === 'MOBILE_MONEY_ORANGE' ||
       dto.methodCode === 'MOBILE_MONEY_AIRTEL' ||
@@ -122,86 +151,42 @@ export class PaymentsService {
         throw new BadRequestException('Le numéro de téléphone Mobile Money est requis');
       }
 
-      const usePrimaryGateway = Boolean(
-        this.config.get<string>('MAISHAPAY_API_KEY') ||
-          this.config.get<string>('MAISHAPAY_BEARER_TOKEN'),
-      );
-      const useCinetPayOnly = !usePrimaryGateway && Boolean(this.config.get<string>('CINETPAY_API_KEY'));
+      const provider: MaishaPayMobileOperator =
+        dto.methodCode === 'MOBILE_MONEY_AIRTEL'
+          ? 'AIRTEL'
+          : dto.methodCode === 'MOBILE_MONEY_ORANGE'
+          ? 'ORANGE'
+          : dto.methodCode === 'MOBILE_MONEY_MTN'
+          ? 'MTN'
+          : 'MPESA';
 
-      if (!useCinetPayOnly) {
-        const provider: MaishaPayMobileOperator =
-          dto.methodCode === 'MOBILE_MONEY_AIRTEL'
-            ? 'AIRTEL'
-            : dto.methodCode === 'MOBILE_MONEY_ORANGE'
-            ? 'ORANGE'
-            : dto.methodCode === 'MOBILE_MONEY_MTN'
-            ? 'MTN'
-            : 'MPESA';
-
-        const mpRes = await this.maishapay.initiateMobileMoneyPayment({
-          transactionReference: transaction.id,
-          amount: chargedTotal,
-          currency: order.currency as 'USD' | 'CDF',
-          provider,
-          customerPhone: dto.phoneNumber,
-          customerName: user.email || 'Client ZandoGo',
-          customerEmail: user.email || 'client@zandogo.cd',
-          description: `Commande ZandoGo ${order.orderNumber} (Total ${chargedTotal} ${order.currency})`,
-          callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
-          metadata: {
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            operator: dto.methodCode,
-            baseTotal,
-            transactionFeePercent,
-            transactionFeeAmount,
-            chargedTotal,
-          },
-        });
-
-        await this.prisma.paymentTransaction.update({
-          where: { id: transaction.id },
-          data: {
-            status: 'PENDING',
-            providerReference: mpRes.transactionId,
-            rawProviderPayload: mpRes.raw as any,
-          },
-        });
-
-        return {
-          method: dto.methodCode,
+      const mpRes = await this.maishapay.initiateMobileMoneyPayment({
+        transactionReference: transaction.id,
+        amount: chargedTotal,
+        currency: order.currency as 'USD' | 'CDF',
+        provider,
+        customerPhone: dto.phoneNumber,
+        customerName: user.email || 'Client ZandoGo',
+        customerEmail: user.email || 'client@zandogo.cd',
+        description: `Commande ZandoGo ${order.orderNumber} (Total ${chargedTotal} ${order.currency})`,
+        callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
+        metadata: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
           operator: dto.methodCode,
-          operatorLabel,
-          transactionId: transaction.id,
-          paymentRef: mpRes.transactionId,
-          paymentStatus: mpRes.paymentStatus,
-          ussdCode: mpRes.ussdCode,
-          expiresAt: mpRes.expiresAt,
-          paymentUrl: mpRes.paymentPageUrl,
           baseTotal,
           transactionFeePercent,
           transactionFeeAmount,
           chargedTotal,
-        };
-      }
-
-      const result = await this.cinetpay.initiatePayment({
-        transactionId: transaction.id,
-        amount: chargedTotal,
-        currency: order.currency as 'USD' | 'CDF',
-        description: `Commande ${order.orderNumber}`,
-        customerPhone: dto.phoneNumber,
-        returnUrl: `${appUrl}/orders/${order.id}`,
-        notifyUrl: `${appUrl}/api/payments/webhooks/cinetpay`,
+        },
       });
 
-      const paymentRef = result.data?.payment_token || `ZG-PAY-${transaction.id.slice(-10)}`;
       await this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
         data: {
           status: 'PENDING',
-          providerReference: paymentRef,
-          rawProviderPayload: result as any,
+          providerReference: mpRes.transactionId,
+          rawProviderPayload: mpRes.raw as any,
         },
       });
 
@@ -210,9 +195,11 @@ export class PaymentsService {
         operator: dto.methodCode,
         operatorLabel,
         transactionId: transaction.id,
-        paymentRef,
-        paymentStatus: 'PENDING',
-        paymentUrl: result.data?.payment_url,
+        paymentRef: mpRes.transactionId,
+        paymentStatus: mpRes.paymentStatus,
+        ussdCode: mpRes.ussdCode,
+        expiresAt: mpRes.expiresAt,
+        paymentUrl: mpRes.paymentPageUrl,
         baseTotal,
         transactionFeePercent,
         transactionFeeAmount,
@@ -220,34 +207,21 @@ export class PaymentsService {
       };
     }
 
-    // --- Carte bancaire Visa / Mastercard ---
+    // --- Carte bancaire Visa / Mastercard (Stripe en priorité si configuré, sinon MaishaPay 3DS) ---
     if (dto.methodCode === 'CARD_STRIPE') {
-      const usePrimaryGateway = Boolean(
-        this.config.get<string>('MAISHAPAY_API_KEY') ||
-          this.config.get<string>('MAISHAPAY_BEARER_TOKEN') ||
-          !this.config.get<string>('STRIPE_SECRET_KEY'),
-      );
-
-      if (usePrimaryGateway) {
-        const cardRes = await this.maishapay.initiateCardPayment({
-          transactionReference: transaction.id,
+      if (this.stripe.isConfigured()) {
+        const intent = await this.stripe.createPaymentIntent({
           amount: chargedTotal,
-          currency: order.currency as 'USD' | 'CDF',
-          customerName: user.email || 'Client ZandoGo',
-          customerEmail: user.email || 'client@zandogo.cd',
-          customerPhone: dto.phoneNumber,
-          customerCity: 'Goma',
-          cardProvider: 'VISA',
-          callbackUrl: `${appUrl}/api/payments/callbacks/card`,
+          currency: (order.currency || 'USD').toLowerCase(),
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          transactionId: transaction.id,
+          customerEmail: user.email || undefined,
         });
 
         await this.prisma.paymentTransaction.update({
           where: { id: transaction.id },
-          data: {
-            status: 'PENDING',
-            providerReference: cardRes.transactionId,
-            rawProviderPayload: cardRes.raw as any,
-          },
+          data: { status: 'PENDING', providerReference: intent.id },
         });
 
         return {
@@ -255,9 +229,8 @@ export class PaymentsService {
           operator: 'CARD_STRIPE',
           operatorLabel,
           transactionId: transaction.id,
-          paymentRef: cardRes.transactionId,
-          paymentStatus: cardRes.paymentStatus,
-          paymentUrl: cardRes.paymentPageUrl,
+          paymentRef: intent.id,
+          clientSecret: intent.client_secret,
           baseTotal,
           transactionFeePercent,
           transactionFeeAmount,
@@ -265,15 +238,25 @@ export class PaymentsService {
         };
       }
 
-      const intent = await this.stripe.createPaymentIntent({
+      const cardRes = await this.maishapay.initiateCardPayment({
+        transactionReference: transaction.id,
         amount: chargedTotal,
-        currency: 'usd',
-        orderId: order.id,
+        currency: order.currency as 'USD' | 'CDF',
+        customerName: user.email || 'Client ZandoGo',
+        customerEmail: user.email || 'client@zandogo.cd',
+        customerPhone: dto.phoneNumber,
+        customerCity: 'Goma',
+        cardProvider: 'VISA',
+        callbackUrl: `${appUrl}/api/payments/callbacks/card`,
       });
 
       await this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
-        data: { status: 'PENDING', providerReference: intent.id },
+        data: {
+          status: 'PENDING',
+          providerReference: cardRes.transactionId,
+          rawProviderPayload: cardRes.raw as any,
+        },
       });
 
       return {
@@ -281,7 +264,9 @@ export class PaymentsService {
         operator: 'CARD_STRIPE',
         operatorLabel,
         transactionId: transaction.id,
-        clientSecret: intent.client_secret,
+        paymentRef: cardRes.transactionId,
+        paymentStatus: cardRes.paymentStatus,
+        paymentUrl: cardRes.paymentPageUrl,
         baseTotal,
         transactionFeePercent,
         transactionFeeAmount,
@@ -300,12 +285,11 @@ export class PaymentsService {
     signatureHeader: string | undefined,
     payload: Record<string, any>,
   ) {
-    if (rawBody !== undefined) {
-      const validSig = this.maishapay.verifyWebhookSignature(rawBody, signatureHeader);
-      if (!validSig) {
-        this.logger.warn('Signature webhook invalide détectée');
-        throw new UnauthorizedException('Signature invalide');
-      }
+    const bodyToVerify = rawBody ?? JSON.stringify(payload ?? {});
+    const validSig = this.maishapay.verifyWebhookSignature(bodyToVerify, signatureHeader);
+    if (!validSig) {
+      this.logger.warn('Signature webhook invalide détectée');
+      throw new UnauthorizedException('Signature invalide');
     }
 
     const eventType = String(payload?.type || '').toLowerCase();
@@ -385,11 +369,23 @@ export class PaymentsService {
       rawStatus === 'EXPIRED';
 
     if (isSuccessEvent) {
-      // Contre-vérification systématique auprès de /transaction/rest/v2/check si clés actives
+      // Contre-vérification fail-closed auprès de /transaction/rest/v2/check
       const checkId = providerTxId || transaction.providerReference || transaction.id;
       const check = await this.maishapay.checkTransactionStatus(checkId, !providerTxId);
-      if (!check.verified || check.paymentStatus === 'SUCCESS') {
+      const confirmed = shouldConfirmGatewayPayment({
+        isProduction: this.maishapay.isProduction,
+        hasLiveCredentials: this.maishapay.isLiveConfigured,
+        signatureVerified: validSig,
+        liveCheckVerified: check.verified,
+        livePaymentStatus: check.paymentStatus,
+        declaredSuccess: isSuccessEvent,
+      });
+      if (confirmed) {
         await this.markPaymentSuccess(transaction.id, { webhook: payload, check: check.raw });
+      } else {
+        this.logger.warn(
+          `Confirmation webhook différée (fail-closed) pour transaction=${transaction.id}`,
+        );
       }
     } else if (isFailEvent) {
       await this.markPaymentFailed(transaction.id, payload);
@@ -400,6 +396,7 @@ export class PaymentsService {
 
   /**
    * Callback GET après redirection carte 3DS (?status=200&description=APPROVED&transactionRefId=...&operatorRefId=...)
+   * Ne fait jamais confiance aux seuls paramètres d'URL en production ou avec clés live actives.
    */
   async handleCardRedirectCallback(query: {
     status?: string;
@@ -430,12 +427,30 @@ export class PaymentsService {
 
     if (statusCode === 200 && desc === 'APPROVED') {
       const check = await this.maishapay.checkTransactionStatus(opId || transaction.id, !opId);
-      if (!check.verified || check.paymentStatus === 'SUCCESS') {
+      const confirmed = shouldConfirmGatewayPayment({
+        isProduction: this.maishapay.isProduction,
+        hasLiveCredentials: this.maishapay.isLiveConfigured,
+        signatureVerified: true, // redirection navigateur validée exclusivement par /check côté serveur
+        liveCheckVerified: check.verified,
+        livePaymentStatus: check.paymentStatus,
+        declaredSuccess: true,
+      });
+
+      if (confirmed) {
         await this.markPaymentSuccess(transaction.id, { callbackQuery: query, check: check.raw });
+        return {
+          status: 'SUCCESS',
+          paymentStatus: 'SUCCESS',
+          orderId: transaction.orderId,
+          paymentRef: opId || transaction.providerReference,
+          operator: transaction.methodCode,
+          operatorLabel: OPERATOR_LABELS[transaction.methodCode] || 'Carte Visa / Mastercard',
+        };
       }
+
       return {
-        status: 'SUCCESS',
-        paymentStatus: 'SUCCESS',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
         orderId: transaction.orderId,
         paymentRef: opId || transaction.providerReference,
         operator: transaction.methodCode,
@@ -443,7 +458,19 @@ export class PaymentsService {
       };
     }
 
-    await this.markPaymentFailed(transaction.id, { callbackQuery: query });
+    if (transaction.status === 'PENDING' || transaction.status === 'INITIATED') {
+      const check = await this.maishapay.checkTransactionStatus(opId || transaction.id, !opId);
+      if (
+        !this.maishapay.isLiveConfigured ||
+        (check.verified &&
+          (check.paymentStatus === 'FAILED' ||
+            check.paymentStatus === 'CANCELLED' ||
+            check.paymentStatus === 'EXPIRED'))
+      ) {
+        await this.markPaymentFailed(transaction.id, { callbackQuery: query, check: check.raw });
+      }
+    }
+
     return {
       status: desc === 'CANCELED' ? 'CANCELLED' : 'FAILED',
       paymentStatus: desc === 'CANCELED' ? 'CANCELLED' : 'FAILED',
@@ -471,20 +498,33 @@ export class PaymentsService {
     }
 
     if (transaction.status === 'PENDING' || transaction.status === 'INITIATED') {
-      const checkId = transaction.providerReference || transaction.id;
-      const liveCheck = await this.maishapay.checkTransactionStatus(
-        checkId,
-        !transaction.providerReference,
-      );
-      if (liveCheck.verified && liveCheck.paymentStatus === 'SUCCESS') {
-        await this.markPaymentSuccess(transaction.id, liveCheck.raw);
-      } else if (
-        liveCheck.verified &&
-        (liveCheck.paymentStatus === 'FAILED' ||
-          liveCheck.paymentStatus === 'CANCELLED' ||
-          liveCheck.paymentStatus === 'EXPIRED')
+      if (
+        transaction.methodCode === 'CARD_STRIPE' &&
+        transaction.providerReference?.startsWith('pi_') &&
+        this.stripe.isConfigured()
       ) {
-        await this.markPaymentFailed(transaction.id, liveCheck.raw);
+        const intent = await this.stripe.retrievePaymentIntent(transaction.providerReference);
+        if (intent?.status === 'succeeded') {
+          await this.markPaymentSuccess(transaction.id, intent);
+        } else if (intent?.status === 'canceled') {
+          await this.markPaymentFailed(transaction.id, intent);
+        }
+      } else {
+        const checkId = transaction.providerReference || transaction.id;
+        const liveCheck = await this.maishapay.checkTransactionStatus(
+          checkId,
+          !transaction.providerReference,
+        );
+        if (liveCheck.verified && liveCheck.paymentStatus === 'SUCCESS') {
+          await this.markPaymentSuccess(transaction.id, liveCheck.raw);
+        } else if (
+          liveCheck.verified &&
+          (liveCheck.paymentStatus === 'FAILED' ||
+            liveCheck.paymentStatus === 'CANCELLED' ||
+            liveCheck.paymentStatus === 'EXPIRED')
+        ) {
+          await this.markPaymentFailed(transaction.id, liveCheck.raw);
+        }
       }
     }
 
@@ -501,36 +541,29 @@ export class PaymentsService {
     };
   }
 
-  /**
-   * Contre-vérification de secours CinetPay.
-   */
-  async handleCinetPayWebhook(payload: { cpm_trans_id?: string; transaction_id?: string }) {
-    const transactionId = payload.cpm_trans_id ?? payload.transaction_id;
-    if (!transactionId) {
-      this.logger.warn('Webhook de secours reçu sans transaction_id');
-      return { received: true };
-    }
-
-    const verification = await this.cinetpay.verifyTransaction(transactionId);
-
-    if (verification.code === '00' || verification.data?.status === 'ACCEPTED') {
-      await this.markPaymentSuccess(transactionId, verification);
-    } else {
-      await this.markPaymentFailed(transactionId, verification);
-    }
-
-    return { received: true };
-  }
-
   async handleStripeWebhook(rawBody: Buffer, signature: string) {
     const event = this.stripe.constructWebhookEvent(rawBody, signature);
 
     if (event.type === 'payment_intent.succeeded') {
-      const intent = event.data.object as { id: string };
+      const intent = event.data.object as {
+        id: string;
+        amount_received?: number;
+        currency?: string;
+      };
       const transaction = await this.prisma.paymentTransaction.findFirst({
         where: { providerReference: intent.id },
       });
-      if (transaction) await this.markPaymentSuccess(transaction.id, event.data.object);
+      if (transaction) {
+        const expectedMinor = Math.round(Number(transaction.amount) * 100);
+        const receivedMinor = Number(intent.amount_received ?? expectedMinor);
+        if (receivedMinor < expectedMinor) {
+          this.logger.warn(
+            `Montant Stripe reçu inférieur au total attendu (${receivedMinor} < ${expectedMinor}) pour ${transaction.id}`,
+          );
+          return { received: true };
+        }
+        await this.markPaymentSuccess(transaction.id, event.data.object);
+      }
     }
 
     if (event.type === 'payment_intent.payment_failed') {
@@ -551,6 +584,9 @@ export class PaymentsService {
     if (!transaction || transaction.status === 'SUCCESS') return;
 
     const confirmedAt = new Date();
+    const pricing = await this.finance.getPlatformPricing().catch(() => null);
+    const immediatePayout = Boolean(pricing?.allowImmediateVendorWithdrawal);
+
     await this.prisma.$transaction([
       this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
@@ -566,12 +602,14 @@ export class PaymentsService {
           orderId: transaction.orderId,
           fromStatus: 'PENDING_PAYMENT',
           toStatus: 'PAID',
-          note: `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — délai 48h démarré`,
+          note: immediatePayout
+            ? `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — versement direct vendeur (délai 48h désactivé)`
+            : `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — délai 48h démarré`,
         },
       }),
     ]);
 
-    // Le délai de 48 heures commence dès la confirmation du paiement
+    // Crédit du wallet vendeur (immédiat si le Super Admin a désactivé les 48h, sinon verrouillé 48h)
     await this.wallets.creditOrderFundsOnPayment(transaction.orderId, confirmedAt).catch((err) => {
       this.logger.warn(`Crédit wallet différé (${transaction.orderId}) : ${String(err)}`);
     });
@@ -580,8 +618,76 @@ export class PaymentsService {
       action: 'payment.success',
       entityType: 'PaymentTransaction',
       entityId: transaction.id,
-      afterState: { orderId: transaction.orderId, amount: transaction.amount },
+      afterState: { orderId: transaction.orderId, amount: transaction.amount, immediatePayout },
     });
+
+    const paidOrder = await this.prisma.order
+      .findUnique({
+        where: { id: transaction.orderId },
+        include: {
+          customer: { select: { id: true, fullName: true, phone: true } },
+          subOrders: { include: { store: { select: { storeName: true } } } },
+        },
+      })
+      .catch(() => null);
+
+    if (paidOrder) {
+      const operatorLabel = OPERATOR_LABELS[transaction.methodCode] || 'Mobile Money';
+      const amountLabel = `${Number(transaction.amount).toFixed(2)} ${transaction.currency}`;
+      const paymentRef = transaction.providerReference || transaction.id.slice(-8).toUpperCase();
+      const storeNames = paidOrder.subOrders.map((s) => s.store.storeName).join(', ');
+
+      const inAppFallback = immediatePayout
+        ? `Merci ${paidOrder.customer?.fullName || 'pour votre achat'} ! Votre paiement de ${amountLabel} via ${operatorLabel} (Réf ${paymentRef}) pour ${paidOrder.orderNumber} est confirmé et transmis directement au vendeur.`
+        : `Merci ${paidOrder.customer?.fullName || 'pour votre achat'} ! Votre paiement de ${amountLabel} via ${operatorLabel} (Réf ${paymentRef}) pour ${paidOrder.orderNumber} est confirmé et protégé sous séquestre 48h.`;
+      const inAppMsg = await this.assistant.composeContextualMessage({
+        scenario: 'ORDER_PAID_PHYSICAL',
+        channel: 'inapp',
+        recipientRole: 'CLIENT',
+        recipientName: paidOrder.customer?.fullName || undefined,
+        facts: {
+          orderNumber: paidOrder.orderNumber,
+          amountLabel,
+          operatorLabel,
+          paymentRef,
+          stores: storeNames,
+          settlementMode: immediatePayout
+            ? 'Versement direct immédiat au vendeur (délai 48h désactivé)'
+            : 'Protection séquestre 48h',
+        },
+        requiredTokens: [paidOrder.orderNumber, amountLabel, paymentRef],
+        fallbackText: inAppFallback,
+      });
+
+      await this.notifications
+        .notifyUser({
+          userId: paidOrder.customerId,
+          type: 'order.paid',
+          title: `Paiement confirmé · ${paidOrder.orderNumber}`,
+          body: inAppMsg.text,
+          data: { orderId: paidOrder.id, orderNumber: paidOrder.orderNumber, paymentRef },
+        })
+        .catch(() => {});
+
+      if (paidOrder.customer?.phone) {
+        const smsFallback = `Merci ! Paiement ${amountLabel} via ${operatorLabel} confirmé (Réf ${paymentRef}) pour ${paidOrder.orderNumber}. ZandoGo veille sur votre commande.`;
+        const smsMsg = await this.assistant.composeContextualMessage({
+          scenario: 'ORDER_PAID_PHYSICAL',
+          channel: 'sms',
+          recipientRole: 'CLIENT',
+          recipientName: paidOrder.customer.fullName || undefined,
+          facts: {
+            orderNumber: paidOrder.orderNumber,
+            amountLabel,
+            operatorLabel,
+            paymentRef,
+          },
+          requiredTokens: [paidOrder.orderNumber, amountLabel, paymentRef],
+          fallbackText: smsFallback,
+        });
+        await this.sms.sendSms(paidOrder.customer.phone, smsMsg.text).catch(() => {});
+      }
+    }
   }
 
   private async markPaymentFailed(transactionId: string, rawPayload: unknown) {

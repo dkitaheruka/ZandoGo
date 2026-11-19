@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
+import { Camera, ImagePlus, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { acceptAttribute, readCompressedImageDataUrl, validateFile } from '../lib/upload';
 import type { DeliveryJob } from '../lib/types';
 
 type ProofType = 'PHOTO' | 'SIGNATURE' | 'OTP_CODE';
@@ -41,8 +43,30 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   const [showProof, setShowProof] = useState(false);
   const [proofType, setProofType] = useState<ProofType>('OTP_CODE');
   const [fileUrl, setFileUrl] = useState('');
+  const [proofPhotoError, setProofPhotoError] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [counterFee, setCounterFee] = useState(String(job.negotiatedFeeUsd ?? job.estimatedFee));
+  const [confirmFail, setConfirmFail] = useState(false);
+
+  async function handleProofPhotoSelect(e: ChangeEvent<HTMLInputElement>) {
+    setProofPhotoError(null);
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const msg = validateFile(file, 'CHAT_IMAGE');
+    if (msg) {
+      setProofPhotoError(msg);
+      return;
+    }
+
+    try {
+      const { dataUrl } = await readCompressedImageDataUrl(file);
+      setFileUrl(dataUrl);
+    } catch (err: any) {
+      setProofPhotoError(err?.message || 'Impossible de charger cette photo.');
+    }
+  }
 
   const isActive = ACTIVE_STATUSES.includes(job.status);
   const order = job.subOrder.order;
@@ -101,11 +125,11 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   }
 
   async function changeStatus(next: 'PICKED_UP' | 'IN_TRANSIT' | 'FAILED') {
-    if (next === 'FAILED' && !window.confirm('Signaler un échec de livraison pour cette course ?')) return;
     setBusy(true);
     setError(null);
     try {
       await api.patch(`/delivery/deliveries/${job.id}/status`, { status: next });
+      setConfirmFail(false);
       onChanged();
     } catch (err) {
       setError(describeError(err, 'Action impossible.'));
@@ -256,13 +280,36 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
               Confirmer la livraison
             </button>
           )}
-          <button
-            disabled={busy}
-            onClick={() => changeStatus('FAILED')}
-            className="rounded-card border border-wax text-wax text-sm font-medium px-5 py-2 hover:bg-wax/10 transition-colors disabled:opacity-60"
-          >
-            Signaler un échec
-          </button>
+          {confirmFail ? (
+            <div className="inline-flex items-center gap-2 rounded-card border border-wax/40 bg-wax/10 px-3 py-1.5">
+              <span className="text-xs font-medium text-wax">Confirmer l'échec ?</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => changeStatus('FAILED')}
+                className="rounded-card bg-wax text-white text-xs font-semibold px-3 py-1 hover:bg-wax/90 disabled:opacity-60"
+              >
+                Oui, signaler
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmFail(false)}
+                className="text-xs font-medium text-encre/70 hover:text-nuit px-2 py-1"
+              >
+                Annuler
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setConfirmFail(true)}
+              className="rounded-card border border-wax text-wax text-sm font-medium px-5 py-2 hover:bg-wax/10 transition-colors disabled:opacity-60"
+            >
+              Signaler un échec
+            </button>
+          )}
         </div>
       )}
 
@@ -298,13 +345,53 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
               )}
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-2 rounded-card bg-seve text-white text-xs font-display font-bold hover:bg-seve/90 transition">
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  <span>Depuis la galerie</span>
+                  <input
+                    type="file"
+                    accept={acceptAttribute('CHAT_IMAGE')}
+                    onChange={handleProofPhotoSelect}
+                    className="sr-only"
+                  />
+                </label>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-2 rounded-card bg-nuit text-safran text-xs font-display font-bold hover:bg-nuit/90 transition">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Prendre une photo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleProofPhotoSelect}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+
+              {proofPhotoError && <p className="text-xs text-wax">{proofPhotoError}</p>}
+
+              {fileUrl && (
+                <div className="relative inline-block rounded-card overflow-hidden border border-encre/15 bg-brume/40">
+                  <img src={fileUrl} alt="Preuve photo du colis" className="h-24 w-32 object-cover block" />
+                  <button
+                    type="button"
+                    onClick={() => setFileUrl('')}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-nuit/80 text-white hover:bg-wax transition"
+                    title="Retirer la photo"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
               <input
                 type="url"
                 value={fileUrl}
                 onChange={(e) => setFileUrl(e.target.value)}
-                placeholder="Lien vers la photo ou signature"
-                className="w-full rounded-card border border-encre/20 px-3 py-2 text-sm"
+                placeholder="Ou collez un lien vers la photo / signature"
+                className="w-full rounded-card border border-encre/20 px-3 py-2 text-xs"
               />
               <button
                 type="button"
@@ -323,6 +410,22 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
           >
             {busy ? 'Confirmation…' : 'Valider la remise'}
           </button>
+        </div>
+      )}
+
+      {job.status === 'DELIVERED' && job.deliveryProof?.fileUrl && (
+        <div className="mt-4 pt-3 border-t border-encre/10 flex items-center gap-3">
+          <img
+            src={job.deliveryProof.fileUrl}
+            alt="Preuve de livraison"
+            className="h-14 w-14 rounded-card object-cover border border-encre/15 shrink-0"
+          />
+          <div className="text-xs">
+            <p className="font-display font-bold text-nuit">Preuve de remise enregistrée</p>
+            <p className="text-encre/60 font-mono text-[11px]">
+              {new Date(job.deliveryProof.recordedAt).toLocaleString('fr-FR')}
+            </p>
+          </div>
         </div>
       )}
 

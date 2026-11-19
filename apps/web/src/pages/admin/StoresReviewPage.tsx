@@ -17,7 +17,7 @@ export function StoresReviewPage() {
     setLoading(true);
     setError(null);
     api
-      .get<VendorStore[]>('/vendors/stores/mine')
+      .get<VendorStore[]>('/vendors/stores/admin/all')
       .then(({ data }) => {
         const list = data || [];
         setStores(list);

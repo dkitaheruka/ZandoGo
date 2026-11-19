@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ShieldAlert, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Lock, Unlock, AlertTriangle, Sparkles, X } from 'lucide-react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { api } from '../../lib/api';
+import { getPreferredAiModel } from '../../lib/ai-preference';
 import { useAuth } from '../../lib/auth-context';
 
 type Decision = 'RESOLVED_REFUND' | 'RESOLVED_RELEASE' | 'RESOLVED_PARTIAL';
@@ -16,6 +17,7 @@ interface Dispute {
   reasonCategory?: string;
   reason?: string;
   description?: string;
+  evidenceImages?: string[];
   severity?: 'LOW' | 'MEDIUM' | 'HIGH';
   payoutFrozen?: boolean;
   storePayoutBlocked?: boolean;
@@ -111,6 +113,35 @@ function DisputeCard({
   const [busy, setBusy] = useState(false);
   const [freezeBusy, setFreezeBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [previewEvidenceUrl, setPreviewEvidenceUrl] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<{
+    summary: string;
+    recommendedDecision: Decision;
+    recommendedFreezePayout: boolean;
+    draftResolutionNote: string;
+    engine: string;
+    model: string;
+  } | null>(null);
+
+  async function handleAnalyzeDispute() {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const { data } = await api.post(`/assistant/disputes/${dispute.id}/analyze`, {
+        preferredModel: getPreferredAiModel() || undefined,
+      });
+      setAiAnalysis(data);
+    } catch (err: any) {
+      setAiError(
+        err?.response?.data?.message ||
+          "Analyse IA indisponible : démarrez Ollama en local ou vérifiez le service en ligne.",
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   const orderNum = dispute.order?.orderNumber || dispute.orderNumber || 'KND-2026-0988';
   const totalDisplay = dispute.order?.total
@@ -197,36 +228,133 @@ function DisputeCard({
 
         <div className="flex flex-wrap items-center gap-2">
           {canResolve && (
-            <button
-              type="button"
-              disabled={freezeBusy}
-              onClick={() => handleTogglePayoutFreeze(!isPayoutFrozen)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card text-xs font-display font-semibold transition disabled:opacity-50 ${
-                isPayoutFrozen
-                  ? 'bg-seve/15 text-seve border border-seve/35 hover:bg-seve/25'
-                  : 'bg-wax text-white hover:bg-wax/90'
-              }`}
-            >
-              {isPayoutFrozen ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-              <span>
-                {freezeBusy
-                  ? 'Mise à jour…'
-                  : isPayoutFrozen
-                  ? 'Débloquer retraits vendeur'
-                  : 'Bloquer retraits du vendeur'}
-              </span>
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={aiLoading}
+                onClick={handleAnalyzeDispute}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card text-xs font-display font-semibold bg-safran/15 text-safran border border-safran/35 hover:bg-safran/25 transition disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{aiLoading ? 'Analyse IA…' : 'Analyser ce litige (IA)'}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={freezeBusy}
+                onClick={() => handleTogglePayoutFreeze(!isPayoutFrozen)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-card text-xs font-display font-semibold transition disabled:opacity-50 ${
+                  isPayoutFrozen
+                    ? 'bg-seve/15 text-seve border border-seve/35 hover:bg-seve/25'
+                    : 'bg-wax text-white hover:bg-wax/90'
+                }`}
+              >
+                {isPayoutFrozen ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                <span>
+                  {freezeBusy
+                    ? 'Mise à jour…'
+                    : isPayoutFrozen
+                    ? 'Débloquer retraits vendeur'
+                    : 'Bloquer retraits du vendeur'}
+                </span>
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      <div className="mt-4 p-3.5 rounded-card bg-white/5 border border-white/10 text-xs text-brume/80">
+      <div className="mt-4 p-3.5 rounded-card bg-white/5 border border-white/10 text-xs text-brume/80 space-y-2.5">
         <p className="font-display font-semibold text-white mb-1 flex items-center gap-1.5">
           <ShieldAlert className="w-3.5 h-3.5 text-safran" />
           <span>Motif de la contestation ({dispute.reasonCategory || 'LITIGE'}) :</span>
         </p>
         <p>{dispute.reason || dispute.description || 'Colis non reçu dans le délai imparti de 48 heures.'}</p>
+
+        {dispute.evidenceImages && dispute.evidenceImages.length > 0 && (
+          <div className="pt-2 border-t border-white/10 space-y-1.5">
+            <p className="text-[11px] font-display font-semibold text-safran">
+              Preuves photo fournies par l’acheteur ({dispute.evidenceImages.length}) :
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {dispute.evidenceImages.map((imgUrl, idx) => (
+                <button
+                  key={`${dispute.id}-ev-${idx}`}
+                  type="button"
+                  onClick={() => setPreviewEvidenceUrl(imgUrl)}
+                  className="rounded-lg overflow-hidden border border-white/20 hover:border-safran transition"
+                  title="Agrandir la photo preuve"
+                >
+                  <img
+                    src={imgUrl}
+                    alt={`Preuve litige ${idx + 1}`}
+                    className="h-16 w-20 object-cover block"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {previewEvidenceUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-nuit/90 flex items-center justify-center p-4"
+          onClick={() => setPreviewEvidenceUrl(null)}
+        >
+          <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setPreviewEvidenceUrl(null)}
+              className="absolute -top-10 right-0 text-white hover:text-safran inline-flex items-center gap-1 text-xs font-display font-bold"
+            >
+              <X className="w-4 h-4" />
+              <span>Fermer</span>
+            </button>
+            <img
+              src={previewEvidenceUrl}
+              alt="Preuve photo agrandie"
+              className="w-full max-h-[80vh] object-contain rounded-card bg-black/40 border border-white/15"
+            />
+          </div>
+        </div>
+      )}
+
+      {aiError && (
+        <div className="mt-3 p-3 rounded-card bg-wax/10 border border-wax/30 text-xs text-wax">
+          {aiError}
+        </div>
+      )}
+
+      {aiAnalysis && (
+        <div className="mt-4 p-4 rounded-card bg-safran/10 border border-safran/35 text-xs space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-display font-bold text-safran flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Synthèse & Recommandation IA (Décision finale Super Admin)</span>
+            </span>
+            <span className="font-mono text-[10px] text-brume/60">
+              {aiAnalysis.engine === 'ollama' ? `Ollama local (${aiAnalysis.model})` : `Cloud (${aiAnalysis.model})`}
+            </span>
+          </div>
+          <p className="text-brume/90 leading-relaxed">{aiAnalysis.summary}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span className="text-brume/70">
+              Recommandation : <strong className="text-white">{DECISION_LABEL[aiAnalysis.recommendedDecision]}</strong>
+              {aiAnalysis.recommendedFreezePayout ? ' · Gel retraits conseillé' : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setDecision(aiAnalysis.recommendedDecision);
+                setNote(aiAnalysis.draftResolutionNote);
+              }}
+              className="px-3 py-1 rounded-card bg-safran text-nuit font-display font-bold hover:bg-safran/90 transition"
+            >
+              Pré-remplir le formulaire
+            </button>
+          </div>
+        </div>
+      )}
 
       {feedback && (
         <div className="mt-4 p-3 rounded-card bg-safran/15 border border-safran/35 text-xs text-safran font-display font-medium">

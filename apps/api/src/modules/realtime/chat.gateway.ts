@@ -38,18 +38,46 @@ export class ChatGateway {
   @SubscribeMessage('message:send')
   async sendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { conversationId: string; content: string; attachmentUrl?: string },
+    @MessageBody()
+    body: {
+      conversationId: string;
+      content: string;
+      attachmentUrl?: string;
+      senderLanguage?: string;
+      targetLanguage?: string;
+      autoTranslate?: boolean;
+      preferredModel?: string;
+    },
   ) {
     const user = client.data.user as AuthenticatedUser;
+    const rawContent = typeof body?.content === 'string' ? body.content : '';
+    const hasAttachment = typeof body?.attachmentUrl === 'string' && body.attachmentUrl.trim().length > 0;
+    if (
+      !body?.conversationId ||
+      rawContent.length > 4000 ||
+      (rawContent.trim().length === 0 && !hasAttachment)
+    ) {
+      throw new WsException('Contenu de message ou pièce jointe invalide');
+    }
     const message = await this.chatService.sendMessage(
       user,
       body.conversationId,
-      body.content,
+      rawContent,
       body.attachmentUrl,
+      {
+        senderLanguage: body.senderLanguage,
+        targetLanguage: body.targetLanguage,
+        autoTranslate: body.autoTranslate,
+        preferredModel: body.preferredModel,
+      },
     );
 
     this.server.to(`conversation:${body.conversationId}`).emit('message:new', message);
     return message;
+  }
+
+  emitMessage(conversationId: string, message: unknown) {
+    this.server?.to(`conversation:${conversationId}`).emit('message:new', message);
   }
 
   @UseGuards(WsJwtGuard)

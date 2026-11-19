@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { Eye, ShieldCheck } from 'lucide-react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
+import { KycDocumentModal, type KycModalTarget } from '../../components/admin/KycDocumentModal';
 import { api } from '../../lib/api';
-import { openKycDocument } from '../../lib/kyc';
 
 interface PendingKyc {
   id: string;
   type: 'ID_CARD' | 'VENDOR_LICENSE' | 'DRIVER_LICENSE';
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
   createdAt: string;
   user: { id: string; fullName: string; email?: string; phone?: string };
 }
@@ -21,17 +22,9 @@ export function KycReviewPage() {
   const [documents, setDocuments] = useState<PendingKyc[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [docError, setDocError] = useState<string | null>(null);
+  const [inspectedDoc, setInspectedDoc] = useState<KycModalTarget | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-
-  async function openDocument(id: string) {
-    setDocError(null);
-    try {
-      await openKycDocument(id);
-    } catch {
-      setDocError("Fichier de démonstration prévisualisé avec succès.");
-    }
-  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,8 +32,12 @@ export function KycReviewPage() {
     try {
       const { data } = await api.get<PendingKyc[]>('/kyc/documents/pending');
       setDocuments(data || []);
-    } catch {
+    } catch (err: any) {
       setDocuments([]);
+      setListError(
+        err?.response?.data?.message ||
+          'Impossible de charger la file de documents KYC en attente.',
+      );
     } finally {
       setLoading(false);
     }
@@ -53,11 +50,21 @@ export function KycReviewPage() {
   async function review(id: string, status: 'APPROVED' | 'REJECTED') {
     setBusyId(id);
     setListError(null);
+    setNotice(null);
     try {
       await api.patch(`/kyc/documents/${id}/review`, { status });
+      setInspectedDoc((prev) => (prev?.id === id ? null : prev));
+      setNotice(
+        status === 'APPROVED'
+          ? 'Document justificatif validé avec succès.'
+          : 'Document justificatif rejeté. Le titulaire en a été informé.',
+      );
       await load();
-    } catch {
-      setDocuments((prev) => prev.filter((d) => d.id !== id));
+    } catch (err: any) {
+      setListError(
+        err?.response?.data?.message ||
+          'Impossible d’enregistrer la décision sur ce document.',
+      );
     } finally {
       setBusyId(null);
     }
@@ -81,8 +88,19 @@ export function KycReviewPage() {
           </span>
         </div>
 
-        {docError && <p className="text-xs text-safran bg-safran/15 p-3 rounded-card border border-safran/30 font-display">{docError}</p>}
-        {listError && <p className="text-xs text-wax bg-wax/10 p-3 rounded-card border border-wax/20 font-display">{listError}</p>}
+        {notice && (
+          <div className="p-3.5 rounded-card bg-seve/15 border border-seve/35 text-xs text-seve font-display font-medium">
+            {notice}
+          </div>
+        )}
+        {listError && (
+          <div className="p-3.5 rounded-card bg-wax/10 border border-wax/25 text-xs text-wax font-display flex items-center justify-between gap-3" role="alert">
+            <span>{listError}</span>
+            <button type="button" onClick={() => void load()} className="underline font-semibold shrink-0">
+              Réessayer
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="space-y-4">
@@ -105,16 +123,29 @@ export function KycReviewPage() {
               >
                 <div>
                   <p className="font-display font-bold text-sm text-white">{doc.user.fullName}</p>
-                  <p className="text-xs text-brume/60 mt-0.5 font-mono">{doc.user.email ?? doc.user.phone}</p>
-                  <div className="mt-2 flex items-center gap-2 text-xs">
+                  <p className="text-xs text-brume/60 mt-0.5 font-mono">
+                    {doc.user.email ?? doc.user.phone}
+                    {doc.createdAt && ` · Déposé le ${new Date(doc.createdAt).toLocaleDateString('fr-FR')}`}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="font-display text-brume/80">{TYPE_LABEL[doc.type]}</span>
                     <span>·</span>
                     <button
                       type="button"
-                      onClick={() => openDocument(doc.id)}
-                      className="text-seve hover:underline font-medium font-display"
+                      onClick={() =>
+                        setInspectedDoc({
+                          id: doc.id,
+                          type: doc.type,
+                          status: doc.status ?? 'PENDING',
+                          createdAt: doc.createdAt,
+                          holderName: doc.user.fullName,
+                          holderContact: doc.user.email ?? doc.user.phone,
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 text-seve hover:underline font-medium font-display"
                     >
-                      Inspecter le document justificatif
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Inspecter le document justificatif</span>
                     </button>
                   </div>
                 </div>
@@ -122,14 +153,14 @@ export function KycReviewPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     disabled={busyId === doc.id}
-                    onClick={() => review(doc.id, 'APPROVED')}
+                    onClick={() => void review(doc.id, 'APPROVED')}
                     className="px-4 py-2 rounded-card bg-seve hover:bg-seve/90 text-white text-xs font-display font-semibold transition-colors disabled:opacity-50 shadow-xs"
                   >
                     Valider le document
                   </button>
                   <button
                     disabled={busyId === doc.id}
-                    onClick={() => review(doc.id, 'REJECTED')}
+                    onClick={() => void review(doc.id, 'REJECTED')}
                     className="px-4 py-2 rounded-card border border-wax/40 text-wax hover:bg-wax/10 text-xs font-display font-semibold transition-colors disabled:opacity-50"
                   >
                     Rejeter
@@ -140,6 +171,13 @@ export function KycReviewPage() {
           </div>
         )}
       </div>
+
+      <KycDocumentModal
+        target={inspectedDoc}
+        busy={Boolean(inspectedDoc && busyId === inspectedDoc.id)}
+        onClose={() => setInspectedDoc(null)}
+        onDecision={(docId, status) => review(docId, status)}
+      />
     </AdminLayout>
   );
 }

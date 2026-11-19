@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
@@ -13,6 +13,9 @@ import {
   ShoppingCart,
   Check,
   Truck,
+  ChevronLeft,
+  ChevronRight,
+  Video,
 } from 'lucide-react';
 import { useStore } from '../lib/store-context';
 import { useAuth } from '../lib/auth-context';
@@ -33,9 +36,35 @@ export function ProductCard({ product }: { product: Product }) {
     toggleCompare,
     refreshCart,
   } = useStore();
-  const [imgSrc, setImgSrc] = useState(product.images[0]?.url || FALLBACK_IMAGE);
+  const images =
+    product.images && product.images.length > 0
+      ? product.images
+      : [{ id: 'fallback', url: FALLBACK_IMAGE, altText: product.title }];
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [failedIdxMap, setFailedIdxMap] = useState<Record<number, boolean>>({});
   const [cartBusy, setCartBusy] = useState(false);
   const [addedFeedback, setAddedFeedback] = useState(false);
+
+  useEffect(() => {
+    setActiveIdx(0);
+    setFailedIdxMap({});
+  }, [product.id]);
+
+  const safeIdx = activeIdx % images.length;
+  const currentImg = images[safeIdx];
+  const imgSrc = failedIdxMap[safeIdx] ? FALLBACK_IMAGE : currentImg?.url || FALLBACK_IMAGE;
+
+  function goPrevImage(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveIdx((prev) => (prev - 1 + images.length) % images.length);
+  }
+
+  function goNextImage(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setActiveIdx((prev) => (prev + 1) % images.length);
+  }
 
   const priceUsd = Number(product.basePriceUsd);
   const isLowStock =
@@ -107,12 +136,73 @@ export function ProductCard({ product }: { product: Product }) {
         <div className="relative aspect-[4/3] overflow-hidden bg-brume">
           <img
             src={imgSrc}
-            alt={product.images[0]?.altText || product.title}
+            alt={currentImg?.altText || product.title}
             referrerPolicy="no-referrer"
-            onError={() => setImgSrc(FALLBACK_IMAGE)}
+            onError={() => setFailedIdxMap((prev) => ({ ...prev, [safeIdx]: true }))}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
           />
+
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={goPrevImage}
+                aria-label="Photo précédente"
+                title="Photo précédente"
+                className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={goNextImage}
+                aria-label="Photo suivante"
+                title="Photo suivante"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
+                <div className="flex items-center gap-1 bg-nuit/70 backdrop-blur-xs px-2 py-1 rounded-full pointer-events-auto">
+                  {images.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      type="button"
+                      aria-label={`Afficher photo ${idx + 1}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setActiveIdx(idx);
+                      }}
+                      className={`h-1.5 rounded-full transition-all ${
+                        idx === safeIdx ? 'w-4 bg-safran' : 'w-1.5 bg-white/60 hover:bg-white'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  {product.videoUrl && (
+                    <span className="bg-seve/95 text-brume text-[10px] font-display font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-xs">
+                      <Video className="w-2.5 h-2.5 text-safran" />
+                      <span>{product.videoDurationSec ? `${product.videoDurationSec}s` : 'Vidéo'}</span>
+                    </span>
+                  )}
+                  <span className="bg-nuit/80 text-brume text-[10px] font-mono font-bold px-2 py-0.5 rounded-full shadow-xs tabular-nums">
+                    {safeIdx + 1}/{images.length}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+
+          {images.length <= 1 && product.videoUrl && (
+            <span className="absolute bottom-2 right-2.5 bg-seve/95 text-brume text-[10px] font-display font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 shadow-xs">
+              <Video className="w-2.5 h-2.5 text-safran" />
+              <span>Vidéo {product.videoDurationSec ? `${product.videoDurationSec}s` : ''}</span>
+            </span>
+          )}
 
           {/* Type, Sponsored & Audience Badges */}
           <div className="absolute top-2.5 left-2.5 flex flex-wrap items-center gap-1.5 max-w-[75%]">

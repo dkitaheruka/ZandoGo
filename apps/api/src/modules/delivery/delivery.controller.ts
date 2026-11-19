@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { IsIn } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -10,6 +11,11 @@ import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { CompleteDeliveryDto } from './dto/complete-delivery.dto';
 import { PingDto } from './dto/ping.dto';
+
+class SetAvailabilityDto {
+  @IsIn(['AVAILABLE', 'OFFLINE'])
+  status: 'AVAILABLE' | 'OFFLINE';
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('delivery')
@@ -62,9 +68,9 @@ export class DeliveryController {
   @Patch('agents/me/availability')
   setAvailability(
     @CurrentUser() user: AuthenticatedUser,
-    @Body('status') status: 'AVAILABLE' | 'OFFLINE',
+    @Body() dto: SetAvailabilityDto,
   ) {
-    return this.deliveryService.setAvailability(user, status);
+    return this.deliveryService.setAvailability(user, dto.status);
   }
 
   // ---- Création / assignation (vendeur) ----

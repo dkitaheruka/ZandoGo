@@ -1,6 +1,8 @@
-import { defineConfig, type Plugin } from 'vite';
+import { randomUUID } from 'node:crypto';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { GoogleGenAI, Type } from '@google/genai';
 
 function mockApiPlugin(): Plugin {
   let exchangeRate = 2850;
@@ -170,7 +172,9 @@ function mockApiPlugin(): Plugin {
       stockQty: 27,
       lowStockThreshold: 5,
       images: [
-        { id: 'img-1', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Pagne Super Wax Vlisco Original' },
+        { id: 'img-1', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Émeraude & Safran (Vue principale)' },
+        { id: 'img-1b', url: '/src/assets/images/robe_wax_femme_1794575464194.jpg', altText: 'Bordeaux Wax · Rendu porté' },
+        { id: 'img-1c', url: '/src/assets/images/fashion_jacket_kuba_1794397997636.jpg', altText: 'Indigo Nuit · Détail tissage' },
       ],
       variants: [
         { id: 'var-1', sku: 'WAX-VLI-01', name: 'Émeraude / Safran · 6 yards', attributes: { size: '6 yards', color: 'Émeraude & Safran', colorHex: '#26735B' }, priceOverride: 65, stockQty: 18 },
@@ -201,7 +205,9 @@ function mockApiPlugin(): Plugin {
       stockQty: 12,
       lowStockThreshold: 5,
       images: [
-        { id: 'img-kuba', url: '/src/assets/images/fashion_jacket_kuba_1794397997636.jpg', altText: 'Veste Kuba Haute Couture' },
+        { id: 'img-kuba', url: '/src/assets/images/fashion_jacket_kuba_1794397997636.jpg', altText: 'Coloris Nuit Kuba (Face)' },
+        { id: 'img-kuba-2', url: '/src/assets/images/chemise_lin_homme_1794575463772.jpg', altText: 'Finition lin & col brodé' },
+        { id: 'img-kuba-3', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Coloris Safran & Terre · Détail motif' },
       ],
       variants: [
         { id: 'var-kuba-m', sku: 'JKT-KUBA-M-N', name: 'M · Nuit Kuba', attributes: { size: 'M', color: 'Nuit Kuba', colorHex: '#172320' }, priceOverride: 85, stockQty: 5 },
@@ -232,7 +238,9 @@ function mockApiPlugin(): Plugin {
       stockQty: 24,
       lowStockThreshold: 5,
       images: [
-        { id: 'img-robe-wax', url: '/src/assets/images/robe_wax_femme_1794575464194.jpg', altText: 'Robe Portefeuille Wax Femme' },
+        { id: 'img-robe-wax', url: '/src/assets/images/robe_wax_femme_1794575464194.jpg', altText: 'Coloris Émeraude (Face)' },
+        { id: 'img-robe-wax-2', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Coloris Safran Soleil · Motif pagne' },
+        { id: 'img-robe-wax-3', url: '/src/assets/images/fashion_jacket_kuba_1794397997636.jpg', altText: 'Coloris Rouge Terracotta · Finition tailleur' },
       ],
       variants: [
         { id: 'var-robe-s-em', sku: 'ROBE-S-EM', name: 'S · Émeraude', attributes: { size: 'S', color: 'Émeraude', colorHex: '#26735B' }, priceOverride: 54, stockQty: 6 },
@@ -264,7 +272,9 @@ function mockApiPlugin(): Plugin {
       stockQty: 22,
       lowStockThreshold: 5,
       images: [
-        { id: 'img-chemise-lin', url: '/src/assets/images/chemise_lin_homme_1794575463772.jpg', altText: 'Chemise Lin Col Mao Homme' },
+        { id: 'img-chemise-lin', url: '/src/assets/images/chemise_lin_homme_1794575463772.jpg', altText: 'Coloris Ivoire Lin (Face)' },
+        { id: 'img-chemise-lin-2', url: '/src/assets/images/fashion_jacket_kuba_1794397997636.jpg', altText: 'Coloris Noir Nuit · Coupe tailleur' },
+        { id: 'img-chemise-lin-3', url: '/src/assets/images/wax_vlisco_fabric_1794567971042.jpg', altText: 'Coloris Vert Sève · Détail broderie' },
       ],
       variants: [
         { id: 'var-chem-m-ivoire', sku: 'CHM-M-IV', name: 'M · Ivoire Lin', attributes: { size: 'M', color: 'Ivoire Lin', colorHex: '#E8E2D5' }, priceOverride: 45, stockQty: 8 },
@@ -971,6 +981,11 @@ function mockApiPlugin(): Plugin {
     currentLng: 29.2285,
   };
 
+  const uploadedLocalFiles = new Map<
+    string,
+    { buffer: Buffer; contentType: string; fileName: string }
+  >();
+
   let pendingAgents: any[] = [
     {
       id: 'agent-pending-1',
@@ -980,7 +995,32 @@ function mockApiPlugin(): Plugin {
         fullName: 'Grace Kavira',
         email: 'grace.kavira@example.cd',
         phone: '+243819882233',
-        kycDocuments: [{ id: 'k-1', status: 'APPROVED' }],
+        kycDocuments: [
+          {
+            id: 'k-1',
+            type: 'DRIVER_LICENSE',
+            status: 'APPROVED',
+            createdAt: '2026-03-10T14:20:00Z',
+          },
+        ],
+      },
+    },
+    {
+      id: 'agent-pending-2',
+      vehicleType: 'TRICYCLE_BAJAJ',
+      user: {
+        id: 'usr-moto-3',
+        fullName: 'Espoir Kambale',
+        email: 'espoir.kambale@example.cd',
+        phone: '+243997114455',
+        kycDocuments: [
+          {
+            id: 'k-2',
+            type: 'DRIVER_LICENSE',
+            status: 'PENDING',
+            createdAt: '2026-03-12T08:15:00Z',
+          },
+        ],
       },
     },
   ];
@@ -1000,6 +1040,18 @@ function mockApiPlugin(): Plugin {
         fullName: 'Coopérative Kivu Terroir (Sarah Mukwege)',
         email: 'sarah@kivuterroir.cd',
         phone: '+243991234567',
+      },
+    },
+    {
+      id: 'k-2',
+      type: 'DRIVER_LICENSE',
+      status: 'PENDING',
+      createdAt: '2026-03-12T08:15:00Z',
+      user: {
+        id: 'usr-moto-3',
+        fullName: 'Espoir Kambale',
+        email: 'espoir.kambale@example.cd',
+        phone: '+243997114455',
       },
     },
   ];
@@ -1238,26 +1290,539 @@ function mockApiPlugin(): Plugin {
         const path = url.split('?')[0].replace(/^\/api/, '');
         const method = req.method?.toUpperCase() || 'GET';
 
-        const readBody = (): Promise<any> => {
+        const readRawBody = (): Promise<Buffer> => {
           return new Promise((resolve) => {
-            let body = '';
+            const chunks: Buffer[] = [];
             req.on('data', (chunk) => {
-              body += chunk;
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
             });
             req.on('end', () => {
-              try {
-                resolve(body ? JSON.parse(body) : {});
-              } catch {
-                resolve({});
-              }
+              resolve(Buffer.concat(chunks));
             });
           });
+        };
+
+        const readBody = async (): Promise<any> => {
+          const buf = await readRawBody();
+          if (!buf.length) return {};
+          try {
+            return JSON.parse(buf.toString('utf8'));
+          } catch {
+            return {};
+          }
         };
 
         const json = (data: any, statusCode = 200) => {
           res.statusCode = statusCode;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(data));
+        };
+
+        // --- MOTEUR IA HYBRIDE + RÉDACTION CONTEXTUELLE CHALEUREUSE ---
+        const resolveAiConfig = () => {
+          const rootEnv = loadEnv('development', '../..', '');
+          const apiEnv = loadEnv('development', '../api', '');
+          const modeRaw = (
+            process.env.AI_MODE ||
+            apiEnv.AI_MODE ||
+            rootEnv.AI_MODE ||
+            'auto'
+          ).toLowerCase();
+          const mode: 'auto' | 'local' | 'cloud' =
+            modeRaw === 'local' || modeRaw === 'cloud' ? modeRaw : 'auto';
+          const ollamaBaseUrl = (
+            process.env.OLLAMA_BASE_URL ||
+            apiEnv.OLLAMA_BASE_URL ||
+            rootEnv.OLLAMA_BASE_URL ||
+            'http://127.0.0.1:11434'
+          ).replace(/\/+$/, '');
+          const preferredEnvModel = (
+            process.env.OLLAMA_MODEL ||
+            apiEnv.OLLAMA_MODEL ||
+            rootEnv.OLLAMA_MODEL ||
+            ''
+          ).trim();
+          const geminiKey = (
+            process.env.GEMINI_API_KEY ||
+            apiEnv.GEMINI_API_KEY ||
+            rootEnv.GEMINI_API_KEY ||
+            ''
+          ).trim();
+          return { mode, ollamaBaseUrl, preferredEnvModel, geminiKey, cloudModel: 'gemini-4-hydrogen' };
+        };
+
+        const probeOllama = async (ollamaBaseUrl: string, mode: 'auto' | 'local' | 'cloud', timeoutMs = 1200) => {
+          if (mode === 'cloud') return { reachable: false, models: [] as string[] };
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const r = await fetch(`${ollamaBaseUrl}/api/tags`, { signal: controller.signal });
+            if (!r.ok) return { reachable: false, models: [] as string[] };
+            const payload = (await r.json()) as { models?: { name?: string; model?: string }[] };
+            const models = (payload.models || [])
+              .map((m) => m.name || m.model || '')
+              .filter((name) => Boolean(name) && !/embed|nomic|bge|minilm/i.test(name));
+            return { reachable: true, models };
+          } catch {
+            return { reachable: false, models: [] as string[] };
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+
+        const pickOllamaModel = (models: string[], requested?: string, envModel?: string) => {
+          if (!models.length) return null;
+          if (requested && models.includes(requested)) return requested;
+          if (envModel && models.includes(envModel)) return envModel;
+          for (const pat of ['qwen2.5', 'llama3', 'mistral', 'gemma', 'deepseek', 'phi']) {
+            const match = models.find((m) => m.toLowerCase().includes(pat));
+            if (match) return match;
+          }
+          return models[0];
+        };
+
+        const getAiStatus = async (preferredModel?: string, probeTimeoutMs = 1200) => {
+          const cfg = resolveAiConfig();
+          const probe = await probeOllama(cfg.ollamaBaseUrl, cfg.mode, probeTimeoutMs);
+          const chosenLocal = pickOllamaModel(probe.models, preferredModel, cfg.preferredEnvModel);
+          const cloudConfigured = Boolean(cfg.geminiKey);
+
+          if (cfg.mode !== 'cloud' && chosenLocal) {
+            return {
+              available: true,
+              mode: cfg.mode,
+              activeEngine: 'ollama' as const,
+              activeModel: chosenLocal,
+              ollamaReachable: true,
+              ollamaModels: probe.models,
+              cloudConfigured,
+              cloudModel: cfg.cloudModel,
+              cfg,
+            };
+          }
+          if (cfg.mode !== 'local' && cloudConfigured) {
+            return {
+              available: true,
+              mode: cfg.mode,
+              activeEngine: 'gemini' as const,
+              activeModel: cfg.cloudModel,
+              ollamaReachable: probe.reachable,
+              ollamaModels: probe.models,
+              cloudConfigured: true,
+              cloudModel: cfg.cloudModel,
+              cfg,
+            };
+          }
+          return {
+            available: false,
+            mode: cfg.mode,
+            activeEngine: 'none' as const,
+            activeModel: null,
+            ollamaReachable: probe.reachable,
+            ollamaModels: probe.models,
+            cloudConfigured,
+            cloudModel: cfg.cloudModel,
+            cfg,
+          };
+        };
+
+        const runOllamaChat = async (
+          baseUrl: string,
+          model: string,
+          systemInstruction: string,
+          messages: { role: 'user' | 'assistant'; content: string }[],
+        ) => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 45000);
+          try {
+            const r = await fetch(`${baseUrl}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({
+                model,
+                stream: false,
+                messages: [{ role: 'system', content: systemInstruction }, ...messages],
+              }),
+            });
+            if (!r.ok) {
+              const txt = await r.text();
+              throw new Error(`Ollama HTTP ${r.status}: ${txt.slice(0, 180)}`);
+            }
+            const data = (await r.json()) as { message?: { content?: string }; response?: string };
+            const text = (data.message?.content || data.response || '').trim();
+            if (!text) throw new Error('Réponse vide retournée par Ollama.');
+            return text;
+          } finally {
+            clearTimeout(timer);
+          }
+        };
+
+        const runGeminiChat = async (
+          apiKey: string,
+          cloudModel: string,
+          systemInstruction: string,
+          messages: { role: 'user' | 'assistant'; content: string }[],
+        ) => {
+          const ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          });
+          const contents =
+            messages.length === 1
+              ? messages[0].content
+              : messages
+                  .map((m) => `${m.role === 'user' ? 'Utilisateur' : 'Assistant'} : ${m.content}`)
+                  .join('\n\n');
+          const response = await ai.models.generateContent({
+            model: cloudModel,
+            contents,
+            config: { systemInstruction },
+          });
+          const text = (response.text || '').trim();
+          if (!text) throw new Error("Le modèle en ligne n'a retourné aucun texte.");
+          return text;
+        };
+
+        const runHybridAi = async (
+          systemInstruction: string,
+          messages: { role: 'user' | 'assistant'; content: string }[],
+          preferredModel?: string,
+        ) => {
+          const st = await getAiStatus(preferredModel);
+          if (!st.available || !st.activeModel) {
+            const err: any = new Error(
+              "Aucun modèle IA détecté : lancez Ollama sur votre ordinateur (ex: 'ollama run qwen2.5:7b') ou configurez la clé cloud serveur.",
+            );
+            err.statusCode = 503;
+            throw err;
+          }
+
+          if (st.activeEngine === 'ollama') {
+            try {
+              const reply = await runOllamaChat(st.cfg.ollamaBaseUrl, st.activeModel, systemInstruction, messages);
+              return { reply, engine: 'ollama' as const, model: st.activeModel };
+            } catch (localErr: any) {
+              if (st.mode === 'auto' && st.cloudConfigured) {
+                const reply = await runGeminiChat(
+                  st.cfg.geminiKey,
+                  st.cfg.cloudModel,
+                  systemInstruction,
+                  messages,
+                );
+                return { reply, engine: 'gemini' as const, model: st.cfg.cloudModel };
+              }
+              const err: any = new Error(
+                `Erreur du modèle local Ollama (${st.activeModel}) : ${localErr?.message || 'inaccessible'}`,
+              );
+              err.statusCode = 502;
+              throw err;
+            }
+          }
+
+          const reply = await runGeminiChat(st.cfg.geminiKey, st.cfg.cloudModel, systemInstruction, messages);
+          return { reply, engine: 'gemini' as const, model: st.cfg.cloudModel };
+        };
+
+        const assistantHistoryByRole: Record<
+          string,
+          { id: string; role: 'user' | 'assistant'; content: string; engine?: string; model?: string; createdAt: string }[]
+        > = {
+          CLIENT: [],
+          VENDOR: [],
+          ADMIN: [],
+        };
+
+        const aiMessageLogs: {
+          id: string;
+          scenario: string;
+          channel: 'inapp' | 'sms';
+          recipientRole: 'CLIENT' | 'VENDOR' | 'DELIVERY';
+          recipientName: string | null;
+          personalized: boolean;
+          engine: string;
+          model: string | null;
+          finalText: string;
+          latencyMs: number;
+          createdAt: string;
+        }[] = [
+          {
+            id: 'ailog-seed-1',
+            scenario: 'ORDER_PAID_PHYSICAL',
+            channel: 'inapp',
+            recipientRole: 'CLIENT',
+            recipientName: 'Merveille Kasongo',
+            personalized: true,
+            engine: 'ollama',
+            model: 'qwen2.5:7b',
+            finalText:
+              'Bonjour Merveille ! Votre commande ORD-2026-1001 ($65.00) est bien confirmée. Vos fonds sont protégés sous séquestre pendant 48h jusqu’à la réception à Goma. Merci de faire confiance à ZandoGo !',
+            latencyMs: 680,
+            createdAt: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
+          },
+          {
+            id: 'ailog-seed-2',
+            scenario: 'DELIVERY_COMPLETED',
+            channel: 'sms',
+            recipientRole: 'CLIENT',
+            recipientName: 'Cédric Ilunga',
+            personalized: true,
+            engine: 'ollama',
+            model: 'qwen2.5:7b',
+            finalText:
+              'ZandoGo: Bonjour Cedric, votre colis ORD-2026-0998 est bien livre a Himbi. Merci pour votre confiance !',
+            latencyMs: 540,
+            createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+          },
+          {
+            id: 'ailog-seed-3',
+            scenario: 'ORDER_PAID_DIGITAL',
+            channel: 'inapp',
+            recipientRole: 'CLIENT',
+            recipientName: 'Fidèle Mulumba',
+            personalized: false,
+            engine: 'none',
+            model: null,
+            finalText:
+              'Merci Fidèle ! Votre paiement pour la commande ORD-2026-1002 est confirmé. Téléchargez votre livre PDF directement depuis vos commandes.',
+            latencyMs: 12,
+            createdAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
+          },
+        ];
+
+        let aiSettings: {
+          autoMessagesEnabled: boolean;
+          autoMessagesTone: 'WARM' | 'FORMAL' | 'CONCISE';
+          updatedAt: string;
+        } = {
+          autoMessagesEnabled: true,
+          autoMessagesTone: 'WARM',
+          updatedAt: new Date().toISOString(),
+        };
+
+        const getLanguageInstruction = (language?: string) => {
+          if (language === 'sw') {
+            return 'Réponds en Kiswahili ya Kongo (Swahili de Goma/Est-RDC) naturel, clair, poli et commerçant.';
+          }
+          if (language === 'ln') {
+            return 'Réponds en Lingala ya RDC naturel, clair, respectueux et facile à comprendre.';
+          }
+          if (language === 'en') {
+            return 'Respond in clear, polite, concise English suitable for East/Central Africa marketplace commerce.';
+          }
+          return 'Réponds toujours en français clair, concret et concis.';
+        };
+
+        const getToneInstruction = (tone?: 'WARM' | 'FORMAL' | 'CONCISE') => {
+          if (tone === 'FORMAL') return 'Adopte un ton professionnel, institutionnel, courtois et sobre.';
+          if (tone === 'CONCISE') return 'Adopte un ton direct, ultra-concis, factuel et amical.';
+          return 'Adopte un ton chaleureux, humain, proche et rassurant (ex: "Bonjour", "Merci pour votre confiance").';
+        };
+
+        const CHAT_LANG_LABELS: Record<string, string> = {
+          fr: 'Français',
+          ln: 'Lingala',
+          sw: 'Kiswahili',
+          en: 'English',
+        };
+
+        const normalizeChatLang = (lang?: string): 'fr' | 'ln' | 'sw' | 'en' => {
+          const v = String(lang || '').trim().toLowerCase();
+          if (v === 'ln' || v === 'sw' || v === 'en' || v === 'fr') return v;
+          return 'fr';
+        };
+
+        const extractProtectedTokens = (text: string): string[] => {
+          const matches = text.match(
+            /(https?:\/\/[^\s]+|#[A-Z0-9-]+|\$\s?\d+(?:[.,]\d+)?|\b\d+(?:[.,]\d+)?\s?(?:USD|CDF|km)\b)/gi,
+          );
+          if (!matches) return [];
+          return Array.from(new Set(matches.map((m) => m.trim()))).slice(0, 8);
+        };
+
+        const translateChatTextHybrid = async (params: {
+          text: string;
+          sourceLanguage?: string;
+          targetLanguage: string;
+          preferredModel?: string;
+        }) => {
+          const rawText = String(params.text || '').trim();
+          const targetLanguage = normalizeChatLang(params.targetLanguage);
+          const explicitSource =
+            params.sourceLanguage && params.sourceLanguage !== 'auto'
+              ? normalizeChatLang(params.sourceLanguage)
+              : null;
+
+          if (explicitSource && explicitSource === targetLanguage) {
+            return {
+              originalText: rawText,
+              translatedText: rawText,
+              detectedLanguage: explicitSource,
+              targetLanguage,
+              engine: 'none',
+              model: null,
+            };
+          }
+
+          const protectedTokens = extractProtectedTokens(rawText);
+          const targetLabel = CHAT_LANG_LABELS[targetLanguage];
+          const sys =
+            "Tu es un traducteur commercial RDC (Français, Lingala ya Kinshasa/RDC, Kiswahili ya Kongo, English). Réponds STRICTEMENT en JSON valide sans texte autour avec les clés exactes: detectedLanguage ('fr'|'ln'|'sw'|'en') et translatedText (string). Conserve strictement tous les prix, montants, devises, références et URLs.";
+          const prompt = [
+            `Traduis fidèlement ce message de discussion commerciale ZandoGo (RDC) vers ${targetLabel} (${targetLanguage}).`,
+            explicitSource
+              ? `Langue source : ${CHAT_LANG_LABELS[explicitSource]} (${explicitSource}).`
+              : `Détecte la langue source parmi : fr, ln, sw, en.`,
+            protectedTokens.length > 0
+              ? `RÈGLE STRICTE : Conserve à l'identique : ${protectedTokens.join(' | ')}`
+              : '',
+            `Message à traduire :\n"""${rawText}"""`,
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+
+          const out = await runHybridAi(sys, [{ role: 'user', content: prompt }], params.preferredModel);
+          const jsonMatch = out.reply.match(/\{[\s\S]*\}/);
+          let detectedLanguage = explicitSource || ('fr' as 'fr' | 'ln' | 'sw' | 'en');
+          let translatedText = out.reply.replace(/^["«\s]+|["»\s]+$/g, '').trim();
+
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0]);
+              if (parsed.detectedLanguage) detectedLanguage = normalizeChatLang(parsed.detectedLanguage);
+              if (typeof parsed.translatedText === 'string' && parsed.translatedText.trim()) {
+                translatedText = parsed.translatedText.trim();
+              }
+            } catch {
+              // keep trimmed reply
+            }
+          }
+
+          const tokensOk = protectedTokens.every((tok) => {
+            const compact = tok.replace(/\s+/g, '');
+            return translatedText.includes(tok) || translatedText.replace(/\s+/g, '').includes(compact);
+          });
+          if (!translatedText || !tokensOk) {
+            const err: any = new Error('Traduction rejetée : préservation des montants/références incomplète.');
+            err.statusCode = 502;
+            throw err;
+          }
+
+          return {
+            originalText: rawText,
+            translatedText,
+            detectedLanguage,
+            targetLanguage,
+            engine: out.engine,
+            model: out.model,
+          };
+        };
+
+        const composeContextualMessage = async (params: {
+          scenario: string;
+          channel: 'inapp' | 'sms';
+          recipientRole: 'CLIENT' | 'VENDOR' | 'DELIVERY';
+          recipientName?: string;
+          facts: Record<string, string | number | boolean | undefined>;
+          requiredTokens?: string[];
+          fallbackText: string;
+        }) => {
+          const startedAt = Date.now();
+          const maxChars = params.channel === 'sms' ? 155 : 260;
+          const requiredTokens = (params.requiredTokens || [])
+            .map((t) => String(t || '').trim())
+            .filter(Boolean);
+
+          const isValid = (candidate: string) =>
+            candidate.length > 0 &&
+            candidate.length <= maxChars &&
+            requiredTokens.every((tok) => candidate.includes(tok));
+
+          const recordLog = (out: {
+            text: string;
+            personalized: boolean;
+            engine: string;
+            model: string | null;
+          }) => {
+            aiMessageLogs.unshift({
+              id: `ailog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              scenario: params.scenario,
+              channel: params.channel,
+              recipientRole: params.recipientRole,
+              recipientName: params.recipientName || null,
+              personalized: out.personalized,
+              engine: out.engine,
+              model: out.model,
+              finalText: out.text,
+              latencyMs: Math.max(1, Date.now() - startedAt),
+              createdAt: new Date().toISOString(),
+            });
+            if (aiMessageLogs.length > 200) aiMessageLogs.length = 200;
+            return out;
+          };
+
+          try {
+            if (!aiSettings.autoMessagesEnabled) {
+              return recordLog({ text: params.fallbackText, personalized: false, engine: 'none', model: null });
+            }
+
+            const st = await getAiStatus(undefined, 600);
+            if (!st.available || !st.activeModel) {
+              return recordLog({ text: params.fallbackText, personalized: false, engine: 'none', model: null });
+            }
+
+            const roleLabel =
+              params.recipientRole === 'VENDOR'
+                ? 'Vendeur / Agence partenaire'
+                : params.recipientRole === 'DELIVERY'
+                ? 'Coursier / Livreur'
+                : 'Client';
+            const factLines = Object.entries(params.facts)
+              .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '')
+              .map(([k, v]) => `- ${k} : ${v}`)
+              .join('\n');
+
+            const sys = [
+              'Tu rédiges des messages automatiques pour ZandoGo (Goma & RDC).',
+              getToneInstruction(aiSettings.autoMessagesTone),
+              params.channel === 'sms'
+                ? `Format SMS STRICT : MAXIMUM ${maxChars} caractères, une seule phrase directe, sans emojis ni sauts de ligne.`
+                : `Format notification : MAXIMUM ${maxChars} caractères, 1 à 2 phrases claires et bienveillantes.`,
+              'RÈGLE STRICTE : Recopie EXACTEMENT mot pour mot chaque valeur obligatoire listée ci-dessous sans modifier les montants, références, numéros de commande ou liens. N’invente jamais d’autres chiffres.',
+              'RÈGLE STRICTE : Ne mentionne jamais aucun nom technique d’agrégateur tiers.',
+            ].join(' ');
+
+            const prompt = [
+              `Scénario : ${params.scenario}`,
+              `Destinataire : ${roleLabel}${params.recipientName ? ` (${params.recipientName})` : ''}`,
+              `Faits vérifiés :\n${factLines}`,
+              requiredTokens.length > 0
+                ? `Valeurs OBLIGATOIRES à conserver à l'identique dans le texte : ${requiredTokens.join(' | ')}`
+                : '',
+              `Exemple de référence : ${params.fallbackText}`,
+              `Retourne uniquement le message final prêt à envoyer, sans guillemets.`,
+            ]
+              .filter(Boolean)
+              .join('\n');
+
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2200));
+            const aiPromise = runHybridAi(sys, [{ role: 'user', content: prompt }]).catch(() => null);
+            const resAi = await Promise.race([aiPromise, timeoutPromise]);
+            if (!resAi) {
+              return recordLog({ text: params.fallbackText, personalized: false, engine: 'none', model: null });
+            }
+
+            const cleaned = resAi.reply
+              .replace(/^["«\s]+|["»\s]+$/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            if (isValid(cleaned)) {
+              return recordLog({ text: cleaned, personalized: true, engine: resAi.engine, model: resAi.model });
+            }
+          } catch {
+            // fallback cleanly
+          }
+          return recordLog({ text: params.fallbackText, personalized: false, engine: 'none', model: null });
         };
 
         // --- AUTH ---
@@ -1501,15 +2066,98 @@ function mockApiPlugin(): Plugin {
         // --- UPLOADS ---
         if (path === '/uploads/presign' && method === 'POST') {
           readBody().then((body) => {
+            const purpose = body.purpose || 'PRODUCT_IMAGE';
+            const extMap: Record<string, string> = {
+              'image/jpeg': 'jpg',
+              'image/png': 'png',
+              'image/webp': 'webp',
+              'application/pdf': 'pdf',
+              'video/mp4': 'mp4',
+              'video/webm': 'webm',
+              'video/quicktime': 'mov',
+            };
+            const ext = extMap[body.contentType] || 'jpg';
+            const folder =
+              purpose === 'KYC_DOCUMENT'
+                ? 'kyc'
+                : purpose === 'PRODUCT_VIDEO'
+                ? 'products-videos'
+                : purpose === 'CHAT_IMAGE'
+                ? 'chat'
+                : 'products';
+            const key = `${folder}/${currentUser.id}/${randomUUID()}.${ext}`;
             json({
               mode: 'local',
-              key: `uploads/${(body.purpose || 'PRODUCT_IMAGE').toLowerCase()}-${Date.now()}`,
+              key,
             });
           });
           return;
         }
         if (path === '/uploads/local' && method === 'POST') {
-          return json({ key: `uploads/local-${Date.now()}.jpg` });
+          readRawBody().then((raw) => {
+            const contentTypeHeader = String(req.headers['content-type'] || '');
+            const boundaryMatch = contentTypeHeader.match(/boundary=([^;]+)/i);
+            if (!boundaryMatch) {
+              return json({ statusCode: 400, message: 'Multipart boundary manquant' }, 400);
+            }
+            const boundary = boundaryMatch[1].trim().replace(/^"|"$/g, '');
+            const delimiter = Buffer.from(`--${boundary}`);
+            const fields: Record<string, string> = {};
+            let uploaded: { buffer: Buffer; contentType: string; fileName: string } | null = null;
+
+            let offset = raw.indexOf(delimiter);
+            while (offset !== -1) {
+              const partStart = offset + delimiter.length;
+              if (raw.subarray(partStart, partStart + 2).toString('utf8') === '--') break;
+              const nextOffset = raw.indexOf(delimiter, partStart);
+              if (nextOffset === -1) break;
+
+              const part = raw.subarray(partStart + 2, nextOffset - 2);
+              const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
+              if (headerEnd !== -1) {
+                const headersText = part.subarray(0, headerEnd).toString('utf8');
+                const bodyBuf = part.subarray(headerEnd + 4);
+                const nameMatch = headersText.match(/name="([^"]+)"/);
+                const fileNameMatch = headersText.match(/filename="([^"]*)"/);
+                const mimeMatch = headersText.match(/Content-Type:\s*([^\r\n;]+)/i);
+                const fieldName = nameMatch?.[1];
+                if (fieldName === 'file' && fileNameMatch) {
+                  uploaded = {
+                    buffer: bodyBuf,
+                    contentType: mimeMatch?.[1]?.trim() || 'application/octet-stream',
+                    fileName: fileNameMatch[1] || 'document',
+                  };
+                } else if (fieldName) {
+                  fields[fieldName] = bodyBuf.toString('utf8');
+                }
+              }
+              offset = nextOffset;
+            }
+
+            if (!uploaded || uploaded.buffer.length === 0) {
+              return json({ statusCode: 400, message: 'Choisissez un document à envoyer' }, 400);
+            }
+            const key = fields.key || `kyc/${currentUser.id}/${randomUUID()}.jpg`;
+            uploadedLocalFiles.set(key, uploaded);
+            json({ key });
+          });
+          return;
+        }
+        const readLocalUploadMatch = path.match(/^\/uploads\/local\/(.+)$/);
+        if (readLocalUploadMatch && method === 'GET') {
+          const decodedPath = decodeURIComponent(readLocalUploadMatch[1]);
+          const found =
+            uploadedLocalFiles.get(decodedPath) ||
+            uploadedLocalFiles.get(`kyc/${decodedPath}`);
+          if (!found) {
+            return json({ statusCode: 404, message: 'Document introuvable' }, 404);
+          }
+          res.statusCode = 200;
+          res.setHeader('Content-Type', found.contentType);
+          res.setHeader('Cache-Control', 'private, no-store');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.end(found.buffer);
+          return;
         }
 
         // --- CART ---
@@ -1590,6 +2238,33 @@ function mockApiPlugin(): Plugin {
         if (path === '/delivery/options' && method === 'GET') {
           return json(deliveryOptions);
         }
+        if (path === '/delivery/agents/apply' && method === 'POST') {
+          readBody().then((body) => {
+            const vehicleType = String(body.vehicleType || 'moto').toUpperCase();
+            const existing = pendingAgents.find((a) => a.user.id === currentUser.id);
+            if (existing) {
+              return json({ statusCode: 400, message: 'Une candidature livreur existe déjà pour ce compte' }, 400);
+            }
+            agentProfile.vehicleType = vehicleType;
+            const driverDocs = myKycDocuments
+              .filter((d) => d.type === 'DRIVER_LICENSE')
+              .map((d) => ({ id: d.id, type: d.type, status: d.status, createdAt: d.createdAt }));
+            const newPending = {
+              id: `agent-${Date.now()}`,
+              vehicleType,
+              user: {
+                id: currentUser.id,
+                fullName: currentUser.fullName,
+                email: currentUser.email,
+                phone: currentUser.phone,
+                kycDocuments: driverDocs,
+              },
+            };
+            pendingAgents.unshift(newPending);
+            json(newPending, 201);
+          });
+          return;
+        }
         if (path === '/delivery/agents/me' && method === 'GET') {
           return json(agentProfile);
         }
@@ -1613,6 +2288,19 @@ function mockApiPlugin(): Plugin {
         }
         const approveAgentMatch = path.match(/^\/delivery\/agents\/([^/]+)\/approve$/);
         if (approveAgentMatch && method === 'PATCH') {
+          const targetAgent = pendingAgents.find((a) => a.id === approveAgentMatch[1]);
+          if (!targetAgent) {
+            return json({ statusCode: 404, message: 'Livreur introuvable' }, 404);
+          }
+          const hasApprovedKyc = (targetAgent.user?.kycDocuments || []).some(
+            (d: any) => d.status === 'APPROVED',
+          );
+          if (!hasApprovedKyc) {
+            return json(
+              { statusCode: 400, message: "Le KYC (permis/pièce d'identité) n'est pas encore approuvé" },
+              400,
+            );
+          }
           pendingAgents = pendingAgents.filter((a) => a.id !== approveAgentMatch[1]);
           return json({ success: true });
         }
@@ -1689,20 +2377,49 @@ function mockApiPlugin(): Plugin {
         }
         const deliveryCompleteMatch = path.match(/^\/delivery\/deliveries\/([^/]+)\/complete$/);
         if (deliveryCompleteMatch && method === 'POST') {
-          readBody().then(() => {
+          readBody().then(async (body) => {
             const job = deliveryJobs.find((j) => j.id === deliveryCompleteMatch[1]);
+            const ordNum = job?.subOrder?.order?.orderNumber || 'Commande';
+            const proofType = body?.proofType || 'OTP_CODE';
+            const rawProofUrl = typeof body?.fileUrl === 'string' ? body.fileUrl.trim() : '';
+            const safeProofUrl =
+              rawProofUrl &&
+              (rawProofUrl.startsWith('/') ||
+                (rawProofUrl.startsWith('https://') && !rawProofUrl.toLowerCase().includes('.svg')) ||
+                /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(rawProofUrl))
+                ? rawProofUrl
+                : undefined;
+
+            const proofPayload = {
+              proofType,
+              fileUrl: safeProofUrl,
+              recordedAt: new Date().toISOString(),
+            };
+
             if (job) {
               job.status = 'DELIVERED';
+              job.deliveryProof = proofPayload;
               const ord = orders.find((o) => o.id === job.subOrder?.order?.id);
               if (ord) {
                 ord.status = 'DELIVERED';
+                ord.deliveryProof = proofPayload;
               }
             }
             agentProfile.status = 'AVAILABLE';
+            const delFallback = `Bonne nouvelle ! Votre colis ${ordNum} vient d’être remis avec preuve de livraison. Merci pour votre confiance sur ZandoGo !`;
+            const delMsg = await composeContextualMessage({
+              scenario: 'DELIVERY_COMPLETED',
+              channel: 'inapp',
+              recipientRole: 'CLIENT',
+              recipientName: currentUser.fullName,
+              facts: { orderNumber: ordNum, agentName: job?.agent?.user?.fullName || 'Coursier ZandoGo' },
+              requiredTokens: [ordNum],
+              fallbackText: delFallback,
+            });
             notifications.unshift({
               id: `notif-${Date.now()}`,
               title: 'Livraison confirmée avec preuve !',
-              body: `Le colis ${job?.subOrder?.order?.orderNumber || ''} a bien été remis au destinataire.`,
+              body: delMsg.text,
               isRead: false,
               createdAt: new Date().toISOString(),
             });
@@ -2046,7 +2763,7 @@ function mockApiPlugin(): Plugin {
           return { code: 'MOBILE_MONEY_MPESA', label: 'M-Pesa Vodacom' };
         }
 
-        function fulfillDigitalDownloadsAutomatically(
+        async function fulfillDigitalDownloadsAutomatically(
           ord: any,
           smsTarget: string,
           paymentRef: string,
@@ -2082,16 +2799,58 @@ function mockApiPlugin(): Plugin {
 
           const firstDl = ord.digitalDownloads?.[0];
           const fullUrl = firstDl ? `${originHost}${firstDl.downloadUrl}` : '';
-          const smsBody = firstDl
-            ? `[SMS] ZandoGo Goma : Paiement ${operatorLabel} $${Number(ord.total).toFixed(2)} confirmé (${paymentRef}). Lien direct de votre livre (${firstDl.fileName}) envoyé automatiquement : ${fullUrl}`
-            : `[SMS] ZandoGo Goma : Commande ${ord.orderNumber} confirmée via ${operatorLabel} (${paymentRef}). Séquestre actif.`;
+          const amountStr = `$${Number(ord.total).toFixed(2)}`;
+          const fallbackSms = firstDl
+            ? `Merci ! Paiement ${operatorLabel} ${amountStr} (${paymentRef}) OK. Votre PDF ${firstDl.fileName} : ${fullUrl}`
+            : `Merci ! Commande ${ord.orderNumber} (${amountStr}) confirmée via ${operatorLabel} (Réf ${paymentRef}). Séquestre 48h actif.`;
+          const fallbackInApp = firstDl
+            ? `Merci ${currentUser.fullName} ! Votre paiement ${operatorLabel} (${amountStr} · Réf ${paymentRef}) est confirmé. Votre livre (${firstDl.fileName}) est prêt à télécharger : ${fullUrl}`
+            : `Merci ${currentUser.fullName} ! Votre commande ${ord.orderNumber} (${amountStr}) via ${operatorLabel} (Réf ${paymentRef}) est confirmée et protégée sous séquestre 48h.`;
+
+          const [smsComposed, inAppComposed] = await Promise.all([
+            composeContextualMessage({
+              scenario: firstDl ? 'ORDER_PAID_DIGITAL' : 'ORDER_PAID_PHYSICAL',
+              channel: 'sms',
+              recipientRole: 'CLIENT',
+              recipientName: currentUser.fullName,
+              facts: {
+                orderNumber: ord.orderNumber,
+                amount: amountStr,
+                operatorLabel,
+                paymentRef,
+                fileName: firstDl?.fileName,
+                downloadUrl: fullUrl || undefined,
+              },
+              requiredTokens: firstDl
+                ? [amountStr, paymentRef, fullUrl]
+                : [ord.orderNumber, amountStr, paymentRef],
+              fallbackText: fallbackSms,
+            }),
+            composeContextualMessage({
+              scenario: firstDl ? 'ORDER_PAID_DIGITAL' : 'ORDER_PAID_PHYSICAL',
+              channel: 'inapp',
+              recipientRole: 'CLIENT',
+              recipientName: currentUser.fullName,
+              facts: {
+                orderNumber: ord.orderNumber,
+                amount: amountStr,
+                operatorLabel,
+                paymentRef,
+                fileName: firstDl?.fileName,
+              },
+              requiredTokens: firstDl
+                ? [paymentRef, firstDl.fileName]
+                : [ord.orderNumber, amountStr, paymentRef],
+              fallbackText: fallbackInApp,
+            }),
+          ]);
 
           ord.smsDispatches = [
             {
               id: `sms-${Date.now()}`,
               provider: 'AFRICASTALKING',
               to: smsTarget,
-              message: smsBody,
+              message: `[SMS] ${smsComposed.text}`,
               sentAt: nowIso,
             },
             ...(ord.smsDispatches || []),
@@ -2102,7 +2861,7 @@ function mockApiPlugin(): Plugin {
             title: firstDl
               ? `Lien PDF envoyé automatiquement (${ord.orderNumber})`
               : `Paiement ${operatorLabel} confirmé (${paymentRef})`,
-            body: smsBody,
+            body: inAppComposed.text,
             channel: 'SMS_AFRICASTALKING',
             smsRecipient: smsTarget,
             actionUrl: firstDl?.downloadUrl,
@@ -2113,7 +2872,7 @@ function mockApiPlugin(): Plugin {
         }
 
         if (path === '/payments/initiate' && method === 'POST') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const ord = orders.find((o) => o.id === body.orderId);
             const paymentRef = `ZG-PAY-${Date.now().toString().slice(-6)}`;
             const smsTarget = body.phoneNumber || currentUser.phone || '+243820001122';
@@ -2143,7 +2902,18 @@ function mockApiPlugin(): Plugin {
                 ord.paymentGateway = 'CASH_ON_DELIVERY';
                 ord.paymentOperator = 'CASH_ON_DELIVERY';
 
-                const smsBody = `[SMS] ZandoGo Goma : Commande ${ord.orderNumber} confirmée (paiement en espèces à la livraison · $${chargedTotal.toFixed(2)}).`;
+                const amtStr = `$${chargedTotal.toFixed(2)}`;
+                const cashFallback = `Merci ${currentUser.fullName} ! Commande ${ord.orderNumber} (${amtStr}) confirmée en espèces à la livraison.`;
+                const cashSms = await composeContextualMessage({
+                  scenario: 'ORDER_CASH_CONFIRMED',
+                  channel: 'sms',
+                  recipientRole: 'CLIENT',
+                  recipientName: currentUser.fullName,
+                  facts: { orderNumber: ord.orderNumber, amount: amtStr },
+                  requiredTokens: [ord.orderNumber, amtStr],
+                  fallbackText: cashFallback,
+                });
+                const smsBody = `[SMS] ${cashSms.text}`;
                 ord.smsDispatches = [
                   { id: `sms-${Date.now()}`, provider: 'AFRICASTALKING', to: smsTarget, message: smsBody, sentAt: paidAt },
                   ...(ord.smsDispatches || []),
@@ -2151,23 +2921,34 @@ function mockApiPlugin(): Plugin {
                 notifications.unshift({
                   id: `notif-${Date.now()}`,
                   title: 'Commande confirmée + SMS envoyé',
-                  body: smsBody,
+                  body: cashSms.text,
                   channel: 'SMS_AFRICASTALKING',
                   smsRecipient: smsTarget,
                   isRead: false,
                   createdAt: paidAt,
                 });
               } else {
-                ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : 'ESCROW_HELD';
+                const immediatePay = Boolean(platformPricing.allowImmediateVendorWithdrawal);
+                ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : immediatePay ? 'PROCESSING' : 'ESCROW_HELD';
                 ord.isPaid = true;
                 ord.paymentStatus = 'PAID';
                 ord.paidAt = paidAt;
-                ord.escrowReleaseAt = escrowReleaseAt;
+                ord.escrowReleaseAt = immediatePay ? paidAt : escrowReleaseAt;
                 ord.paymentGateway = op.code === 'CARD_STRIPE' ? 'CARD' : 'MOBILE_MONEY';
                 ord.paymentOperator = op.code;
                 ord.paymentRef = paymentRef;
-                ord.escrowStatus = ord.noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD';
-                fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
+                ord.escrowStatus = ord.noDeliveryNeeded || immediatePay ? 'RELEASED_TO_VENDOR' : 'HELD';
+                if (immediatePay) {
+                  (ord.subOrders || []).forEach((so: any) => {
+                    const st = stores.find((s) => s.id === so.storeId);
+                    if (st && !st.payoutBlocked) {
+                      const comm = Number(st.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+                      const net = Number((Number(ord.total || 0) * (1 - comm)).toFixed(2));
+                      st.balanceUsd = Number(((st.balanceUsd || 0) + net).toFixed(2));
+                    }
+                  });
+                }
+                await fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
               }
             }
 
@@ -2224,7 +3005,7 @@ function mockApiPlugin(): Plugin {
 
         const payOrderMatch = path.match(/^\/orders\/([^/]+)\/pay$/);
         if (payOrderMatch && method === 'POST') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const ord = orders.find((o) => o.id === payOrderMatch[1]);
             const paymentRef = `ZG-PAY-${Date.now().toString().slice(-6)}`;
             const smsTarget = body.phoneNumber || currentUser.phone || '+243820001122';
@@ -2236,20 +3017,31 @@ function mockApiPlugin(): Plugin {
             const paidAt = new Date().toISOString();
             const escrowReleaseAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
+            const immediatePay = Boolean(platformPricing.allowImmediateVendorWithdrawal);
             if (ord) {
-              ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : 'ESCROW_HELD';
+              ord.status = ord.noDeliveryNeeded ? 'COMPLETED' : immediatePay ? 'PROCESSING' : 'ESCROW_HELD';
               ord.isPaid = true;
               ord.paymentStatus = 'PAID';
               ord.paidAt = paidAt;
-              ord.escrowReleaseAt = escrowReleaseAt;
+              ord.escrowReleaseAt = immediatePay ? paidAt : escrowReleaseAt;
               ord.transactionFeePercent = feePct;
               ord.transactionFeeAmount = feeAmt;
               ord.chargedTotal = chargedTotal;
               ord.paymentGateway = op.code === 'CARD_STRIPE' ? 'CARD' : 'MOBILE_MONEY';
               ord.paymentOperator = op.code;
               ord.paymentRef = paymentRef;
-              ord.escrowStatus = ord.noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD';
-              fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
+              ord.escrowStatus = ord.noDeliveryNeeded || immediatePay ? 'RELEASED_TO_VENDOR' : 'HELD';
+              if (immediatePay) {
+                (ord.subOrders || []).forEach((so: any) => {
+                  const st = stores.find((s) => s.id === so.storeId);
+                  if (st && !st.payoutBlocked) {
+                    const comm = Number(st.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+                    const net = Number((Number(ord.total || 0) * (1 - comm)).toFixed(2));
+                    st.balanceUsd = Number(((st.balanceUsd || 0) + net).toFixed(2));
+                  }
+                });
+              }
+              await fulfillDigitalDownloadsAutomatically(ord, smsTarget, paymentRef, op.label);
             }
             json({
               success: true,
@@ -2260,10 +3052,12 @@ function mockApiPlugin(): Plugin {
               transactionFeeAmount: feeAmt,
               chargedTotal,
               paidAt,
-              escrowReleaseAt,
+              escrowReleaseAt: immediatePay ? paidAt : escrowReleaseAt,
               digitalDownloads: ord?.digitalDownloads || [],
               message: ord?.digitalDownloads?.length
                 ? `Paiement ${op.label} $${chargedTotal.toFixed(2)} (${paymentRef}) validé ! Lien de téléchargement envoyé automatiquement.`
+                : immediatePay
+                ? `Commande réglée via ${op.label} pour $${chargedTotal.toFixed(2)} (${paymentRef}). Versement direct au vendeur effectué.`
                 : `Commande réglée via ${op.label} pour $${chargedTotal.toFixed(2)} (${paymentRef}). Décompte 48h démarré.`,
             });
           });
@@ -2575,8 +3369,14 @@ function mockApiPlugin(): Plugin {
         if (path === '/vendors/stores/mine' && method === 'GET') {
           return json(stores);
         }
+        if (path === '/vendors/stores/admin/all' && method === 'GET') {
+          return json(stores);
+        }
+        if (path === '/vendors/stores/pending' && method === 'GET') {
+          return json(stores.filter((s) => s.status === 'PENDING'));
+        }
         if (path === '/vendors/stores' && method === 'POST') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const existingSlug = stores.find((s) => s.slug === body.slug);
             if (existingSlug) {
               return json({ statusCode: 409, message: 'Ce slug de boutique est déjà utilisé.' }, 409);
@@ -2656,10 +3456,27 @@ function mockApiPlugin(): Plugin {
             };
             stores.push(newStore);
 
+            const storeFallback = `Bienvenue sur ZandoGo ! Votre boutique "${newStore.storeName}" est prête (Réf ${paymentRef}).`;
+            const storeMsg = await composeContextualMessage({
+              scenario: 'STORE_CREATED_OR_SERVICE',
+              channel: 'sms',
+              recipientRole: 'VENDOR',
+              recipientName: currentUser.fullName,
+              facts: {
+                storeName: newStore.storeName,
+                amountUsd: `$${feeUsd.toFixed(2)}`,
+                operatorLabel: op.label,
+                paymentRef,
+                isTransportAgency: newStore.isTransportAgency,
+              },
+              requiredTokens: [newStore.storeName, paymentRef],
+              fallbackText: storeFallback,
+            });
+
             notifications.unshift({
               id: `notif-${Date.now()}`,
               title: `Boutique achetée & activée ($${feeUsd.toFixed(2)} · ${op.label})`,
-              body: `[SMS] Boutique "${newStore.storeName}" créée (${newStore.isTransportAgency ? `Agence Transport · ${newStore.transportDestinations.length} lignes` : requestedModules.join(', ')} · Réf : ${paymentRef}).`,
+              body: `[SMS] ${storeMsg.text}`,
               channel: 'SMS_AFRICASTALKING',
               smsRecipient: smsTarget,
               isRead: false,
@@ -2754,13 +3571,78 @@ function mockApiPlugin(): Plugin {
                 : '/src/assets/images/marketplace_parcel_default_1794567970796.jpg';
             const cat = categories.find((c) => c.id === body.categoryId) || categories[0];
 
+            const rawImages: Array<string | { url?: string; altText?: string }> = Array.isArray(body.images)
+              ? body.images
+              : [];
+
+            const isSafeMediaUrl = (val: string, kind: 'image' | 'video') => {
+              const trimmed = val.trim();
+              if (!trimmed) return false;
+              if (trimmed.startsWith('/')) return !trimmed.toLowerCase().endsWith('.svg');
+              if (trimmed.startsWith('https://')) return !trimmed.toLowerCase().includes('.svg');
+              if (kind === 'image') {
+                return /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed);
+              }
+              return /^data:video\/(mp4|webm|quicktime);base64,[A-Za-z0-9+/=]+$/i.test(trimmed);
+            };
+
+            if (rawImages.length > 3) {
+              return json(
+                {
+                  statusCode: 400,
+                  message: 'Vous pouvez ajouter jusqu’à 3 photos maximum par produit.',
+                },
+                400,
+              );
+            }
+
+            const normalizedImages = rawImages
+              .map((entry, idx) => {
+                const url = typeof entry === 'string' ? entry : String(entry?.url || '');
+                const altText =
+                  typeof entry === 'string' ? body.title : String(entry?.altText || body.title || '').trim();
+                return { url: url.trim(), altText: altText || body.title, idx };
+              })
+              .filter((entry) => isSafeMediaUrl(entry.url, 'image'))
+              .slice(0, 3)
+              .map((entry) => ({
+                id: `img-${Date.now()}-${entry.idx}`,
+                url: entry.url,
+                altText: entry.altText,
+              }));
+
+            if (Array.isArray(body.images) && normalizedImages.length < 1) {
+              return json(
+                {
+                  statusCode: 400,
+                  message:
+                    'Veuillez ajouter au moins 1 photo valide pour ce produit (3 photos maximum).',
+                },
+                400,
+              );
+            }
+
+            if (body.videoDurationSec !== undefined && body.videoDurationSec !== null) {
+              const dur = Number(body.videoDurationSec);
+              if (!Number.isFinite(dur) || dur < 1 || dur > 10) {
+                return json(
+                  {
+                    statusCode: 400,
+                    message: 'La vidéo de présentation ne doit pas dépasser 10 secondes.',
+                  },
+                  400,
+                );
+              }
+            }
+
+            const safeVideoUrl =
+              typeof body.videoUrl === 'string' && isSafeMediaUrl(body.videoUrl, 'video')
+                ? body.videoUrl.trim()
+                : undefined;
+
             const uploadedImages =
-              Array.isArray(body.images) && body.images.length > 0
-                ? body.images.map((url: string, idx: number) => ({
-                    id: `img-${Date.now()}-${idx}`,
-                    url,
-                    altText: body.title,
-                  }))
+              normalizedImages.length > 0
+                ? normalizedImages
                 : [{ id: `img-${Date.now()}`, url: fallbackImg, altText: body.title }];
 
             const rawVariants =
@@ -2825,6 +3707,9 @@ function mockApiPlugin(): Plugin {
               rating: 5.0,
               reviewCount: 0,
               images: uploadedImages,
+              videoUrl: safeVideoUrl,
+              videoDurationSec:
+                safeVideoUrl && body.videoDurationSec ? Math.min(10, Math.max(1, Math.round(Number(body.videoDurationSec)))) : undefined,
               variants: rawVariants,
               store: {
                 id: store.id,
@@ -2847,8 +3732,69 @@ function mockApiPlugin(): Plugin {
         if (vendorStoreProductSingleMatch && method === 'PATCH') {
           readBody().then((body) => {
             const prod = products.find((p) => p.id === vendorStoreProductSingleMatch[2]);
-            if (prod && body.status) prod.status = body.status;
-            json(prod || { success: true });
+            if (!prod) {
+              return json({ statusCode: 404, message: 'Produit introuvable.' }, 404);
+            }
+
+            if (body.status) prod.status = body.status;
+            if (typeof body.title === 'string' && body.title.trim().length >= 2) {
+              prod.title = body.title.trim();
+            }
+            if (typeof body.description === 'string') {
+              prod.description = body.description;
+            }
+            if (body.basePriceUsd !== undefined && Number(body.basePriceUsd) > 0) {
+              prod.basePriceUsd = Number(body.basePriceUsd);
+              prod.basePriceCdf = Math.round(prod.basePriceUsd * exchangeRate);
+            }
+
+            if (Array.isArray(body.images)) {
+              if (body.images.length < 1 || body.images.length > 3) {
+                return json(
+                  { statusCode: 400, message: 'Un produit doit contenir entre 1 et 3 photos.' },
+                  400,
+                );
+              }
+              const validImgs = body.images
+                .map((entry: any, idx: number) => {
+                  const url = typeof entry === 'string' ? entry : String(entry?.url || '').trim();
+                  const altText =
+                    typeof entry === 'string' ? prod.title : String(entry?.altText || prod.title).trim();
+                  const isSafe =
+                    (url.startsWith('/') && !url.toLowerCase().endsWith('.svg')) ||
+                    (url.startsWith('https://') && !url.toLowerCase().includes('.svg')) ||
+                    /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(url);
+                  return isSafe ? { id: `img-${Date.now()}-${idx}`, url, altText: altText || prod.title } : null;
+                })
+                .filter(Boolean);
+
+              if (validImgs.length < 1) {
+                return json({ statusCode: 400, message: 'Au moins 1 photo valide est requise.' }, 400);
+              }
+              prod.images = validImgs;
+            }
+
+            if (body.removeVideo) {
+              prod.videoUrl = undefined;
+              prod.videoDurationSec = undefined;
+            } else if (typeof body.videoUrl === 'string' && body.videoUrl.trim()) {
+              const vUrl = body.videoUrl.trim();
+              const isSafeVideo =
+                vUrl.startsWith('/') ||
+                (vUrl.startsWith('https://') && !vUrl.toLowerCase().includes('.svg')) ||
+                /^data:video\/(mp4|webm|quicktime);base64,[A-Za-z0-9+/=]+$/i.test(vUrl);
+              const dur = body.videoDurationSec !== undefined ? Number(body.videoDurationSec) : 10;
+              if (!isSafeVideo || !Number.isFinite(dur) || dur < 1 || dur > 10) {
+                return json(
+                  { statusCode: 400, message: 'Vidéo invalide ou supérieure à 10 secondes.' },
+                  400,
+                );
+              }
+              prod.videoUrl = vUrl;
+              prod.videoDurationSec = Math.round(dur);
+            }
+
+            json(enrichProduct(prod));
           });
           return;
         }
@@ -2913,7 +3859,7 @@ function mockApiPlugin(): Plugin {
 
         const vendorStorePayoutBlockMatch = path.match(/^\/vendors\/stores\/([^/]+)\/payout-block$/);
         if (vendorStorePayoutBlockMatch && method === 'PATCH') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const st = stores.find((s) => s.id === vendorStorePayoutBlockMatch[1]);
             if (st) {
               const blocked = Boolean(body.blocked);
@@ -2921,14 +3867,23 @@ function mockApiPlugin(): Plugin {
               st.payoutBlockReason = blocked
                 ? body.reason || 'Retraits bloqués par l’administration suite à un litige client pertinent.'
                 : null;
+              const fallbackTxt =
+                st.payoutBlockReason ||
+                `Bonne nouvelle : les retraits Mobile Money / banque sur « ${st.storeName} » sont de nouveau actifs.`;
+              const composed = await composeContextualMessage({
+                scenario: 'VENDOR_PAYOUT_STATUS',
+                channel: 'inapp',
+                recipientRole: 'VENDOR',
+                facts: { storeName: st.storeName, payoutBlocked: blocked, reason: st.payoutBlockReason || 'Levée du blocage' },
+                requiredTokens: [st.storeName],
+                fallbackText: fallbackTxt,
+              });
               notifications.unshift({
                 id: `notif-${Date.now()}`,
                 title: blocked
                   ? `Retraits bloqués : ${st.storeName}`
                   : `Retraits débloqués : ${st.storeName}`,
-                body:
-                  st.payoutBlockReason ||
-                  'Les retraits Mobile Money / banque sont de nouveau autorisés sur votre boutique.',
+                body: composed.text,
                 isRead: false,
                 createdAt: new Date().toISOString(),
               });
@@ -2940,18 +3895,27 @@ function mockApiPlugin(): Plugin {
 
         const vendorStoreImmediateMatch = path.match(/^\/vendors\/stores\/([^/]+)\/immediate-withdrawal$/);
         if (vendorStoreImmediateMatch && method === 'PATCH') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const st = stores.find((s) => s.id === vendorStoreImmediateMatch[1]);
             if (st) {
               st.immediateWithdrawalEnabled = Boolean(body.enabled);
+              const fallbackTxt = st.immediateWithdrawalEnabled
+                ? `Bonne nouvelle ! Le Super Admin autorise désormais les retraits immédiats sans attendre les 48h sur « ${st.storeName} ».`
+                : `Bonjour, le délai standard de 48h dès paiement s’applique désormais à « ${st.storeName} ».`;
+              const composed = await composeContextualMessage({
+                scenario: 'VENDOR_PAYOUT_STATUS',
+                channel: 'inapp',
+                recipientRole: 'VENDOR',
+                facts: { storeName: st.storeName, immediateWithdrawalEnabled: st.immediateWithdrawalEnabled },
+                requiredTokens: [st.storeName],
+                fallbackText: fallbackTxt,
+              });
               notifications.unshift({
                 id: `notif-${Date.now()}`,
                 title: st.immediateWithdrawalEnabled
                   ? `Retrait immédiat autorisé : ${st.storeName}`
                   : `Délai standard 48h rétabli : ${st.storeName}`,
-                body: st.immediateWithdrawalEnabled
-                  ? `Le Super Admin autorise désormais les retraits immédiats sans attendre les 48h sur « ${st.storeName} ».`
-                  : `Le délai standard de 48h dès paiement s’applique désormais à « ${st.storeName} ».`,
+                body: composed.text,
                 isRead: false,
                 createdAt: new Date().toISOString(),
               });
@@ -3004,6 +3968,7 @@ function mockApiPlugin(): Plugin {
             const doc = {
               id: `kyc-${Date.now()}`,
               type: body.type || 'ID_CARD',
+              fileKey: body.fileKey || undefined,
               status: 'PENDING',
               createdAt: new Date().toISOString(),
             };
@@ -3012,6 +3977,13 @@ function mockApiPlugin(): Plugin {
               ...doc,
               user: { id: currentUser.id, fullName: currentUser.fullName, email: currentUser.email, phone: currentUser.phone },
             });
+            const matchingAgent = pendingAgents.find((a) => a.user?.id === currentUser.id);
+            if (matchingAgent && doc.type === 'DRIVER_LICENSE') {
+              matchingAgent.user.kycDocuments = [
+                { id: doc.id, type: doc.type, status: doc.status, createdAt: doc.createdAt, fileKey: doc.fileKey },
+                ...(matchingAgent.user.kycDocuments || []),
+              ];
+            }
             json(doc, 201);
           });
           return;
@@ -3019,19 +3991,132 @@ function mockApiPlugin(): Plugin {
         if (path === '/kyc/documents/pending' && method === 'GET') {
           return json(pendingKycDocuments);
         }
-        const kycSignedMatch = path.match(/^\/kyc\/documents\/([^/]+)\/signed-url$/);
-        if (kycSignedMatch && method === 'GET') {
-          const svg = encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440"><rect width="100%" height="100%" fill="#F6F4EE"/><rect x="24" y="24" width="672" height="392" rx="18" fill="#ffffff" stroke="#26735B" stroke-width="3"/><text x="56" y="88" font-family="sans-serif" font-size="22" font-weight="bold" fill="#172320">JUSTIFICATIF KYC ZANDOGO RDC</text><text x="56" y="132" font-family="monospace" font-size="14" fill="#26735B">Document ID : ${kycSignedMatch[1]}</text><text x="56" y="176" font-family="sans-serif" font-size="16" fill="#202A27">Registre Commercial & Identité Vérifiable</text><rect x="56" y="216" width="240" height="140" rx="12" fill="#172320"/><text x="86" y="292" font-family="sans-serif" font-size="18" font-weight="bold" fill="#F2B84B">SCEAU RCCM RDC</text></svg>`,
+        const kycFileUrlMatch = path.match(/^\/kyc\/documents\/([^/]+)\/(?:file-url|signed-url)$/);
+        if (kycFileUrlMatch && method === 'GET') {
+          const docId = kycFileUrlMatch[1];
+          const fromPending = pendingKycDocuments.find((d) => d.id === docId);
+          const fromMine = myKycDocuments.find((d) => d.id === docId);
+          let fromAgentDoc: any = null;
+          let fromAgentHolder: any = null;
+          for (const ag of pendingAgents) {
+            const hit = (ag.user?.kycDocuments || []).find((d: any) => d.id === docId);
+            if (hit) {
+              fromAgentDoc = hit;
+              fromAgentHolder = ag.user;
+              break;
+            }
+          }
+
+          const targetDoc = fromPending || fromMine || fromAgentDoc;
+          if (!targetDoc) {
+            return json({ statusCode: 404, message: 'Document justificatif introuvable.' }, 404);
+          }
+
+          if (targetDoc.fileKey && uploadedLocalFiles.has(targetDoc.fileKey)) {
+            const stored = uploadedLocalFiles.get(targetDoc.fileKey)!;
+            return json({
+              url: `/api/uploads/local/${encodeURI(targetDoc.fileKey)}`,
+              mimeType: stored.contentType,
+              fileName: stored.fileName,
+            });
+          }
+
+          const escapeXml = (str: string) =>
+            String(str)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+
+          const holderName = escapeXml(
+            fromPending?.user?.fullName || fromAgentHolder?.fullName || currentUser.fullName || 'Titulaire vérifié',
           );
-          return json({ url: `data:image/svg+xml;charset=utf-8,${svg}` });
+          const holderContact = escapeXml(
+            fromPending?.user?.email ||
+              fromPending?.user?.phone ||
+              fromAgentHolder?.email ||
+              fromAgentHolder?.phone ||
+              currentUser.email ||
+              '',
+          );
+          const docType = String(targetDoc.type || 'VENDOR_LICENSE');
+          const typeTitle =
+            docType === 'DRIVER_LICENSE'
+              ? 'PERMIS DE CONDUIRE & PIÈCE COURSIER RDC'
+              : docType === 'ID_CARD'
+              ? "CARTE D'IDENTITÉ / PASSEPORT RDC"
+              : 'REGISTRE RCCM & AGRÉMENT COMMERCIAL';
+          const issuedAt = targetDoc.createdAt
+            ? new Date(targetDoc.createdAt).toLocaleDateString('fr-FR')
+            : new Date().toLocaleDateString('fr-FR');
+
+          const svg = encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="520" viewBox="0 0 840 520">` +
+              `<rect width="100%" height="100%" fill="#F6F4EE"/>` +
+              `<rect x="28" y="28" width="784" height="464" rx="20" fill="#ffffff" stroke="#26735B" stroke-width="3"/>` +
+              `<rect x="28" y="28" width="784" height="78" rx="18" fill="#172320"/>` +
+              `<text x="58" y="64" font-family="sans-serif" font-size="18" font-weight="bold" fill="#F2B84B">ZANDOGO CONFORMITÉ · RÉPUBLIQUE DÉMOCRATIQUE DU CONGO</text>` +
+              `<text x="58" y="89" font-family="monospace" font-size="13" fill="#E8ECEA">${escapeXml(typeTitle)}</text>` +
+              `<text x="58" y="150" font-family="sans-serif" font-size="13" fill="#64748B">TITULAIRE DU JUSTIFICATIF</text>` +
+              `<text x="58" y="180" font-family="sans-serif" font-size="24" font-weight="bold" fill="#172320">${holderName}</text>` +
+              `<text x="58" y="210" font-family="monospace" font-size="14" fill="#26735B">${holderContact}</text>` +
+              `<line x1="58" y1="236" x2="782" y2="236" stroke="#E2E8F0" stroke-width="1.5"/>` +
+              `<text x="58" y="274" font-family="monospace" font-size="14" fill="#172320">RÉFÉRENCE : ${escapeXml(docId.toUpperCase())}</text>` +
+              `<text x="58" y="304" font-family="monospace" font-size="14" fill="#172320">PROVINCE  : GOMA / NORD-KIVU · RDC</text>` +
+              `<text x="58" y="334" font-family="monospace" font-size="14" fill="#172320">DÉPOSÉ LE : ${escapeXml(issuedAt)}</text>` +
+              `<text x="58" y="364" font-family="monospace" font-size="14" fill="#172320">STATUT    : ${escapeXml(targetDoc.status || 'PENDING')}</text>` +
+              `<rect x="520" y="264" width="240" height="164" rx="14" fill="#172320"/>` +
+              `<circle cx="640" cy="332" r="38" fill="none" stroke="#F2B84B" stroke-width="3" stroke-dasharray="6 4"/>` +
+              `<text x="640" y="337" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#F2B84B">CERTIFIÉ</text>` +
+              `<text x="640" y="404" text-anchor="middle" font-family="monospace" font-size="11" fill="#F6F4EE">CONTRÔLE ZANDOGO</text>` +
+              `<text x="58" y="452" font-family="sans-serif" font-size="12" fill="#64748B">Document justificatif vérifiable · Accès administrateur journalisé</text>` +
+              `</svg>`,
+          );
+          return json({
+            url: `data:image/svg+xml;charset=utf-8,${svg}`,
+            mimeType: 'image/svg+xml',
+            fileName: `justificatif-${docId}.svg`,
+          });
         }
         const kycReviewMatch = path.match(/^\/kyc\/documents\/([^/]+)\/review$/);
         if (kycReviewMatch && method === 'PATCH') {
-          readBody().then((body) => {
-            pendingKycDocuments = pendingKycDocuments.filter((d) => d.id !== kycReviewMatch[1]);
-            const mine = myKycDocuments.find((d) => d.id === kycReviewMatch[1]);
-            if (mine && body.status) mine.status = body.status;
+          readBody().then(async (body) => {
+            const docId = kycReviewMatch[1];
+            const pendingDoc = pendingKycDocuments.find((d) => d.id === docId);
+            pendingKycDocuments = pendingKycDocuments.filter((d) => d.id !== docId);
+            const mine = myKycDocuments.find((d) => d.id === docId);
+            if (mine && body.status) {
+              mine.status = body.status;
+            }
+            for (const ag of pendingAgents) {
+              for (const d of ag.user?.kycDocuments || []) {
+                if (d.id === docId && body.status) {
+                  d.status = body.status;
+                }
+              }
+            }
+            const docType = mine?.type || pendingDoc?.type || 'ID_CARD';
+            if (body.status) {
+              const kycFallback =
+                body.status === 'APPROVED'
+                  ? `Bravo ! Votre justificatif (${docType}) vient d’être validé sur ZandoGo.`
+                  : `Bonjour, votre justificatif (${docType}) n’a pas pu être validé. Merci de téléverser une photo plus lisible.`;
+              const kycMsg = await composeContextualMessage({
+                scenario: 'KYC_REVIEWED',
+                channel: 'inapp',
+                recipientRole: 'VENDOR',
+                facts: { documentType: docType, decision: body.status },
+                requiredTokens: [docType],
+                fallbackText: kycFallback,
+              });
+              notifications.unshift({
+                id: `notif-${Date.now()}`,
+                title: body.status === 'APPROVED' ? 'Justificatif KYC validé !' : 'Justificatif KYC à renouveler',
+                body: kycMsg.text,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
             json({ success: true });
           });
           return;
@@ -3108,6 +4193,25 @@ function mockApiPlugin(): Plugin {
             stores.forEach((st) => {
               if (st.commissionRate === undefined) st.commissionRate = platformPricing.defaultCommissionPercent;
             });
+            if (platformPricing.allowImmediateVendorWithdrawal) {
+              orders.forEach((o) => {
+                if (o.escrowStatus !== 'HELD') return;
+                const openDispute = disputes.some(
+                  (d) =>
+                    d.orderId === o.id &&
+                    ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'].includes(d.status),
+                );
+                if (openDispute) return;
+                const firstSub = (o.subOrders || [])[0];
+                const st = stores.find((s) => s.id === firstSub?.storeId);
+                if (!st || st.payoutBlocked) return;
+                o.escrowStatus = 'RELEASED_TO_VENDOR';
+                o.escrowReleaseAt = new Date().toISOString();
+                const comm = Number(st.commissionRate ?? platformPricing.defaultCommissionPercent ?? 5) / 100;
+                const net = Number((Number(o.total || 0) * (1 - comm)).toFixed(2));
+                st.balanceUsd = Number(((st.balanceUsd || 0) + net).toFixed(2));
+              });
+            }
             json(platformPricing);
           });
           return;
@@ -3305,6 +4409,19 @@ function mockApiPlugin(): Plugin {
             const severity = body.severity === 'HIGH' ? 'HIGH' : body.severity === 'LOW' ? 'LOW' : 'MEDIUM';
             const autoFreeze = severity === 'HIGH';
 
+            const safeEvidenceImages = Array.isArray(body.evidenceImages)
+              ? body.evidenceImages
+                  .map((u: unknown) => (typeof u === 'string' ? u.trim() : ''))
+                  .filter(
+                    (u: string) =>
+                      Boolean(u) &&
+                      ((u.startsWith('/api/uploads/') && !u.includes('..')) ||
+                        (u.startsWith('https://') && !u.toLowerCase().includes('.svg')) ||
+                        /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(u)),
+                  )
+                  .slice(0, 3)
+              : [];
+
             const newDispute = {
               id: `disp-${Date.now()}`,
               orderId: body.orderId,
@@ -3319,6 +4436,7 @@ function mockApiPlugin(): Plugin {
               reasonCategory: body.reasonCategory || 'OTHER',
               reason: body.description || body.reason || 'Réclamation client',
               description: body.description || body.reason || 'Réclamation client',
+              evidenceImages: safeEvidenceImages,
               escrowAmount: Number(ord?.total || 0),
               createdAt: new Date().toISOString(),
             };
@@ -3384,7 +4502,7 @@ function mockApiPlugin(): Plugin {
         }
         const disputeResolveMatch = path.match(/^\/disputes\/([^/]+)\/resolve$/);
         if (disputeResolveMatch && method === 'PATCH') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const d = disputes.find((x) => x.id === disputeResolveMatch[1]);
             if (d) {
               d.status = body.status || 'RESOLVED_REFUND';
@@ -3404,6 +4522,22 @@ function mockApiPlugin(): Plugin {
                   st.payoutBlockReason = null;
                 }
               }
+              const dispFallback = `Bonjour, l’arbitrage de la commande ${d.orderNumber} est clôturé (${d.status}). ${body.resolutionNote || ''}`.trim();
+              const dispMsg = await composeContextualMessage({
+                scenario: 'DISPUTE_UPDATE',
+                channel: 'inapp',
+                recipientRole: 'CLIENT',
+                facts: { orderNumber: d.orderNumber, decision: d.status, note: body.resolutionNote || '' },
+                requiredTokens: [d.orderNumber],
+                fallbackText: dispFallback,
+              });
+              notifications.unshift({
+                id: `notif-${Date.now()}`,
+                title: `Arbitrage terminé · ${d.orderNumber}`,
+                body: dispMsg.text,
+                isRead: false,
+                createdAt: new Date().toISOString(),
+              });
             }
             disputes = disputes.filter((x) => x.id !== disputeResolveMatch[1]);
             json({ success: true });
@@ -3563,19 +4697,658 @@ function mockApiPlugin(): Plugin {
           return;
         }
 
+        if (path === '/users/me/language' && method === 'PATCH') {
+          readBody().then((body) => {
+            const lang = normalizeChatLang(body?.preferredLanguage);
+            (currentUser as any).preferredLanguage = lang;
+            json({ id: currentUser.id, preferredLanguage: lang });
+          });
+          return;
+        }
+
         const chatMsgMatch = path.match(/^\/chat\/conversations\/([^/]+)\/messages$/);
         if (chatMsgMatch && method === 'POST') {
-          readBody().then((body) => {
+          readBody().then(async (body) => {
             const conv = conversations.find((c) => c.id === chatMsgMatch[1]);
+            const content = String(body?.content || '').trim();
+            const rawAttachment = typeof body?.attachmentUrl === 'string' ? body.attachmentUrl.trim() : '';
+
+            const isSafeChatImage = (val: string) => {
+              if (!val) return true;
+              if (val.startsWith('/api/uploads/local/chat/')) return !val.includes('..');
+              if (val.startsWith('https://')) return !val.toLowerCase().includes('.svg');
+              return /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(val);
+            };
+
+            if (!isSafeChatImage(rawAttachment)) {
+              return json({ statusCode: 400, message: 'Format de photo non autorisé dans le chat.' }, 400);
+            }
+            if (!content && !rawAttachment) {
+              return json({ statusCode: 400, message: 'Écrivez un message ou joignez une photo.' }, 400);
+            }
+
+            const sourceLanguage = body?.senderLanguage ? normalizeChatLang(body.senderLanguage) : 'fr';
+            const explicitTarget =
+              body?.targetLanguage && body.targetLanguage !== 'auto'
+                ? normalizeChatLang(body.targetLanguage)
+                : null;
+            const inferredTarget =
+              explicitTarget ||
+              (sourceLanguage !== 'fr'
+                ? 'fr'
+                : conv?.partnerLanguage && conv.partnerLanguage !== 'fr'
+                ? normalizeChatLang(conv.partnerLanguage)
+                : null);
+
+            const translations: Record<string, string> = {};
+            let translationEngine: string | undefined;
+            let translationModel: string | undefined;
+            let detectedSource = sourceLanguage;
+
+            if (body?.autoTranslate !== false && content && inferredTarget && inferredTarget !== sourceLanguage) {
+              try {
+                const tr = await Promise.race([
+                  translateChatTextHybrid({
+                    text: content,
+                    sourceLanguage: body?.senderLanguage ? sourceLanguage : 'auto',
+                    targetLanguage: inferredTarget,
+                    preferredModel: body?.preferredModel,
+                  }),
+                  new Promise<null>((resolve) => setTimeout(() => resolve(null), 4500)),
+                ]);
+                if (tr && tr.translatedText) {
+                  detectedSource = tr.detectedLanguage;
+                  if (tr.detectedLanguage !== inferredTarget) {
+                    translations[inferredTarget] = tr.translatedText;
+                    translationEngine = tr.engine;
+                    translationModel = tr.model || undefined;
+                  }
+                }
+              } catch {
+                // Deliver message even if AI engine is unavailable
+              }
+            }
+
+            if (conv && detectedSource !== 'fr' && !conv.partnerLanguage) {
+              conv.partnerLanguage = detectedSource;
+            }
+
             const msg = {
               id: `m-${Date.now()}`,
               conversationId: chatMsgMatch[1],
               senderId: currentUser.id,
-              content: body.content || '',
+              content,
+              attachmentUrl: rawAttachment || undefined,
+              sourceLanguage: detectedSource,
+              translations: Object.keys(translations).length > 0 ? translations : undefined,
+              translationEngine,
+              translationModel,
               createdAt: new Date().toISOString(),
             };
             if (conv) conv.messages.push(msg);
             json(msg, 201);
+          });
+          return;
+        }
+
+        const chatMsgTranslateMatch = path.match(/^\/chat\/messages\/([^/]+)\/translate$/);
+        if (chatMsgTranslateMatch && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const targetLang = normalizeChatLang(body?.targetLanguage);
+              let foundMsg: any = null;
+              for (const c of conversations) {
+                const match = (c.messages || []).find((m: any) => m.id === chatMsgTranslateMatch[1]);
+                if (match) {
+                  foundMsg = match;
+                  break;
+                }
+              }
+              if (!foundMsg) return json({ message: 'Message introuvable' }, 404);
+              if (foundMsg.translations?.[targetLang]) {
+                return json({
+                  ...foundMsg,
+                  translatedText: foundMsg.translations[targetLang],
+                  targetLanguage: targetLang,
+                  cached: true,
+                });
+              }
+
+              const tr = await translateChatTextHybrid({
+                text: foundMsg.content,
+                sourceLanguage: 'auto',
+                targetLanguage: targetLang,
+                preferredModel: body?.preferredModel,
+              });
+              foundMsg.sourceLanguage = tr.detectedLanguage;
+              if (tr.detectedLanguage !== targetLang) {
+                foundMsg.translations = {
+                  ...(foundMsg.translations || {}),
+                  [targetLang]: tr.translatedText,
+                };
+              }
+              json({
+                ...foundMsg,
+                translatedText: tr.translatedText,
+                targetLanguage: targetLang,
+                translationEngine: tr.engine,
+                translationModel: tr.model,
+                cached: false,
+              });
+            } catch (err: any) {
+              json({ message: err?.message || 'Traduction indisponible' }, err?.statusCode || 502);
+            }
+          });
+          return;
+        }
+
+        // --- ASSISTANT IA HYBRIDE (routes HTTP utilisant les helpers déclarés plus haut) ---
+        if (path === '/assistant/status' && method === 'GET') {
+          const sp = new URL(url, 'http://localhost').searchParams;
+          getAiStatus(sp.get('preferredModel') || undefined)
+            .then(({ cfg: _cfg, ...publicStatus }) => json(publicStatus))
+            .catch((err) => json({ message: err?.message || 'Erreur détection IA' }, 500));
+          return;
+        }
+
+        if (path === '/assistant/settings' && method === 'GET') {
+          return json(aiSettings);
+        }
+
+        if (path === '/assistant/settings' && method === 'PUT') {
+          readBody().then((body) => {
+            aiSettings = {
+              autoMessagesEnabled:
+                body.autoMessagesEnabled !== undefined
+                  ? Boolean(body.autoMessagesEnabled)
+                  : aiSettings.autoMessagesEnabled,
+              autoMessagesTone: ['WARM', 'FORMAL', 'CONCISE'].includes(body.autoMessagesTone)
+                ? body.autoMessagesTone
+                : aiSettings.autoMessagesTone,
+              updatedAt: new Date().toISOString(),
+            };
+            json(aiSettings);
+          });
+          return;
+        }
+
+        if (path === '/assistant/history' && method === 'GET') {
+          const sp = new URL(url, 'http://localhost').searchParams;
+          const roleCtx = ['CLIENT', 'VENDOR', 'ADMIN'].includes(sp.get('roleContext') || '')
+            ? String(sp.get('roleContext'))
+            : 'CLIENT';
+          return json({
+            sessionId: `sess-${roleCtx.toLowerCase()}`,
+            roleContext: roleCtx,
+            messages: assistantHistoryByRole[roleCtx] || [],
+          });
+        }
+
+        if (path === '/assistant/history' && method === 'DELETE') {
+          const sp = new URL(url, 'http://localhost').searchParams;
+          const roleCtx = ['CLIENT', 'VENDOR', 'ADMIN'].includes(sp.get('roleContext') || '')
+            ? String(sp.get('roleContext'))
+            : 'CLIENT';
+          assistantHistoryByRole[roleCtx] = [];
+          return json({ cleared: true, roleContext: roleCtx });
+        }
+
+        if (path === '/assistant/message-logs' && method === 'GET') {
+          const sp = new URL(url, 'http://localhost').searchParams;
+          const scenario = sp.get('scenario') || 'ALL';
+          const channel = sp.get('channel') || 'ALL';
+          const filtered = aiMessageLogs.filter((item) => {
+            if (scenario !== 'ALL' && item.scenario !== scenario) return false;
+            if (channel !== 'ALL' && item.channel !== channel) return false;
+            return true;
+          });
+          const personalizedCount = filtered.filter((i) => i.personalized).length;
+          const total = filtered.length;
+          const avgLatencyMs =
+            total > 0 ? Math.round(filtered.reduce((acc, i) => acc + (i.latencyMs || 0), 0) / total) : 0;
+          return json({
+            items: filtered.slice(0, 80),
+            stats: {
+              total,
+              personalizedCount,
+              fallbackCount: Math.max(0, total - personalizedCount),
+              personalizationRate: total > 0 ? Math.round((personalizedCount / total) * 100) : 0,
+              avgLatencyMs,
+            },
+          });
+        }
+
+        if (path === '/assistant/chat' && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const userMessage = String(body.message || '').trim();
+              if (!userMessage) return json({ message: 'Message requis' }, 400);
+
+              const roleCtx = ['CLIENT', 'VENDOR', 'ADMIN'].includes(body.roleContext) ? body.roleContext : 'CLIENT';
+              const roleHint =
+                roleCtx === 'ADMIN'
+                  ? "L'utilisateur est Super Admin ZandoGo : réponds de façon synthétique et opérationnelle (tarifs, litiges, séquestre, retraits)."
+                  : roleCtx === 'VENDOR'
+                  ? "L'utilisateur est Vendeur / Agence de Transport ZandoGo : aide-le sur ses fiches produits, variantes, paliers de prix, livraison et retraits."
+                  : "L'utilisateur est Client / Visiteur : aide-le à trouver des produits, livres PDF ou agences de transport en RDC et explique le paiement sécurisé.";
+
+              const catNames = categories.map((c) => c.name).join(', ');
+              const topOffers = products
+                .slice(0, 12)
+                .map((p) => `- ${p.title} (${p.productType}, $${p.basePriceUsd}, boutique ${p.store?.storeName || ''})`)
+                .join('\n');
+              const transportSummary = stores
+                .filter((s) => s.isTransportAgency)
+                .map((s) => {
+                  const routes = (s.transportRoutes || [])
+                    .map((r: any) => `${r.originCity} -> ${r.destinationCity} (${r.vehicleMode}, $${r.basePriceUsd})`)
+                    .join(' | ');
+                  return `- ${s.storeName} (${s.city}): ${routes}`;
+                })
+                .join('\n');
+
+              const systemInstruction = [
+                'Tu es l’Assistant officiel de ZandoGo (place de marché basée à Goma, Nord-Kivu, active dans toute la RDC et ses environs).',
+                getLanguageInstruction(body?.language),
+                'RÈGLE STRICTE : Ne mentionne JAMAIS de noms techniques internes d’agrégateur tiers ; cite uniquement Airtel Money, Vodacom M-Pesa, Orange Money, MTN MoMo et Visa/Mastercard.',
+                `Frais de transaction paiement : ${platformPricing.paymentTransactionFeePercent}% ; frais de retrait vendeur côté plateforme : 0%. Délai de séquestre : ${platformPricing.allowImmediateVendorWithdrawal ? 'Désactivé — versement direct immédiat aux vendeurs dès paiement' : '48h dès le paiement (ou retrait immédiat si autorisé par le Super Admin)'}.`,
+                `Catégories actives : ${catNames}`,
+                `Catalogue actuel :\n${topOffers}`,
+                transportSummary ? `Agences de transport :\n${transportSummary}` : '',
+                roleHint,
+              ]
+                .filter(Boolean)
+                .join('\n\n');
+
+              const history = Array.isArray(body.history) && body.history.length > 0
+                ? body.history.slice(-8).map((m: any) => ({
+                    role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+                    content: String(m.content || ''),
+                  }))
+                : (assistantHistoryByRole[roleCtx] || []).slice(-8).map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                  }));
+
+              const out = await runHybridAi(
+                systemInstruction,
+                [...history, { role: 'user', content: userMessage }],
+                body.preferredModel,
+              );
+
+              if (!assistantHistoryByRole[roleCtx]) assistantHistoryByRole[roleCtx] = [];
+              assistantHistoryByRole[roleCtx].push(
+                {
+                  id: `u-${Date.now()}`,
+                  role: 'user',
+                  content: userMessage,
+                  createdAt: new Date().toISOString(),
+                },
+                {
+                  id: `a-${Date.now() + 1}`,
+                  role: 'assistant',
+                  content: out.reply,
+                  engine: out.engine,
+                  model: out.model,
+                  createdAt: new Date().toISOString(),
+                },
+              );
+              if (assistantHistoryByRole[roleCtx].length > 60) {
+                assistantHistoryByRole[roleCtx] = assistantHistoryByRole[roleCtx].slice(-60);
+              }
+
+              json({ ...out, persisted: true });
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Erreur lors du traitement par l'assistant IA." },
+                err?.statusCode || 502,
+              );
+            }
+          });
+          return;
+        }
+
+        if (path === '/assistant/product-description' && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const title = String(body.title || '').trim();
+              if (!title) return json({ message: 'Le titre du produit est requis.' }, 400);
+
+              const typeLabel =
+                body.productType === 'DIGITAL'
+                  ? 'Livre ou Document Numérique PDF (téléchargement instantané après paiement)'
+                  : body.productType === 'SERVICE'
+                  ? 'Prestation de service ou Transport / Fret national en RDC (tarification au km ou trajet)'
+                  : 'Produit physique livré en RDC et environs';
+
+              const systemInstruction =
+                'Tu es un expert e-commerce pour le marché congolais (RDC). Rédige une description commerciale claire, rassurante et structurée en français (80 à 140 mots avec 3 à 4 points forts). Retourne uniquement le texte prêt à publier.';
+              const prompt = [
+                `Rédige la description commerciale pour cette offre ZandoGo :`,
+                `- Titre : ${title}`,
+                `- Type : ${typeLabel}`,
+                body.categoryName ? `- Catégorie : ${body.categoryName}` : '',
+                body.audience ? `- Public cible : ${body.audience}` : '',
+                body.pricingUnit ? `- Unité de vente : ${body.pricingUnit}` : '',
+                body.basePriceUsd ? `- Prix indicatif : $${body.basePriceUsd} USD` : '',
+              ]
+                .filter(Boolean)
+                .join('\n');
+
+              const out = await runHybridAi(
+                systemInstruction,
+                [{ role: 'user', content: prompt }],
+                body.preferredModel,
+              );
+              json({ description: out.reply, engine: out.engine, model: out.model });
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Impossible de générer la description IA." },
+                err?.statusCode || 502,
+              );
+            }
+          });
+          return;
+        }
+
+        const analyzeDisputeMatch = path.match(/^\/assistant\/disputes\/([^/]+)\/analyze$/);
+        if (analyzeDisputeMatch && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const dispute = disputes.find((d) => d.id === analyzeDisputeMatch[1]);
+              if (!dispute) return json({ message: 'Litige introuvable' }, 404);
+
+              const st = await getAiStatus(body?.preferredModel);
+              if (!st.available || !st.activeModel) {
+                return json(
+                  { message: "Aucun modèle IA détecté (Ollama local ou clé cloud) pour analyser ce litige." },
+                  503,
+                );
+              }
+
+              const dossierPrompt = [
+                `Analyse ce litige ZandoGo pour aider le Super Admin à décider :`,
+                `- Commande : ${dispute.orderNumber}`,
+                `- Montant sous séquestre : ${dispute.amountUsd} USD`,
+                `- Acheteur : ${dispute.buyerName}`,
+                `- Boutique : ${dispute.storeName}`,
+                `- Catégorie : ${dispute.reasonCategory} | Sévérité : ${dispute.severity} | Retraits gelés : ${dispute.payoutFrozen ? 'OUI' : 'NON'}`,
+                `- Motif : ${dispute.reason}`,
+              ].join('\n');
+
+              if (st.activeEngine === 'gemini' && st.cfg.geminiKey) {
+                const ai = new GoogleGenAI({
+                  apiKey: st.cfg.geminiKey,
+                  httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+                });
+                const resAi = await ai.models.generateContent({
+                  model: st.cfg.cloudModel,
+                  contents: dossierPrompt,
+                  config: {
+                    systemInstruction:
+                      "Tu es conseiller d'arbitrage neutre pour ZandoGo. Fournis un résumé objectif, une recommandation parmi RESOLVED_REFUND, RESOLVED_RELEASE ou RESOLVED_PARTIAL, et une note officielle en français.",
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                      type: Type.OBJECT,
+                      properties: {
+                        summary: { type: Type.STRING },
+                        recommendedDecision: {
+                          type: Type.STRING,
+                          enum: ['RESOLVED_REFUND', 'RESOLVED_RELEASE', 'RESOLVED_PARTIAL'],
+                        },
+                        recommendedFreezePayout: { type: Type.BOOLEAN },
+                        draftResolutionNote: { type: Type.STRING },
+                      },
+                      required: [
+                        'summary',
+                        'recommendedDecision',
+                        'recommendedFreezePayout',
+                        'draftResolutionNote',
+                      ],
+                    },
+                  },
+                });
+                const parsed = JSON.parse((resAi.text || '{}').trim());
+                return json({ ...parsed, engine: 'gemini', model: st.cfg.cloudModel });
+              }
+
+              const sys =
+                "Tu es conseiller d'arbitrage neutre. Réponds STRICTEMENT en JSON valide avec les clés: summary (string), recommendedDecision ('RESOLVED_REFUND' | 'RESOLVED_RELEASE' | 'RESOLVED_PARTIAL'), recommendedFreezePayout (boolean), draftResolutionNote (string en français).";
+              const out = await runHybridAi(sys, [{ role: 'user', content: dossierPrompt }], body?.preferredModel);
+              const match = out.reply.match(/\{[\s\S]*\}/);
+              if (match) {
+                try {
+                  const parsed = JSON.parse(match[0]);
+                  return json({
+                    summary: String(parsed.summary || out.reply),
+                    recommendedDecision: ['RESOLVED_REFUND', 'RESOLVED_RELEASE', 'RESOLVED_PARTIAL'].includes(
+                      parsed.recommendedDecision,
+                    )
+                      ? parsed.recommendedDecision
+                      : 'RESOLVED_PARTIAL',
+                    recommendedFreezePayout: Boolean(parsed.recommendedFreezePayout),
+                    draftResolutionNote: String(parsed.draftResolutionNote || parsed.summary || out.reply),
+                    engine: out.engine,
+                    model: out.model,
+                  });
+                } catch {
+                  // fall through to structured text wrapping
+                }
+              }
+              return json({
+                summary: out.reply,
+                recommendedDecision: dispute.severity === 'HIGH' ? 'RESOLVED_REFUND' : 'RESOLVED_PARTIAL',
+                recommendedFreezePayout: dispute.severity === 'HIGH',
+                draftResolutionNote: out.reply.slice(0, 280),
+                engine: out.engine,
+                model: out.model,
+              });
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Erreur lors de l'analyse du litige." },
+                err?.statusCode || 502,
+              );
+            }
+          });
+          return;
+        }
+
+        if (path === '/assistant/smart-search' && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const userQuery = String(body?.query || '').trim();
+              if (userQuery.length < 2) {
+                return json({ message: 'Saisissez au moins 2 caractères pour la recherche IA.' }, 400);
+              }
+
+              const st = await getAiStatus(body?.preferredModel);
+              if (!st.available || !st.activeModel) {
+                return json(
+                  { message: "Aucun modèle IA détecté (Ollama local ou clé cloud) pour cette recherche." },
+                  503,
+                );
+              }
+
+              const validCatIds = new Set(categories.map((c) => c.id));
+              const catCatalog = categories.map((c) => `${c.id} => ${c.name}`).join('\n');
+              const prodCatalog = products
+                .slice(0, 25)
+                .map((p) => `- ${p.title} ($${Number(p.basePriceUsd).toFixed(2)}, ${p.productType})`)
+                .join('\n');
+
+              const prompt = [
+                `Requête visiteur en langage naturel : "${userQuery}"`,
+                `Catégories disponibles (ID => Nom) :\n${catCatalog}`,
+                `Exemples d'offres :\n${prodCatalog}`,
+                `Extrais les filtres adaptés pour ZandoGo.`,
+                `Règles : searchQuery doit contenir uniquement 0 à 3 mots-clés essentiels pour le filtre texte (ou "" si le filtre par type/catégorie/prix suffit) ; maxPriceUsd est un nombre positif si un budget maximum est mentionné, sinon null ; transportOnly = true uniquement si la recherche porte sur un transporteur, déménagement, colis ou trajet.`,
+              ].join('\n\n');
+
+              const sanitize = (raw: any, engine: 'ollama' | 'gemini', model: string) => {
+                const productType = ['ALL', 'PHYSICAL', 'DIGITAL', 'SERVICE'].includes(raw?.productType)
+                  ? raw.productType
+                  : 'ALL';
+                const audience = ['ALL', 'WOMEN', 'MEN', 'PRO'].includes(raw?.audience) ? raw.audience : 'ALL';
+                const rawCat = typeof raw?.categoryId === 'string' ? raw.categoryId : 'ALL';
+                const categoryId = rawCat !== 'ALL' && validCatIds.has(rawCat) ? rawCat : 'ALL';
+                const maxPriceNum =
+                  raw?.maxPriceUsd !== null && raw?.maxPriceUsd !== undefined && Number(raw.maxPriceUsd) > 0
+                    ? Number(raw.maxPriceUsd)
+                    : null;
+                return {
+                  searchQuery: typeof raw?.searchQuery === 'string' ? raw.searchQuery.trim().slice(0, 80) : '',
+                  productType,
+                  audience,
+                  maxPriceUsd: maxPriceNum,
+                  transportOnly: Boolean(raw?.transportOnly),
+                  categoryId,
+                  explanation:
+                    typeof raw?.explanation === 'string' && raw.explanation.trim()
+                      ? raw.explanation.trim()
+                      : 'Filtres intelligents appliqués à votre recherche.',
+                  engine,
+                  model,
+                };
+              };
+
+              if (st.activeEngine === 'gemini' && st.cfg.geminiKey) {
+                const ai = new GoogleGenAI({
+                  apiKey: st.cfg.geminiKey,
+                  httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+                });
+                const resAi = await ai.models.generateContent({
+                  model: st.cfg.cloudModel,
+                  contents: prompt,
+                  config: {
+                    systemInstruction:
+                      'Tu es le moteur de recherche sémantique ZandoGo. Convertis la requête en filtres catalogue JSON précis et rédige une courte explication en français.',
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                      type: Type.OBJECT,
+                      properties: {
+                        searchQuery: { type: Type.STRING },
+                        productType: { type: Type.STRING, enum: ['ALL', 'PHYSICAL', 'DIGITAL', 'SERVICE'] },
+                        audience: { type: Type.STRING, enum: ['ALL', 'WOMEN', 'MEN', 'PRO'] },
+                        maxPriceUsd: { type: Type.NUMBER, nullable: true },
+                        transportOnly: { type: Type.BOOLEAN },
+                        categoryId: { type: Type.STRING },
+                        explanation: { type: Type.STRING },
+                      },
+                      required: [
+                        'searchQuery',
+                        'productType',
+                        'audience',
+                        'transportOnly',
+                        'categoryId',
+                        'explanation',
+                      ],
+                    },
+                  },
+                });
+                const parsed = JSON.parse((resAi.text || '{}').trim());
+                return json(sanitize(parsed, 'gemini', st.cfg.cloudModel));
+              }
+
+              const localSys =
+                "Tu es le moteur de recherche ZandoGo. Réponds STRICTEMENT en JSON valide sans texte autour avec les clés: searchQuery (string, 0-3 mots), productType ('ALL'|'PHYSICAL'|'DIGITAL'|'SERVICE'), audience ('ALL'|'WOMEN'|'MEN'|'PRO'), maxPriceUsd (number ou null), transportOnly (boolean), categoryId (un ID exact de la liste ou 'ALL'), explanation (courte phrase en français).";
+              const out = await runHybridAi(localSys, [{ role: 'user', content: prompt }], body?.preferredModel);
+              const match = out.reply.match(/\{[\s\S]*\}/);
+              if (match) {
+                try {
+                  const parsed = JSON.parse(match[0]);
+                  return json(sanitize(parsed, out.engine, out.model));
+                } catch {
+                  // fallback below
+                }
+              }
+              return json(
+                sanitize(
+                  {
+                    searchQuery: userQuery.split(/\s+/).slice(0, 3).join(' '),
+                    productType: /pdf|livre|manuel|guide/i.test(userQuery)
+                      ? 'DIGITAL'
+                      : /transport|fret|colis|service/i.test(userQuery)
+                      ? 'SERVICE'
+                      : 'ALL',
+                    audience: 'ALL',
+                    maxPriceUsd: null,
+                    transportOnly: /transport|agence|fret|livreur/i.test(userQuery),
+                    categoryId: 'ALL',
+                    explanation: 'Recherche textuelle appliquée au catalogue ZandoGo.',
+                  },
+                  out.engine,
+                  out.model,
+                ),
+              );
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Erreur lors de la recherche intelligente IA." },
+                err?.statusCode || 502,
+              );
+            }
+          });
+          return;
+        }
+
+        if (path === '/assistant/suggest-reply' && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const msgs = Array.isArray(body?.messages) ? body.messages : [];
+              const historyLines = msgs
+                .slice(-6)
+                .map((m: any) => `- ${m.sender || 'Interlocuteur'} : ${m.content || ''}`)
+                .join('\n');
+
+              const isDelivery = body?.conversationType === 'CUSTOMER_DELIVERY';
+              const systemInstruction = [
+                'Tu es un assistant de messagerie commerciale pour ZandoGo (Goma & RDC).',
+                `${getLanguageInstruction(body?.language)} Rédige une suggestion de réponse courte, polie, naturelle et prête à envoyer (1 à 3 phrases max).`,
+                'Ne mets pas de guillemets autour de la réponse, pas de crochets [Nom], et reste pragmatique sur les prix, délais ou points de repère Google Maps.',
+              ].join(' ');
+
+              const prompt = [
+                `Contexte de la discussion : ${isDelivery ? 'Négociation course / livraison avec coursier' : 'Discussion devis / négociation prix avec vendeur'}`,
+                body?.conversationTitle ? `- Interlocuteur : ${body.conversationTitle}` : '',
+                body?.productTitle ? `- Produit / Service : ${body.productTitle}` : '',
+                body?.productPriceUsd ? `- Prix affiché : $${body.productPriceUsd} USD` : '',
+                body?.distanceKm ? `- Distance GPS calculée : ${body.distanceKm} km` : '',
+                isDelivery ? `- Localisation Google Maps partagée : ${body?.hasClientLocation ? 'Oui' : 'Pas encore'}` : '',
+                body?.deliveryProposedFeeUsd ? `- Tarif course en discussion : $${body.deliveryProposedFeeUsd} USD` : '',
+                `Derniers messages :\n${historyLines || 'Aucun message précédent.'}`,
+                `Propose un message court à envoyer par l'utilisateur.`,
+              ]
+                .filter(Boolean)
+                .join('\n');
+
+              const out = await runHybridAi(systemInstruction, [{ role: 'user', content: prompt }], body?.preferredModel);
+              const suggestion = out.reply.replace(/^["«\s]+|["»\s]+$/g, '').trim() || out.reply;
+              json({ suggestion, engine: out.engine, model: out.model });
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Impossible de générer une suggestion de réponse." },
+                err?.statusCode || 502,
+              );
+            }
+          });
+          return;
+        }
+
+        if (path === '/assistant/translate' && method === 'POST') {
+          readBody().then(async (body) => {
+            try {
+              const out = await translateChatTextHybrid({
+                text: String(body?.text || ''),
+                sourceLanguage: body?.sourceLanguage || 'auto',
+                targetLanguage: String(body?.targetLanguage || 'fr'),
+                preferredModel: body?.preferredModel,
+              });
+              json(out);
+            } catch (err: any) {
+              json(
+                { message: err?.message || "Impossible de traduire ce message." },
+                err?.statusCode || 502,
+              );
+            }
           });
           return;
         }
@@ -3595,14 +5368,6 @@ export default defineConfig({
     mockApiPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: [
-        'favicon.ico',
-        'apple-touch-icon.png',
-        'icon.svg',
-        'pwa-192x192.png',
-        'pwa-512x512.png',
-        'pwa-maskable-512x512.png',
-      ],
       manifest: {
         id: '/',
         name: 'ZandoGo — Place de Marché RDC & Environs',

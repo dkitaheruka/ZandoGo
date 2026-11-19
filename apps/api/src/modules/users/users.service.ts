@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
+import { normalizeAiLanguage } from '../../common/commerce-rules';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -7,6 +8,24 @@ import { CreateAddressDto } from './dto/create-address.dto';
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async updatePreferredLanguage(userId: string, preferredLanguage?: string) {
+    const normalized = normalizeAiLanguage(preferredLanguage);
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { preferredLanguage: normalized },
+      select: { id: true, preferredLanguage: true },
+    });
+    return updated;
+  }
+
+  async updatePreferredCurrency(userId: string, currency: 'USD' | 'CDF') {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { preferredCurrency: currency },
+      select: { id: true, preferredCurrency: true },
+    });
+  }
 
   async listAddresses(user: AuthenticatedUser) {
     return this.prisma.address.findMany({

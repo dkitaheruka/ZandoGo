@@ -7,6 +7,7 @@ export interface User {
   email?: string | null;
   phone?: string | null;
   preferredCurrency?: Currency;
+  preferredLanguage?: string;
   roles: { role: UserRole; scopeId?: string | null }[];
 }
 
@@ -101,6 +102,8 @@ export interface Product {
   serviceDuration?: string | null;
   fulfillmentDetails?: string | null;
   images: ProductImage[];
+  videoUrl?: string | null;
+  videoDurationSec?: number | null;
   variants: ProductVariant[];
   store: {
     id?: string;
@@ -216,6 +219,7 @@ export interface DeliveryJob {
   dropoffLng: number;
   clientGoogleMapsUrl?: string;
   otpCode?: string;
+  deliveryProof?: { proofType: 'PHOTO' | 'SIGNATURE' | 'OTP_CODE'; fileUrl?: string; recordedAt: string };
   agent?: { id?: string; vehicleType?: string; user: { fullName: string; phone?: string } } | null;
   trackingPings?: { lat: number; lng: number; recordedAt: string }[];
   subOrder: {
@@ -275,6 +279,7 @@ export interface Order {
   deliveryAddress?: Address;
   currency: Currency;
   deliveryOption?: DeliveryOption;
+  deliveryProof?: { proofType: 'PHOTO' | 'SIGNATURE' | 'OTP_CODE'; fileUrl?: string; recordedAt: string };
   hasDigitalItems?: boolean;
   digitalDownloads?: {
     productId: string;
@@ -350,6 +355,11 @@ export interface ChatMessage {
   conversationId: string;
   senderId: string;
   content: string;
+  attachmentUrl?: string | null;
+  sourceLanguage?: string;
+  translations?: Record<string, string>;
+  translationEngine?: string;
+  translationModel?: string;
   location?: SharedLocation;
   deliveryProposal?: DeliveryFeeProposal;
   createdAt: string;

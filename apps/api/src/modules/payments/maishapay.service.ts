@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { isSafePaymentRedirectUrl } from '../../common/security-rules';
 
 export type MaishaPayMobileOperator =
   | 'AIRTEL'
@@ -114,6 +115,14 @@ export class MaishaPayService {
 
   private get webhookSecret(): string {
     return this.config.get<string>('MAISHAPAY_WEBHOOK_SECRET') ?? '';
+  }
+
+  get isProduction(): boolean {
+    return this.config.get<string>('NODE_ENV') === 'production';
+  }
+
+  get isLiveConfigured(): boolean {
+    return this.hasLiveCredentials;
   }
 
   private get hasLiveCredentials(): boolean {
@@ -230,11 +239,14 @@ export class MaishaPayService {
         raw.transactionId ||
         `ZG-PAY-${params.transactionReference.slice(-10)}`;
 
+      const rawRedirect = d?.paymentPage || d?.payment_url || raw.paymentPageUrl;
       return {
         transactionId: txId,
         reference: d?.reference || params.transactionReference,
         paymentStatus: d?.payment_status || raw.paymentStatus || 'PENDING',
-        paymentPageUrl: d?.paymentPage || d?.payment_url || raw.paymentPageUrl,
+        paymentPageUrl: isSafePaymentRedirectUrl(rawRedirect, this.isProduction)
+          ? rawRedirect
+          : undefined,
         ussdCode: d?.ussd_code || raw.ussdCode || defaultUssd,
         expiresAt: d?.expires_at || raw.expiresAt || defaultExpires,
         operator: d?.operator || this.mapOperatorSlug(channelProvider),
@@ -336,12 +348,15 @@ export class MaishaPayService {
         raw.transactionId ||
         `ZG-CARD-${params.transactionReference.slice(-10)}`;
 
+      const rawRedirect = d?.paymentPage || d?.payment_url || raw.paymentPageUrl;
       return {
         transactionId: txId,
         reference: d?.originatingTransactionId || params.transactionReference,
         paymentStatus:
           (d?.transactionStatus?.toUpperCase() as MaishaPayTransactionStatus) || 'PENDING',
-        paymentPageUrl: d?.paymentPage || d?.payment_url || raw.paymentPageUrl,
+        paymentPageUrl: isSafePaymentRedirectUrl(rawRedirect, this.isProduction)
+          ? rawRedirect
+          : undefined,
         operator: 'card',
         raw,
       };
@@ -553,10 +568,13 @@ export class MaishaPayService {
 
   /**
    * Vérifie la signature HMAC-SHA256 de l'en-tête X-MaishaPay-Signature (`sha256=<hex>`).
+   * En production ou lorsque des clés live sont actives, l'absence de secret webhook échoue fermé (false).
    */
   verifyWebhookSignature(rawBody: Buffer | string, signatureHeader?: string): boolean {
     if (!this.webhookSecret) {
-      // En local / sandbox sans secret webhook configuré, la contre-vérification /check prend le relais
+      if (this.isProduction || this.hasLiveCredentials) {
+        return false;
+      }
       return true;
     }
     if (!signatureHeader) {
@@ -564,11 +582,15 @@ export class MaishaPayService {
     }
     const expectedHex = createHmac('sha256', this.webhookSecret).update(rawBody).digest('hex');
     const normalizedSig = signatureHeader.startsWith('sha256=')
-      ? signatureHeader.slice(7)
-      : signatureHeader;
+      ? signatureHeader.slice(7).trim()
+      : signatureHeader.trim();
 
-    const a = Buffer.from(expectedHex, 'utf8');
-    const b = Buffer.from(normalizedSig, 'utf8');
+    if (!/^[a-fA-F0-9]{64}$/.test(normalizedSig)) {
+      return false;
+    }
+
+    const a = Buffer.from(expectedHex.toLowerCase(), 'utf8');
+    const b = Buffer.from(normalizedSig.toLowerCase(), 'utf8');
     if (a.length !== b.length) return false;
     return timingSafeEqual(a, b);
   }

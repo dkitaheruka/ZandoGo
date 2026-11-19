@@ -1,12 +1,35 @@
 import { api } from './api';
 
-export type UploadPurpose = 'KYC_DOCUMENT' | 'PRODUCT_IMAGE';
+export type UploadPurpose = 'KYC_DOCUMENT' | 'PRODUCT_IMAGE' | 'PRODUCT_VIDEO' | 'CHAT_IMAGE';
 
-const MAX_BYTES = 5 * 1024 * 1024; // même plafond que l'API, qui revérifie de toute façon
-
-const ACCEPTED: Record<UploadPurpose, { types: string[]; label: string }> = {
-  KYC_DOCUMENT: { types: ['image/jpeg', 'image/png', 'application/pdf'], label: 'JPEG, PNG ou PDF' },
-  PRODUCT_IMAGE: { types: ['image/jpeg', 'image/png', 'image/webp'], label: 'JPEG, PNG ou WebP' },
+const ACCEPTED: Record<
+  UploadPurpose,
+  { types: string[]; label: string; maxBytes: number; maxLabel: string }
+> = {
+  KYC_DOCUMENT: {
+    types: ['image/jpeg', 'image/png', 'application/pdf'],
+    label: 'JPEG, PNG ou PDF',
+    maxBytes: 5 * 1024 * 1024,
+    maxLabel: '5 Mo',
+  },
+  PRODUCT_IMAGE: {
+    types: ['image/jpeg', 'image/png', 'image/webp'],
+    label: 'JPEG, PNG ou WebP',
+    maxBytes: 5 * 1024 * 1024,
+    maxLabel: '5 Mo',
+  },
+  PRODUCT_VIDEO: {
+    types: ['video/mp4', 'video/webm', 'video/quicktime'],
+    label: 'MP4, WebM ou MOV',
+    maxBytes: 15 * 1024 * 1024,
+    maxLabel: '15 Mo',
+  },
+  CHAT_IMAGE: {
+    types: ['image/jpeg', 'image/png', 'image/webp'],
+    label: 'JPEG, PNG ou WebP',
+    maxBytes: 5 * 1024 * 1024,
+    maxLabel: '5 Mo',
+  },
 };
 
 export class UploadError extends Error {}
@@ -25,8 +48,144 @@ export function validateFile(file: File, purpose: UploadPurpose): string | null 
   const rule = ACCEPTED[purpose];
   if (!rule.types.includes(file.type)) return `« ${file.name} » : format non accepté (${rule.label}).`;
   if (file.size === 0) return `« ${file.name} » est vide.`;
-  if (file.size > MAX_BYTES) return `« ${file.name} » dépasse 5 Mo.`;
+  if (file.size > rule.maxBytes) return `« ${file.name} » dépasse ${rule.maxLabel}.`;
   return null;
+}
+
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(`Impossible de lire « ${file.name} »`));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Optimise automatiquement une photo issue de la galerie ou de la caméra
+ * (redimensionnement max 1440 px et compression JPEG 0.82) pour économiser
+ * la bande passante mobile en RDC tout en gardant une image nette.
+ */
+export async function readCompressedImageDataUrl(
+  file: File,
+  options?: { maxDimension?: number; quality?: number },
+): Promise<{ dataUrl: string; compressed: boolean }> {
+  const maxDimension = options?.maxDimension ?? 1440;
+  const quality = options?.quality ?? 0.82;
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    return { dataUrl: await readFileAsDataUrl(file), compressed: false };
+  }
+
+  // Petite image déjà légère : inutile de ré-encoder
+  if (file.size <= 180 * 1024) {
+    return { dataUrl: await readFileAsDataUrl(file), compressed: false };
+  }
+
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        const naturalW = img.naturalWidth || img.width;
+        const naturalH = img.naturalHeight || img.height;
+        const scale = Math.min(1, maxDimension / Math.max(naturalW, naturalH, 1));
+        const targetW = Math.max(1, Math.round(naturalW * scale));
+        const targetH = Math.max(1, Math.round(naturalH * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          readFileAsDataUrl(file).then((dataUrl) => resolve({ dataUrl, compressed: false }), reject);
+          return;
+        }
+
+        // Fond blanc pour les PNG transparents ré-encodés en JPEG léger
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, targetW, targetH);
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+
+        const encoded = canvas.toDataURL('image/jpeg', quality);
+        URL.revokeObjectURL(objectUrl);
+
+        if (encoded.startsWith('data:image/jpeg;base64,')) {
+          resolve({ dataUrl: encoded, compressed: true });
+        } else {
+          readFileAsDataUrl(file).then((dataUrl) => resolve({ dataUrl, compressed: false }), reject);
+        }
+      } catch {
+        URL.revokeObjectURL(objectUrl);
+        readFileAsDataUrl(file).then((dataUrl) => resolve({ dataUrl, compressed: false }), reject);
+      }
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      readFileAsDataUrl(file).then((dataUrl) => resolve({ dataUrl, compressed: false }), reject);
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+export async function compressImageFile(file: File): Promise<File> {
+  try {
+    const { dataUrl, compressed } = await readCompressedImageDataUrl(file);
+    if (!compressed) return file;
+    const base64 = dataUrl.split(',')[1];
+    if (!base64) return file;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
+    return new File([bytes], `${baseName}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+export function readVideoDurationSeconds(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+
+    const cleanup = () => {
+      video.removeAttribute('src');
+      video.load();
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Impossible de lire la durée de cette vidéo.'));
+    }, 8000);
+
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer);
+      const duration = Number(video.duration);
+      cleanup();
+      if (!Number.isFinite(duration) || duration <= 0) {
+        reject(new Error('Durée vidéo invalide ou fichier corrompu.'));
+        return;
+      }
+      resolve(duration);
+    };
+
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      cleanup();
+      reject(new Error('Format vidéo illisible dans le navigateur.'));
+    };
+
+    video.src = objectUrl;
+  });
 }
 
 /**

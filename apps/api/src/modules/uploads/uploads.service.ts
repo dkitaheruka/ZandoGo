@@ -14,15 +14,12 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'path';
 import { RoleName } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { hasValidFileMagicBytes } from '../../common/security-rules';
 import { PresignUploadDto, UploadPurpose } from './dto/presign-upload.dto';
 
 const URL_TTL_SECONDS = 300; // 5 minutes : assez pour un envoi, trop court pour être réutilisé
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
-const KYC_TYPES: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'application/pdf': 'pdf',
-};
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 15 * 1024 * 1024;
 
 interface LocalUploadedFile {
   buffer: Buffer;
@@ -33,6 +30,7 @@ interface LocalUploadedFile {
 interface PurposeRule {
   folder: string;
   bucket: 'private' | 'public';
+  maxBytes: number;
   /** type MIME autorisé -> extension imposée (jamais celle fournie par le client) */
   types: Record<string, string>;
   roles?: RoleName[]; // si défini, un de ces rôles est requis
@@ -43,14 +41,31 @@ const RULES: Record<UploadPurpose, PurposeRule> = {
   KYC_DOCUMENT: {
     folder: 'kyc',
     bucket: 'private',
+    maxBytes: MAX_IMAGE_SIZE_BYTES,
     types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf' },
   },
   // Images produit : espace public (affichées dans le catalogue). Pas de SVG : il peut contenir du code.
   PRODUCT_IMAGE: {
     folder: 'products',
     bucket: 'public',
+    maxBytes: MAX_IMAGE_SIZE_BYTES,
     types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
     roles: [RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF],
+  },
+  // Vidéos de présentation produit (max 10s, 15 Mo) : espace public
+  PRODUCT_VIDEO: {
+    folder: 'products-videos',
+    bucket: 'public',
+    maxBytes: MAX_VIDEO_SIZE_BYTES,
+    types: { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' },
+    roles: [RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF],
+  },
+  // Photos envoyées dans le chat client <-> vendeur : espace privé signé
+  CHAT_IMAGE: {
+    folder: 'chat',
+    bucket: 'private',
+    maxBytes: MAX_IMAGE_SIZE_BYTES,
+    types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
   },
 };
 
@@ -113,6 +128,11 @@ export class UploadsService {
       throw new ForbiddenException("Vous n'avez pas le droit d'envoyer ce type de fichier");
     }
 
+    if (dto.sizeBytes > rule.maxBytes) {
+      const limitMb = Math.round(rule.maxBytes / (1024 * 1024));
+      throw new BadRequestException(`Le fichier dépasse la limite autorisée (${limitMb} Mo).`);
+    }
+
     const extension = rule.types[dto.contentType];
     if (!extension) {
       throw new BadRequestException(
@@ -122,7 +142,7 @@ export class UploadsService {
 
     // Le nom est entièrement choisi par le serveur : on ignore tout nom fourni par le client
     const key = `${rule.folder}/${user.id}/${randomUUID()}.${extension}`;
-    if (this.localStorageEnabled && dto.purpose === 'KYC_DOCUMENT') {
+    if (this.localStorageEnabled && (dto.purpose === 'KYC_DOCUMENT' || dto.purpose === 'CHAT_IMAGE')) {
       return { mode: 'local' as const, key };
     }
 
@@ -159,25 +179,29 @@ export class UploadsService {
     key: string,
     file: LocalUploadedFile,
   ): Promise<string> {
-    if (!this.localStorageEnabled || purpose !== 'KYC_DOCUMENT') {
-      throw new ServiceUnavailableException('Le stockage local est réservé aux documents KYC en développement');
+    if (!this.localStorageEnabled || (purpose !== 'KYC_DOCUMENT' && purpose !== 'CHAT_IMAGE')) {
+      throw new ServiceUnavailableException('Le stockage local est réservé au développement (KYC / Chat)');
     }
-    if (file.size < 1 || file.size > MAX_FILE_SIZE_BYTES || file.size !== file.buffer.length) {
+    const rule = RULES[purpose];
+    if (file.size < 1 || file.size > rule.maxBytes || file.size !== file.buffer.length) {
       throw new BadRequestException('La taille du fichier est invalide (maximum 5 Mo)');
     }
 
-    const extension = KYC_TYPES[file.mimetype];
-    if (!extension) {
-      throw new BadRequestException('Type de fichier non accepté');
+    const extension = rule.types[file.mimetype];
+    if (!extension || !hasValidFileMagicBytes(file.buffer, file.mimetype)) {
+      throw new BadRequestException('Contenu de fichier invalide ou type non accepté');
     }
 
     this.assertOwnedKey(user, purpose, key);
-    if (!new RegExp(`^kyc/${user.id}/[0-9a-f-]{36}\\.${extension}$`).test(key)) {
+    if (!new RegExp(`^${rule.folder}/${user.id}/[0-9a-f-]{36}\\.${extension}$`).test(key)) {
       throw new BadRequestException('Clé de fichier invalide');
     }
 
     const fileName = key.split('/')[2];
-    const directory = resolve(this.localStoragePath(), user.id);
+    const directory =
+      purpose === 'CHAT_IMAGE'
+        ? resolve(this.localStoragePath(), 'chat', user.id)
+        : resolve(this.localStoragePath(), user.id);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(resolve(directory, fileName), file.buffer, {
       flag: 'wx',
@@ -187,9 +211,8 @@ export class UploadsService {
   }
 
   /**
-   * Un utilisateur ne peut rattacher à son dossier (KYC, produit) qu'un fichier qu'il a
-   * lui-même envoyé : la clé commence par son propre identifiant. Sans cela, il pourrait
-   * référencer le fichier d'un autre utilisateur en devinant sa clé.
+   * Un utilisateur ne peut rattacher à son dossier (KYC, produit, chat) qu'un fichier qu'il a
+   * lui-même envoyé : la clé commence par son propre identifiant.
    */
   assertOwnedKey(user: AuthenticatedUser, purpose: UploadPurpose, key: string) {
     const prefix = `${RULES[purpose].folder}/${user.id}/`;
@@ -198,7 +221,7 @@ export class UploadsService {
     }
   }
 
-  /** URL publique d'une image produit (espace public uniquement) */
+  /** URL publique d'un média produit (espace public uniquement) */
   publicUrlFor(key: string): string {
     const base = this.config.get<string>('S3_PUBLIC_BASE_URL');
     if (!base) throw new ServiceUnavailableException("Le stockage de fichiers n'est pas configuré");
@@ -206,19 +229,28 @@ export class UploadsService {
   }
 
   /**
-   * Lecture d'un document privé (KYC) : URL signée de courte durée, réservée aux appelants
-   * que le service métier a déjà autorisés. Refuse toute clé hors du dossier kyc/.
+   * Lecture d'un document privé (KYC ou image chat) : URL signée de courte durée,
+   * réservée aux appelants autorisés par le service métier.
    */
   async signedReadUrl(key: string): Promise<string> {
-    if (!key.startsWith(`${RULES.KYC_DOCUMENT.folder}/`) || key.includes('..')) {
+    const isKyc = key.startsWith(`${RULES.KYC_DOCUMENT.folder}/`);
+    const isChat = key.startsWith(`${RULES.CHAT_IMAGE.folder}/`);
+    if ((!isKyc && !isChat) || key.includes('..')) {
       throw new BadRequestException('Clé de fichier invalide');
     }
     if (this.localStorageEnabled) {
-      const match = /^kyc\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|pdf))$/.exec(key);
+      if (isKyc) {
+        const match = /^kyc\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|pdf))$/.exec(key);
+        if (!match) throw new BadRequestException('Clé de fichier invalide');
+        const expires = Math.floor(Date.now() / 1000) + URL_TTL_SECONDS;
+        const signature = this.localReadSignature(key, expires);
+        return `/api/uploads/local/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
+      }
+      const match = /^chat\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|webp))$/.exec(key);
       if (!match) throw new BadRequestException('Clé de fichier invalide');
       const expires = Math.floor(Date.now() / 1000) + URL_TTL_SECONDS;
       const signature = this.localReadSignature(key, expires);
-      return `/api/uploads/local/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
+      return `/api/uploads/local/chat/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
     }
 
     return getSignedUrl(
@@ -233,13 +265,18 @@ export class UploadsService {
     fileName: string,
     expiresValue: string,
     signature: string,
+    folder: 'kyc' | 'chat' = 'kyc',
   ): Promise<{ buffer: Buffer; contentType: string }> {
     if (!this.localStorageEnabled) {
       throw new NotFoundException('Document introuvable');
     }
 
-    const key = `kyc/${userId}/${fileName}`;
-    if (!/^kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/.test(key)) {
+    const key = `${folder}/${userId}/${fileName}`;
+    const validPattern =
+      folder === 'chat'
+        ? /^chat\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/
+        : /^kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
+    if (!validPattern.test(key)) {
       throw new NotFoundException('Document introuvable');
     }
     const expires = Number(expiresValue);
@@ -255,7 +292,8 @@ export class UploadsService {
     }
 
     const root = this.localStoragePath();
-    const filePath = resolve(root, userId, fileName);
+    const filePath =
+      folder === 'chat' ? resolve(root, 'chat', userId, fileName) : resolve(root, userId, fileName);
     const pathFromRoot = relative(root, filePath);
     if (!pathFromRoot || pathFromRoot.startsWith(`..${sep}`) || isAbsolute(pathFromRoot)) {
       throw new NotFoundException('Document introuvable');
@@ -273,7 +311,13 @@ export class UploadsService {
 
     const extension = fileName.split('.').pop();
     const contentType =
-      extension === 'jpg' ? 'image/jpeg' : extension === 'png' ? 'image/png' : 'application/pdf';
+      extension === 'jpg'
+        ? 'image/jpeg'
+        : extension === 'png'
+        ? 'image/png'
+        : extension === 'webp'
+        ? 'image/webp'
+        : 'application/pdf';
     return { buffer, contentType };
   }
 

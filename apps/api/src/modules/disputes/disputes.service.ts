@@ -9,6 +9,7 @@ import { DisputeStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { AssistantService } from '../assistant/assistant.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
@@ -24,6 +25,7 @@ export class DisputesService {
     private readonly audit: AuditService,
     private readonly wallets: WalletsService,
     private readonly notifications: NotificationsGateway,
+    private readonly assistant: AssistantService,
   ) {}
 
   /**
@@ -308,11 +310,25 @@ export class DisputesService {
       afterState: { status: dto.status, resolutionNote: dto.resolutionNote, amountRefunded: dto.amountRefunded },
     });
 
+    const disputeFallback = `Bonjour, l’arbitrage de votre commande ${dispute.order.orderNumber} est terminé : ${dto.resolutionNote}`;
+    const disputeMsg = await this.assistant.composeContextualMessage({
+      scenario: 'DISPUTE_UPDATE',
+      channel: 'inapp',
+      recipientRole: 'CLIENT',
+      facts: {
+        orderNumber: dispute.order.orderNumber,
+        decision: dto.status,
+        resolutionNote: dto.resolutionNote,
+      },
+      requiredTokens: [dispute.order.orderNumber],
+      fallbackText: disputeFallback,
+    });
+
     await this.notifications.notifyUser({
       userId: dispute.raisedByUserId,
       type: 'dispute.resolved',
-      title: 'Votre litige a été tranché',
-      body: dto.resolutionNote,
+      title: `Décision rendue pour ${dispute.order.orderNumber}`,
+      body: disputeMsg.text,
       data: { disputeId, status: dto.status },
     });
 

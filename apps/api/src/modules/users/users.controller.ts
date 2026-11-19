@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { IsIn, IsOptional } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -6,6 +7,17 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { UsersService } from './users.service';
 import { CreateAddressDto } from './dto/create-address.dto';
+
+class UpdateLanguageDto {
+  @IsOptional()
+  @IsIn(['fr', 'ln', 'sw', 'en'])
+  preferredLanguage?: string;
+}
+
+class UpdateCurrencyDto {
+  @IsIn(['USD', 'CDF'])
+  currency: 'USD' | 'CDF';
+}
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard) // ordre important : auth d'abord, rôle ensuite
@@ -16,6 +28,22 @@ export class UsersController {
   @Get('me')
   getMe(@CurrentUser() user: AuthenticatedUser) {
     return user;
+  }
+
+  @Patch('me/language')
+  updateLanguage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateLanguageDto,
+  ) {
+    return this.usersService.updatePreferredLanguage(user.id, body?.preferredLanguage);
+  }
+
+  @Patch('me/currency')
+  updateCurrency(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateCurrencyDto,
+  ) {
+    return this.usersService.updatePreferredCurrency(user.id, body.currency);
   }
 
   @Get('me/addresses')

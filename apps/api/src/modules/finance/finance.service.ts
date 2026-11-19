@@ -102,6 +102,32 @@ export class FinanceService {
       create: { key: 'vendor_pricing', value: nextValue as any, updatedBy: admin.id },
     });
 
+    if (nextValue.allowImmediateVendorWithdrawal && !current.allowImmediateVendorWithdrawal) {
+      const lockedPayouts = await this.prisma.walletTransaction.findMany({
+        where: { status: 'LOCKED', type: 'CREDIT', referenceType: 'ORDER_PAYOUT' },
+      });
+      const now = new Date();
+      for (const tx of lockedPayouts) {
+        if (!tx.referenceId) continue;
+        const sub = await this.prisma.orderSubOrder.findUnique({
+          where: { id: tx.referenceId },
+          include: { store: { select: { payoutBlocked: true } } },
+        });
+        if (!sub || sub.store.payoutBlocked) continue;
+        const openDispute = await this.prisma.dispute.findFirst({
+          where: {
+            orderId: sub.orderId,
+            status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+          },
+        });
+        if (openDispute) continue;
+        await this.prisma.walletTransaction.update({
+          where: { id: tx.id },
+          data: { status: 'AVAILABLE', availableAt: now },
+        });
+      }
+    }
+
     await this.audit.log({
       actorUserId: admin.id,
       action: 'platform_pricing.update',

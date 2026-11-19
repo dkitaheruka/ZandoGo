@@ -16,7 +16,7 @@ export function AdminHomePage() {
 
   useEffect(() => {
     Promise.all([
-      api.get<VendorStore[]>('/vendors/stores/mine').catch(() => ({ data: [] })),
+      api.get<VendorStore[]>('/vendors/stores/admin/all').catch(() => ({ data: [] })),
       api.get<Order[]>('/orders').catch(() => ({ data: [] })),
       api.get<Product[]>('/products').catch(() => ({ data: [] })),
       api.get<PlatformPricing>('/platform/pricing').catch(() => ({ data: null })),

@@ -18,6 +18,9 @@ import {
   Navigation,
   BadgeCheck,
   Megaphone,
+  ChevronLeft,
+  ChevronRight,
+  Video,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -70,6 +73,7 @@ export function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle');
   const [contactError, setContactError] = useState<string | null>(null);
+  const [activeMediaIdx, setActiveMediaIdx] = useState(0);
 
   // Landed Cost Simulator
   const [simCity, setSimCity] = useState<string>('Goma');
@@ -96,6 +100,7 @@ export function ProductDetailPage() {
     if (!id) return;
     api.get<Product>(`/products/${id}`).then(({ data }) => {
       setProduct(data);
+      setActiveMediaIdx(0);
       setVariantId(data.variants[0]?.id ?? '');
       const base = Number(data.basePriceUsd);
       setTargetPrice(base);
@@ -178,6 +183,24 @@ export function ProductDetailPage() {
     );
     const fallback = product.variants.find((v) => v.attributes?.color === colorName);
     if (exact || fallback) setVariantId((exact || fallback)!.id);
+
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    const tokens = normalize(colorName)
+      .split(/[\s/&,-]+/)
+      .filter((t) => t.length >= 3);
+    if (tokens.length > 0 && product.images.length > 1) {
+      const matchedIdx = product.images.findIndex((img) => {
+        const alt = normalize(img.altText || '');
+        return tokens.some((tok) => alt.includes(tok));
+      });
+      if (matchedIdx !== -1) {
+        setActiveMediaIdx(matchedIdx);
+      }
+    }
   }
 
   function pickBySize(sizeVal: string) {
@@ -302,41 +325,144 @@ export function ProductDetailPage() {
       <div className="grid lg:grid-cols-[1.1fr_1fr] gap-12 items-start">
         {/* Left: Product Media Gallery + Escrow + Landed Cost Simulator */}
         <div className="space-y-4">
-          <div className="rounded-card border border-encre/10 bg-white overflow-hidden shadow-xs relative">
-            <div className="aspect-[4/3] bg-brume flex items-center justify-center overflow-hidden">
-              {product.images[0] ? (
-                <img
-                  src={product.images[0].url}
-                  alt={product.title}
-                  referrerPolicy="no-referrer"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <Package className="w-16 h-16 text-encre/20" />
-              )}
-            </div>
+          {(() => {
+            const galleryImages = product.images || [];
+            const hasVideo = Boolean(product.videoUrl);
+            const totalSlides = galleryImages.length + (hasVideo ? 1 : 0);
+            const safeSlideIdx = totalSlides > 0 ? activeMediaIdx % totalSlides : 0;
+            const isVideoSlide = hasVideo && safeSlideIdx === galleryImages.length;
+            const currentGalleryImage = !isVideoSlide ? galleryImages[safeSlideIdx] : null;
 
-            <div className="absolute top-4 left-4 bg-nuit/90 backdrop-blur-md text-brume text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
-              {isPhysical && (
-                <>
-                  <Package className="w-3.5 h-3.5 text-seve" />
-                  <span>Bien matériel avec stock</span>
-                </>
-              )}
-              {isDigital && (
-                <>
-                  <FileText className="w-3.5 h-3.5 text-safran" />
-                  <span>Téléchargement PDF instantané</span>
-                </>
-              )}
-              {isService && (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-safran" />
-                  <span>Prestation de service & réseau</span>
-                </>
-              )}
-            </div>
-          </div>
+            return (
+              <div className="space-y-2.5">
+                <div className="rounded-card border border-encre/10 bg-white overflow-hidden shadow-xs relative group">
+                  <div className="aspect-[4/3] bg-brume flex items-center justify-center overflow-hidden">
+                    {isVideoSlide && product.videoUrl ? (
+                      <video
+                        src={product.videoUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="h-full w-full object-contain bg-nuit"
+                      />
+                    ) : currentGalleryImage ? (
+                      <img
+                        src={currentGalleryImage.url}
+                        alt={currentGalleryImage.altText || product.title}
+                        referrerPolicy="no-referrer"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Package className="w-16 h-16 text-encre/20" />
+                    )}
+                  </div>
+
+                  {totalSlides > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaIdx((prev) => (prev - 1 + totalSlides) % totalSlides)}
+                        aria-label="Média précédent"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-md transition"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaIdx((prev) => (prev + 1) % totalSlides)}
+                        aria-label="Média suivant"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-md transition"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
+
+                  <div className="absolute top-4 left-4 bg-nuit/90 backdrop-blur-md text-brume text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-xs">
+                    {isPhysical && (
+                      <>
+                        <Package className="w-3.5 h-3.5 text-seve" />
+                        <span>Bien matériel avec stock</span>
+                      </>
+                    )}
+                    {isDigital && (
+                      <>
+                        <FileText className="w-3.5 h-3.5 text-safran" />
+                        <span>Téléchargement PDF instantané</span>
+                      </>
+                    )}
+                    {isService && (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-safran" />
+                        <span>Prestation de service & réseau</span>
+                      </>
+                    )}
+                  </div>
+
+                  {totalSlides > 1 && (
+                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
+                      {currentGalleryImage?.altText ? (
+                        <span className="bg-nuit/80 backdrop-blur-xs text-brume text-[11px] font-medium px-2.5 py-1 rounded-full truncate max-w-[70%]">
+                          {currentGalleryImage.altText}
+                        </span>
+                      ) : isVideoSlide ? (
+                        <span className="bg-seve text-brume text-[11px] font-display font-bold px-2.5 py-1 rounded-full inline-flex items-center gap-1">
+                          <Video className="w-3.5 h-3.5 text-safran" />
+                          <span>Vidéo présentation ({product.videoDurationSec || 10}s max)</span>
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="bg-nuit/85 text-brume text-[11px] font-mono font-bold px-2.5 py-1 rounded-full tabular-nums">
+                        {safeSlideIdx + 1} / {totalSlides}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {totalSlides > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {galleryImages.map((img, idx) => {
+                      const active = idx === safeSlideIdx;
+                      return (
+                        <button
+                          key={img.id || idx}
+                          type="button"
+                          onClick={() => setActiveMediaIdx(idx)}
+                          className={`relative h-16 w-20 shrink-0 rounded-card overflow-hidden border-2 transition ${
+                            active ? 'border-seve ring-2 ring-seve/25' : 'border-encre/15 opacity-75 hover:opacity-100'
+                          }`}
+                          title={img.altText || `Photo ${idx + 1}`}
+                        >
+                          <img
+                            src={img.url}
+                            alt={img.altText || `${product.title} ${idx + 1}`}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-cover"
+                          />
+                        </button>
+                      );
+                    })}
+                    {hasVideo && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveMediaIdx(galleryImages.length)}
+                        className={`relative h-16 w-24 shrink-0 rounded-card overflow-hidden border-2 bg-nuit text-brume flex flex-col items-center justify-center gap-1 transition ${
+                          isVideoSlide ? 'border-safran ring-2 ring-safran/35' : 'border-encre/15 opacity-85 hover:opacity-100'
+                        }`}
+                        title="Regarder la vidéo de présentation"
+                      >
+                        <Video className="w-4 h-4 text-safran" />
+                        <span className="text-[10px] font-display font-bold">
+                          Vidéo {product.videoDurationSec ? `(${product.videoDurationSec}s)` : ''}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Guarantee & Escrow Card */}
           <div className="rounded-card border border-white/10 bg-nuit text-brume p-5 text-xs space-y-2 shadow-xs">
@@ -620,10 +746,37 @@ export function ProductDetailPage() {
             </div>
           )}
 
-          {product.description && (
-            <p className="text-xs text-encre/75 leading-relaxed pt-1">
-              {product.description}
-            </p>
+          {(product.description || product.videoUrl) && (
+            <div className="space-y-3 pt-1">
+              {product.description && (
+                <p className="text-xs text-encre/75 leading-relaxed">
+                  {product.description}
+                </p>
+              )}
+
+              {product.videoUrl && (
+                <div className="rounded-card border border-encre/10 bg-white p-3.5 space-y-2.5 shadow-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-display font-bold text-nuit flex items-center gap-1.5">
+                      <Video className="w-4 h-4 text-seve" />
+                      <span>Aperçu vidéo du vendeur</span>
+                    </span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-seve/10 text-seve border border-seve/25">
+                      {product.videoDurationSec ? `${product.videoDurationSec}s · Max 10s` : 'Format court ≤ 10s'}
+                    </span>
+                  </div>
+                  <div className="rounded-lg overflow-hidden bg-nuit border border-encre/10">
+                    <video
+                      src={product.videoUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full max-h-64 object-contain bg-nuit"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Colors + Sizes + Variants Selector */}

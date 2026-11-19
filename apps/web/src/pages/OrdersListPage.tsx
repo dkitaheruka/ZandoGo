@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Package,
@@ -18,8 +18,11 @@ import {
   X,
   Copy,
   Check,
+  ImagePlus,
+  Camera,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { acceptAttribute, readCompressedImageDataUrl, validateFile } from '../lib/upload';
 import { useStore } from '../lib/store-context';
 import { useAuth } from '../lib/auth-context';
 import {
@@ -51,6 +54,8 @@ export function OrdersListPage() {
   const [disputeReason, setDisputeReason] = useState('PRODUCT_NOT_RECEIVED');
   const [disputeSeverity, setDisputeSeverity] = useState<'MEDIUM' | 'HIGH'>('MEDIUM');
   const [disputeDescription, setDisputeDescription] = useState('');
+  const [disputeEvidenceImages, setDisputeEvidenceImages] = useState<{ name: string; dataUrl: string }[]>([]);
+  const [disputeUploadError, setDisputeUploadError] = useState<string | null>(null);
   const [disputeSending, setDisputeSending] = useState(false);
 
   // Invoice modal state
@@ -127,6 +132,32 @@ export function OrdersListPage() {
     }
   }
 
+  async function handleDisputePhotoSelect(e: ChangeEvent<HTMLInputElement>) {
+    setDisputeUploadError(null);
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    const added: { name: string; dataUrl: string }[] = [];
+    for (const file of files) {
+      const msg = validateFile(file, 'CHAT_IMAGE');
+      if (msg) {
+        setDisputeUploadError(msg);
+        continue;
+      }
+      try {
+        const { dataUrl } = await readCompressedImageDataUrl(file);
+        added.push({ name: file.name, dataUrl });
+      } catch (err: any) {
+        setDisputeUploadError(err?.message || 'Erreur lors du chargement de la photo.');
+      }
+    }
+
+    if (added.length > 0) {
+      setDisputeEvidenceImages((prev) => [...prev, ...added].slice(0, 3));
+    }
+  }
+
   async function handleSubmitDispute(e: FormEvent) {
     e.preventDefault();
     if (!disputeOrder || !disputeDescription.trim()) return;
@@ -138,9 +169,12 @@ export function OrdersListPage() {
         reasonCategory: disputeReason,
         severity: disputeSeverity,
         description: disputeDescription.trim(),
+        evidenceImages: disputeEvidenceImages.map((img) => img.dataUrl),
       });
       setDisputeOrder(null);
       setDisputeDescription('');
+      setDisputeEvidenceImages([]);
+      setDisputeUploadError(null);
       setActionMessage(
         disputeSeverity === 'HIGH'
           ? `Litige critique enregistré pour ${disputeOrder.orderNumber}. Le séquestre et les retraits du vendeur sont gelés le temps de l’arbitrage.`
@@ -372,6 +406,11 @@ export function OrdersListPage() {
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-encre/70 bg-encre/5 px-2.5 py-0.5 rounded-full mt-1">
                         <CheckCircle2 className="w-3 h-3 text-seve" />
                         <span>Clôturée & Fonds versés</span>
+                      </span>
+                    ) : order.escrowStatus === 'RELEASED_TO_VENDOR' ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-seve bg-seve/10 border border-seve/25 px-2.5 py-0.5 rounded-full mt-1">
+                        <CheckCircle2 className="w-3 h-3 text-seve" />
+                        <span>Payée · Versée au vendeur</span>
                       </span>
                     ) : (
                       <div className="flex flex-col items-end gap-1 mt-1">
@@ -636,7 +675,11 @@ export function OrdersListPage() {
                       <>
                         <button
                           type="button"
-                          onClick={() => setDisputeOrder(order)}
+                          onClick={() => {
+                            setDisputeOrder(order);
+                            setDisputeEvidenceImages([]);
+                            setDisputeUploadError(null);
+                          }}
                           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card border border-wax/40 text-wax hover:bg-wax/10 text-xs font-semibold transition"
                         >
                           <AlertTriangle className="w-3.5 h-3.5" />
@@ -672,16 +715,24 @@ export function OrdersListPage() {
 
       {/* Open Dispute Modal */}
       {disputeOrder && (
-        <div className="fixed inset-0 z-50 bg-nuit/75 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-nuit/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <form
             onSubmit={handleSubmitDispute}
-            className="bg-white rounded-card max-w-md w-full p-6 shadow-2xl border border-encre/10 space-y-4"
+            className="bg-white rounded-card max-w-md w-full p-6 shadow-2xl border border-encre/10 space-y-4 my-8"
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display font-bold text-lg text-nuit">
                 Ouvrir un litige — {disputeOrder.orderNumber}
               </h3>
-              <button type="button" onClick={() => setDisputeOrder(null)} className="text-encre/40 hover:text-nuit">
+              <button
+                type="button"
+                onClick={() => {
+                  setDisputeOrder(null);
+                  setDisputeEvidenceImages([]);
+                  setDisputeUploadError(null);
+                }}
+                className="text-encre/40 hover:text-nuit"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -728,10 +779,70 @@ export function OrdersListPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="block text-xs font-semibold text-encre/80">
+                  Preuves photo (optionnel · {disputeEvidenceImages.length}/3)
+                </label>
+                {disputeEvidenceImages.length < 3 && (
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded-card bg-seve/10 text-seve border border-seve/25 hover:bg-seve/20 text-[11px] font-display font-bold transition">
+                      <ImagePlus className="w-3.5 h-3.5" />
+                      <span>Galerie</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept={acceptAttribute('CHAT_IMAGE')}
+                        onChange={handleDisputePhotoSelect}
+                        className="sr-only"
+                      />
+                    </label>
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded-card bg-nuit text-safran hover:bg-nuit/90 text-[11px] font-display font-bold transition">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Caméra</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleDisputePhotoSelect}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {disputeUploadError && <p className="text-[11px] text-wax">{disputeUploadError}</p>}
+
+              {disputeEvidenceImages.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {disputeEvidenceImages.map((img, idx) => (
+                    <div key={`${idx}-${img.name}`} className="relative rounded-lg overflow-hidden border border-encre/15">
+                      <img src={img.dataUrl} alt={img.name} className="h-16 w-16 object-cover block" />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDisputeEvidenceImages((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-nuit/80 text-white hover:bg-wax"
+                        title="Retirer cette photo"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center justify-end gap-3 pt-2 border-t border-encre/10">
               <button
                 type="button"
-                onClick={() => setDisputeOrder(null)}
+                onClick={() => {
+                  setDisputeOrder(null);
+                  setDisputeEvidenceImages([]);
+                  setDisputeUploadError(null);
+                }}
                 className="px-4 py-2 text-xs text-encre/60 hover:text-nuit font-medium"
               >
                 Annuler

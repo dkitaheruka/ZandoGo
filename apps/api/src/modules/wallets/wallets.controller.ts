@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -22,11 +23,13 @@ export class WalletsController {
     return this.wallets.getWalletLedger(user, walletId);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('payouts')
   requestPayout(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
     return this.wallets.requestPayout(user, dto);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('payout')
   requestPayoutAlias(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
     return this.wallets.requestPayout(user, dto);

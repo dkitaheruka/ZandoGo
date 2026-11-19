@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './common/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -18,13 +19,13 @@ import { AdsModule } from './modules/ads/ads.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Fixe seulement les valeurs par défaut. La limitation n'agit que sur les contrôleurs qui
-    // déclarent ThrottlerGuard (aujourd'hui : auth, uploads, paiement initiate).
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Plafond global appliqué à toutes les routes via APP_GUARD (surchargeable par @Throttle / @SkipThrottle)
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -42,6 +43,13 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     RealtimeModule,
     UploadsModule,
     AnalyticsModule,
+    AssistantModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

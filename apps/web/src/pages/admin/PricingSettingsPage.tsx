@@ -367,7 +367,7 @@ export function PricingSettingsPage() {
                   <div className="flex items-center justify-between gap-3">
                     <span className="inline-flex items-center gap-1.5 text-xs font-display font-bold text-white">
                       <Zap className="w-4 h-4 text-safran" />
-                      <span>Retrait immédiat global (sans délai de 48h)</span>
+                      <span>Désactiver le délai de 48h (versement direct vendeur)</span>
                     </span>
                     <button
                       type="button"
@@ -385,11 +385,11 @@ export function PricingSettingsPage() {
                           : 'bg-white/10 text-brume/70'
                       }`}
                     >
-                      {form.allowImmediateVendorWithdrawal ? 'AUTORISÉ' : 'DÉLAI 48H'}
+                      {form.allowImmediateVendorWithdrawal ? '48H DÉSACTIVÉ · DIRECT' : 'DÉLAI 48H ACTIF'}
                     </button>
                   </div>
                   <p className="text-[11px] text-brume/65 leading-relaxed">
-                    Par défaut, le compte à rebours de 48h démarre dès le paiement client. Activez cette option pour permettre à tous les vendeurs (hors litige) de retirer immédiatement sans attendre 48h.
+                    Lorsque le délai de 48h est désactivé, les vendeurs reçoivent leur argent directement dans leur solde disponible dès le paiement du client (sauf boutique bloquée ou litige ouvert).
                   </p>
                 </div>
               </div>

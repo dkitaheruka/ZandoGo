@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { AssistantWidget } from './components/AssistantWidget';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -29,6 +30,7 @@ import { VendorNegotiationsPage } from './pages/vendor/VendorNegotiationsPage';
 import { VendorOrdersPage } from './pages/vendor/VendorOrdersPage';
 import { VendorAnalyticsPage } from './pages/vendor/VendorAnalyticsPage';
 import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
+import { AiLogsPage } from './pages/admin/AiLogsPage';
 import { ProfilePage } from './pages/ProfilePage';
 
 export default function App() {
@@ -153,6 +155,14 @@ export default function App() {
             </RequireAuth>
           }
         />
+        <Route
+          path="/admin/ai-logs"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <AiLogsPage />
+            </RequireAuth>
+          }
+        />
         <Route path="/delivery" element={<RequireAuth><DeliveryHomePage /></RequireAuth>} />
         <Route
           path="*"
@@ -168,6 +178,7 @@ export default function App() {
           }
         />
       </Routes>
+      <AssistantWidget />
       <OfflineIndicator />
     </Layout>
   );

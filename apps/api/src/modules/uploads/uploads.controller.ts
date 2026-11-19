@@ -25,7 +25,7 @@ class LocalUploadDto {
   @IsIn(UPLOAD_PURPOSES)
   purpose: UploadPurpose;
 
-  @Matches(/^kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/)
+  @Matches(/^(kyc|chat)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf)$/)
   key: string;
 }
 
@@ -54,7 +54,7 @@ export class UploadsController {
     FileInterceptor('file', {
       limits: { fileSize: 5 * 1024 * 1024, files: 1 },
       fileFilter: (_request, file, callback) => {
-        if (!['image/jpeg', 'image/png', 'application/pdf'].includes(file.mimetype)) {
+        if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype)) {
           callback(new BadRequestException('Type de fichier non accepté'), false);
           return;
         }
@@ -71,6 +71,28 @@ export class UploadsController {
     return { key: await this.uploadsService.storeLocal(user, dto.purpose, dto.key, file) };
   }
 
+  @Get('local/chat/:userId/:fileName')
+  async readLocalChatImage(
+    @Param('userId') userId: string,
+    @Param('fileName') fileName: string,
+    @Query('expires') expires: string,
+    @Query('signature') signature: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'chat');
+    response.set({
+      'Cache-Control': 'private, no-store',
+      'Content-Security-Policy': 'sandbox',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return new StreamableFile(document.buffer, {
+      type: document.contentType,
+      disposition: 'inline',
+    });
+  }
+
   @Get('local/:userId/:fileName')
   async readLocal(
     @Param('userId') userId: string,
@@ -79,7 +101,7 @@ export class UploadsController {
     @Query('signature') signature: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature);
+    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'kyc');
     response.set({
       'Cache-Control': 'private, no-store',
       'Content-Security-Policy': 'sandbox',

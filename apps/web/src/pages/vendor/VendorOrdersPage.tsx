@@ -28,6 +28,7 @@ interface VendorOrderRow {
   destinationCity?: string;
   isPaid?: boolean;
   paidAt?: string;
+  escrowStatus?: string;
   escrowReleaseAt?: string;
   total: number;
   currency: string;
@@ -351,9 +352,19 @@ export function VendorOrdersPage() {
                       {ord.isPaid ? (
                         <>
                           <span className="text-[10px] font-semibold text-seve bg-seve/10 px-2 py-0.5 rounded-full">
-                            Payée (Séquestre)
+                            {immediateAuthorized || ord.escrowStatus === 'RELEASED_TO_VENDOR'
+                              ? 'Payée · Fonds disponibles'
+                              : 'Payée (Séquestre)'}
                           </span>
                           {(() => {
+                            if (immediateAuthorized || ord.escrowStatus === 'RELEASED_TO_VENDOR') {
+                              return (
+                                <span className="text-[10px] font-mono font-bold text-seve bg-safran/25 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                  <Zap className="w-3 h-3 text-nuit" />
+                                  Versement direct immédiat
+                                </span>
+                              );
+                            }
                             const releaseIso =
                               ord.escrowReleaseAt ||
                               (ord.paidAt
@@ -361,14 +372,6 @@ export function VendorOrdersPage() {
                                 : null);
                             if (!releaseIso) return null;
                             const msLeft = new Date(releaseIso).getTime() - Date.now();
-                            if (immediateAuthorized) {
-                              return (
-                                <span className="text-[10px] font-mono font-bold text-seve bg-safran/25 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                  <Zap className="w-3 h-3 text-nuit" />
-                                  Retrait immédiat actif
-                                </span>
-                              );
-                            }
                             if (msLeft <= 0) {
                               return (
                                 <span className="text-[10px] font-mono font-semibold text-seve bg-seve/10 px-2 py-0.5 rounded-full">

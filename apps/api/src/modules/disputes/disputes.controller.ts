@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -8,6 +9,16 @@ import { DisputesService } from './disputes.service';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
 import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
+
+class SetDisputePayoutBlockDto {
+  @IsBoolean()
+  blocked: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('disputes')
@@ -47,9 +58,9 @@ export class DisputesController {
   setPayoutBlock(
     @CurrentUser() admin: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { blocked: boolean; reason?: string },
+    @Body() body: SetDisputePayoutBlockDto,
   ) {
-    return this.disputesService.setStorePayoutFreeze(admin, id, Boolean(body.blocked), body.reason);
+    return this.disputesService.setStorePayoutFreeze(admin, id, body.blocked, body.reason);
   }
 
   /** Résolution : réservée au SUPER_ADMIN (vérifié une seconde fois dans le service) */

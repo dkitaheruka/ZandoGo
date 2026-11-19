@@ -14,10 +14,21 @@ import {
   Lock,
   CheckCircle2,
   Upload,
+  ChevronLeft,
+  ChevronRight,
+  Video,
+  Camera,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
 import { api } from '../../lib/api';
-import { acceptAttribute, validateFile } from '../../lib/upload';
+import { getPreferredAiModel } from '../../lib/ai-preference';
+import {
+  acceptAttribute,
+  readCompressedImageDataUrl,
+  readFileAsDataUrl,
+  readVideoDurationSeconds,
+  validateFile,
+} from '../../lib/upload';
 import type {
   AudienceSegment,
   PlatformPricing,
@@ -61,15 +72,6 @@ const COLOR_PRESETS = [
 
 const SIZE_QUICK_PICKS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Standard'];
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`Impossible de lire « ${file.name} »`));
-    reader.readAsDataURL(file);
-  });
-}
-
 export function CreateProductPage() {
   const { storeId = 'store-1' } = useParams<{ storeId: string }>();
   const [searchParams] = useSearchParams();
@@ -102,8 +104,10 @@ export function CreateProductPage() {
   const [serviceDuration, setServiceDuration] = useState('');
   const [fulfillmentDetails, setFulfillmentDetails] = useState('');
 
-  const [uploadedImages, setUploadedImages] = useState<{ name: string; dataUrl: string }[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<{ name: string; dataUrl: string; label: string }[]>([]);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [uploadedVideo, setUploadedVideo] = useState<{ name: string; dataUrl: string; durationSec: number } | null>(null);
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
   const [variants, setVariants] = useState<VariantDraft[]>([
     { id: 'v-1', size: 'M', color: 'Vert Sève', colorHex: '#26735B', sku: '', stockQty: '10', priceOverride: '' },
@@ -116,6 +120,43 @@ export function CreateProductPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiStatusNote, setAiStatusNote] = useState<string | null>(null);
+
+  async function handleGenerateDescription() {
+    if (!title.trim()) {
+      setAiStatusNote('Saisissez d’abord le titre de votre offre pour générer la description.');
+      return;
+    }
+    setAiGenerating(true);
+    setAiStatusNote(null);
+    try {
+      const selectedCat = categories.find((c) => c.id === categoryId)?.name;
+      const { data } = await api.post<{ description: string; engine: string; model: string }>(
+        '/assistant/product-description',
+        {
+          title: title.trim(),
+          productType,
+          categoryName: selectedCat,
+          audience,
+          pricingUnit,
+          basePriceUsd: basePriceUsd || undefined,
+          preferredModel: getPreferredAiModel() || undefined,
+        },
+      );
+      setDescription(data.description);
+      setAiStatusNote(
+        `Texte rédigé via ${data.engine === 'ollama' ? `Ollama local (${data.model})` : `Modèle Cloud (${data.model})`}.`,
+      );
+    } catch (err: any) {
+      setAiStatusNote(
+        err?.response?.data?.message ||
+          "Assistant IA indisponible : démarrez Ollama en local ou vérifiez la configuration serveur.",
+      );
+    } finally {
+      setAiGenerating(false);
+    }
+  }
 
   useEffect(() => {
     api.get<Category[]>('/categories').then(({ data }) => {
@@ -226,7 +267,7 @@ export function CreateProductPage() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    const validUrls: { name: string; dataUrl: string }[] = [];
+    const validUrls: { name: string; dataUrl: string; label: string }[] = [];
     for (const file of files) {
       const validationMsg = validateFile(file, 'PRODUCT_IMAGE');
       if (validationMsg) {
@@ -234,21 +275,72 @@ export function CreateProductPage() {
         continue;
       }
       try {
-        const dataUrl = await readFileAsDataUrl(file);
-        validUrls.push({ name: file.name, dataUrl });
+        const { dataUrl } = await readCompressedImageDataUrl(file);
+        validUrls.push({ name: file.name, dataUrl, label: '' });
       } catch (err: any) {
         setImageUploadError(err?.message || 'Erreur lors du chargement de la photo.');
       }
     }
 
     if (validUrls.length > 0) {
-      setUploadedImages((prev) => [...prev, ...validUrls].slice(0, 6));
+      setUploadedImages((prev) => {
+        const merged = [...prev, ...validUrls];
+        if (merged.length > 3) {
+          setImageUploadError('3 photos maximum par produit : seules les 3 premières photos ont été conservées.');
+        }
+        return merged.slice(0, 3);
+      });
     }
     e.target.value = '';
   }
 
   function removeUploadedImage(index: number) {
     setUploadedImages((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function moveUploadedImage(index: number, delta: -1 | 1) {
+    setUploadedImages((prev) => {
+      const target = index + delta;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[index], copy[target]] = [copy[target], copy[index]];
+      return copy;
+    });
+  }
+
+  function updateUploadedImageLabel(index: number, label: string) {
+    setUploadedImages((prev) => prev.map((img, i) => (i === index ? { ...img, label } : img)));
+  }
+
+  async function handleVideoSelect(e: ChangeEvent<HTMLInputElement>) {
+    setVideoUploadError(null);
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const validationMsg = validateFile(file, 'PRODUCT_VIDEO');
+    if (validationMsg) {
+      setVideoUploadError(validationMsg);
+      return;
+    }
+
+    try {
+      const duration = await readVideoDurationSeconds(file);
+      if (duration > 10.5) {
+        setVideoUploadError(
+          `« ${file.name} » dure ${Math.round(duration)} secondes. La vidéo de présentation est limitée à 10 secondes maximum.`,
+        );
+        return;
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      setUploadedVideo({
+        name: file.name,
+        dataUrl,
+        durationSec: Math.min(10, Math.max(1, Math.round(duration))),
+      });
+    } catch (err: any) {
+      setVideoUploadError(err?.message || 'Impossible de charger cette vidéo.');
+    }
   }
 
   function addVariant() {
@@ -295,12 +387,19 @@ export function CreateProductPage() {
     setPriceTiers((prev) => prev.filter((t) => t.id !== id));
   }
 
+  const minRequiredImages = 1;
+  const maxProductImages = 3;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (uploadedImages.length === 0) {
-      setError('Veuillez ajouter au moins une photo réelle du produit/service pour le catalogue ZandoGo.');
+    if (uploadedImages.length < minRequiredImages) {
+      setError('Veuillez ajouter au moins 1 photo réelle du produit/service (jusqu’à 3 photos maximum).');
+      return;
+    }
+    if (uploadedImages.length > maxProductImages) {
+      setError('Vous ne pouvez pas dépasser 3 photos par produit.');
       return;
     }
 
@@ -366,7 +465,12 @@ export function CreateProductPage() {
         basePriceUsd: parsedPrice,
         stockQty: productType === 'PHYSICAL' ? Number(stockQty) : 9999,
         lowStockThreshold: Number(lowStockThreshold),
-        images: uploadedImages.map((img) => img.dataUrl),
+        images: uploadedImages.map((img, i) => ({
+          url: img.dataUrl,
+          altText: img.label.trim() || `${title.trim()} — vue ${i + 1}`,
+        })),
+        videoUrl: uploadedVideo?.dataUrl || undefined,
+        videoDurationSec: uploadedVideo?.durationSec || undefined,
         variants: formattedVariants,
         priceTiers: validTiers.length > 0 ? validTiers : undefined,
         digitalFileName: productType === 'DIGITAL' ? digitalFileName : undefined,
@@ -490,56 +594,134 @@ export function CreateProductPage() {
         )}
 
         <form onSubmit={handleSubmit} className="bg-white border border-encre/10 rounded-card p-6 shadow-xs space-y-6">
-          {/* Mandatory Catalog Photo Upload */}
+          {/* Mandatory Catalog Photo Upload (1 min, 3 max according to vendor choice) */}
           <div className="p-4 rounded-card bg-brume/60 border border-dashed border-seve/40 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <label className="block text-xs font-display font-bold uppercase tracking-wider text-nuit">
-                  Photos réelles du catalogue * (obligatoire)
-                </label>
-                <p className="text-[11px] text-encre/65">
-                  Formats acceptés : JPEG, PNG ou WebP (max 5 Mo par image, jusqu’à 6 photos).
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="block text-xs font-display font-bold uppercase tracking-wider text-nuit">
+                    Photos réelles du catalogue * (1 min · 3 max)
+                  </label>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                      uploadedImages.length >= minRequiredImages
+                        ? 'bg-seve/15 text-seve border border-seve/30'
+                        : 'bg-safran/25 text-nuit border border-safran/40'
+                    }`}
+                  >
+                    {uploadedImages.length} / {maxProductImages} · min. 1
+                  </span>
+                </div>
+                <p className="text-[11px] text-encre/65 mt-0.5">
+                  Ajoutez 1 photo obligatoire, et jusqu’à 3 photos maximum selon votre préférence pour montrer différentes couleurs ou vues (JPEG, PNG ou WebP · max 5 Mo/photo). Utilisez &lt; &gt; pour ordonner.
                 </p>
               </div>
-              <label className="cursor-pointer inline-flex items-center gap-2 rounded-card bg-seve hover:bg-seve/90 text-brume px-4 py-2 text-xs font-display font-bold transition shadow-xs">
-                <ImagePlus className="w-4 h-4" />
-                <span>Importer une photo</span>
-                <input
-                  type="file"
-                  accept={acceptAttribute('PRODUCT_IMAGE')}
-                  multiple
-                  onChange={handleImageSelect}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  className={`inline-flex items-center gap-2 rounded-card px-3.5 py-2 text-xs font-display font-bold transition shadow-xs ${
+                    uploadedImages.length >= maxProductImages
+                      ? 'bg-encre/15 text-encre/45 cursor-not-allowed'
+                      : 'cursor-pointer bg-seve hover:bg-seve/90 text-brume'
+                  }`}
+                >
+                  <ImagePlus className="w-4 h-4" />
+                  <span>
+                    {uploadedImages.length >= maxProductImages ? 'Maximum (3/3)' : 'Depuis la galerie'}
+                  </span>
+                  <input
+                    type="file"
+                    accept={acceptAttribute('PRODUCT_IMAGE')}
+                    multiple
+                    disabled={uploadedImages.length >= maxProductImages}
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+
+                <label
+                  className={`inline-flex items-center gap-1.5 rounded-card px-3.5 py-2 text-xs font-display font-bold transition shadow-xs border ${
+                    uploadedImages.length >= maxProductImages
+                      ? 'bg-encre/10 text-encre/40 border-encre/10 cursor-not-allowed'
+                      : 'cursor-pointer bg-white hover:bg-brume text-nuit border-encre/20'
+                  }`}
+                  title="Prendre une photo directement avec la caméra"
+                >
+                  <Camera className="w-4 h-4 text-seve" />
+                  <span>Caméra</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={uploadedImages.length >= maxProductImages}
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {imageUploadError && <p className="text-xs text-wax font-semibold">{imageUploadError}</p>}
 
             {uploadedImages.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 {uploadedImages.map((img, idx) => (
-                  <div key={`${img.name}-${idx}`} className="relative group rounded-card overflow-hidden border border-encre/15 bg-white aspect-[4/3]">
-                    <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
-                    {idx === 0 && (
-                      <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-nuit/85 text-safran text-[10px] font-bold">
-                        Photo principale
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeUploadedImage(idx)}
-                      className="absolute top-1.5 right-1.5 p-1 rounded-full bg-wax text-brume opacity-90 hover:opacity-100 shadow-xs"
-                      title="Retirer cette photo"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div
+                    key={`${img.name}-${idx}`}
+                    className="rounded-card overflow-hidden border border-encre/15 bg-white flex flex-col"
+                  >
+                    <div className="relative group aspect-[4/3] bg-brume">
+                      <img src={img.dataUrl} alt={img.label || img.name} className="w-full h-full object-cover" />
+                      {idx === 0 && (
+                        <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-nuit/85 text-safran text-[10px] font-bold">
+                          Photo principale
+                        </span>
+                      )}
+                      <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveUploadedImage(idx, -1)}
+                          className="p-1 rounded-full bg-nuit/80 text-brume hover:bg-nuit disabled:opacity-35 shadow-xs"
+                          title="Déplacer avant"
+                          aria-label="Déplacer avant"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === uploadedImages.length - 1}
+                          onClick={() => moveUploadedImage(idx, 1)}
+                          className="p-1 rounded-full bg-nuit/80 text-brume hover:bg-nuit disabled:opacity-35 shadow-xs"
+                          title="Déplacer après"
+                          aria-label="Déplacer après"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeUploadedImage(idx)}
+                        className="absolute top-1.5 right-1.5 p-1 rounded-full bg-wax text-brume opacity-90 hover:opacity-100 shadow-xs"
+                        title="Retirer cette photo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="p-2 border-t border-encre/10">
+                      <input
+                        type="text"
+                        value={img.label}
+                        onChange={(e) => updateUploadedImageLabel(idx, e.target.value)}
+                        placeholder={`Couleur / angle #${idx + 1} (ex: Rouge Wax)`}
+                        className="w-full text-[11px] text-encre bg-brume/40 border border-encre/10 rounded px-2 py-1 outline-none focus:border-seve"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="text-center py-4 text-[11px] text-encre/55">
-                Aucune photo sélectionnée pour l’instant. La première photo servira de vignette principale sur la place de marché.
+                Ajoutez au moins 1 photo (et jusqu’à 3 photos maximum selon votre choix pour activer le carrousel &lt; &gt; sur votre produit).
               </div>
             )}
           </div>
@@ -1091,9 +1273,23 @@ export function CreateProductPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70 mb-1.5">
-              Description détaillée de l'offre
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <label className="block text-xs font-display font-semibold uppercase tracking-wider text-encre/70">
+                Description détaillée de l'offre
+              </label>
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={aiGenerating}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-card bg-nuit text-safran hover:bg-nuit/90 text-[11px] font-display font-bold transition disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{aiGenerating ? 'Rédaction IA…' : 'Rédiger avec l’Assistant IA'}</span>
+              </button>
+            </div>
+            {aiStatusNote && (
+              <p className="mb-1.5 text-[11px] font-medium text-seve">{aiStatusNote}</p>
+            )}
             <textarea
               rows={4}
               value={description}
@@ -1101,6 +1297,82 @@ export function CreateProductPage() {
               placeholder="Détails techniques, matières, tailles disponibles, conditions de transport ou de téléchargement en RDC..."
               className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs text-encre outline-none focus:border-seve"
             />
+          </div>
+
+          {/* Optional Short Presentation Video (<= 10 seconds) inside Description/Media */}
+          <div className="p-4 rounded-card bg-brume/50 border border-encre/10 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Video className="w-4 h-4 text-seve" />
+                  <h3 className="text-xs font-display font-bold uppercase tracking-wider text-nuit">
+                    Courte vidéo de présentation (optionnelle · max 10 secondes)
+                  </h3>
+                </div>
+                <p className="text-[11px] text-encre/65 mt-0.5">
+                  Idéal pour montrer le tombé du tissu, la prise en main ou le produit en mouvement dans la description (MP4, WebM ou MOV · max 15 Mo).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <label className="cursor-pointer inline-flex items-center gap-2 rounded-card bg-nuit hover:bg-nuit/90 text-safran px-3.5 py-2 text-xs font-display font-bold transition shadow-xs">
+                  <Video className="w-3.5 h-3.5" />
+                  <span>{uploadedVideo ? 'Remplacer (galerie)' : 'Galerie vidéo (≤ 10s)'}</span>
+                  <input
+                    type="file"
+                    accept={acceptAttribute('PRODUCT_VIDEO')}
+                    onChange={handleVideoSelect}
+                    className="hidden"
+                  />
+                </label>
+                <label
+                  className="cursor-pointer inline-flex items-center gap-1.5 rounded-card bg-white hover:bg-brume text-nuit border border-encre/20 px-3 py-2 text-xs font-display font-bold transition shadow-xs"
+                  title="Filmer une courte vidéo directement avec la caméra (max 10s)"
+                >
+                  <Camera className="w-3.5 h-3.5 text-seve" />
+                  <span>Filmer</span>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    capture="environment"
+                    onChange={handleVideoSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {videoUploadError && (
+              <p className="text-xs text-wax font-semibold">{videoUploadError}</p>
+            )}
+
+            {uploadedVideo && (
+              <div className="rounded-card border border-encre/15 bg-white p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="px-2 py-0.5 rounded-full bg-seve/15 text-seve font-mono font-bold text-[10px]">
+                      {uploadedVideo.durationSec}s / 10s max
+                    </span>
+                    <span className="truncate font-medium text-nuit">{uploadedVideo.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUploadedVideo(null)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-wax hover:underline shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Retirer</span>
+                  </button>
+                </div>
+                <video
+                  src={uploadedVideo.dataUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full max-h-56 rounded-lg bg-nuit object-contain"
+                />
+              </div>
+            )}
           </div>
 
           {error && <p className="text-xs text-wax font-semibold bg-wax/10 border border-wax/20 rounded-card px-3.5 py-2.5">{error}</p>}

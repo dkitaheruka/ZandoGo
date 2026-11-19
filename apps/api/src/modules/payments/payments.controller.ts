@@ -11,7 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -23,13 +23,14 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('initiate')
   initiate(@CurrentUser() user: AuthenticatedUser, @Body() dto: InitiatePaymentDto) {
     return this.paymentsService.initiatePayment(user, dto);
   }
 
   /** Vérifie le statut en direct d'une transaction ou commande */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @UseGuards(JwtAuthGuard)
   @Get('status/:id')
   checkStatus(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
@@ -37,6 +38,7 @@ export class PaymentsController {
   }
 
   /** Webhook principal neutre (C2B & B2C, vérification HMAC-SHA256) */
+  @SkipThrottle()
   @Post('callbacks/gateway')
   handleGatewayCallback(
     @Req() req: RawBodyRequest<Request>,
@@ -47,6 +49,7 @@ export class PaymentsController {
   }
 
   /** Alias silencieux pour compatibilité webhook */
+  @SkipThrottle()
   @Post('webhooks/maishapay')
   handleGatewayWebhookAlias(
     @Req() req: RawBodyRequest<Request>,
@@ -57,6 +60,7 @@ export class PaymentsController {
   }
 
   /** Callback GET de retour Carte Visa / Mastercard (?status=200&description=APPROVED&...) */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Get('callbacks/card')
   handleCardRedirect(
     @Query('status') status?: string,
@@ -72,11 +76,7 @@ export class PaymentsController {
     });
   }
 
-  @Post('webhooks/cinetpay')
-  handleCinetPayWebhook(@Body() payload: any) {
-    return this.paymentsService.handleCinetPayWebhook(payload);
-  }
-
+  @SkipThrottle()
   @Post('webhooks/stripe')
   async handleStripeWebhook(
     @Req() req: RawBodyRequest<Request>,

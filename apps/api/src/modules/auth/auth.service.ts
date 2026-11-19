@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { LoginAttemptTracker } from '../../common/security-rules';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -27,6 +30,8 @@ function expirationSeconds(value: string | undefined, fallback: string): number 
 
 @Injectable()
 export class AuthService {
+  private readonly loginTracker = new LoginAttemptTracker(5, 15 * 60 * 1000, 15 * 60 * 1000);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -40,15 +45,18 @@ export class AuthService {
    * par un ADMIN (jamais auto-attribués à l'inscription).
    */
   async register(dto: RegisterDto, ip?: string) {
-    if (!dto.email && !dto.phone) {
+    const email = dto.email?.trim().toLowerCase() || undefined;
+    const phone = dto.phone?.trim() || undefined;
+
+    if (!email && !phone) {
       throw new ConflictException('Un email ou un numéro de téléphone est requis');
     }
 
     const existing = await this.prisma.user.findFirst({
       where: {
         OR: [
-          dto.email ? { email: dto.email } : undefined,
-          dto.phone ? { phone: dto.phone } : undefined,
+          email ? { email: { equals: email, mode: 'insensitive' } } : undefined,
+          phone ? { phone } : undefined,
         ].filter(Boolean) as any,
       },
     });
@@ -61,10 +69,10 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email,
-        phone: dto.phone,
+        email,
+        phone,
         passwordHash,
-        fullName: dto.fullName,
+        fullName: dto.fullName.trim(),
         preferredCurrency: dto.preferredCurrency ?? 'USD',
         status: 'PENDING_VERIFICATION',
         roles: {
@@ -86,32 +94,76 @@ export class AuthService {
     return this.issueTokens(user.id);
   }
 
-  async login(dto: LoginDto) {
-    if (!dto.email && !dto.phone) {
+  async login(dto: LoginDto, ip?: string) {
+    const email = dto.email?.trim().toLowerCase() || undefined;
+    const phone = dto.phone?.trim() || undefined;
+    const identifier = email || phone || '';
+
+    if (!identifier) {
       throw new UnauthorizedException('Identifiants invalides');
+    }
+
+    const lockState = this.loginTracker.isLocked(identifier);
+    if (lockState.locked) {
+      await this.audit.log({
+        action: 'user.login_blocked_lockout',
+        entityType: 'Auth',
+        entityId: identifier,
+        afterState: { retryAfterSeconds: lockState.retryAfterSeconds },
+        ipAddress: ip,
+      });
+      throw new HttpException(
+        `Trop de tentatives échouées. Réessayez dans ${Math.ceil(lockState.retryAfterSeconds / 60)} minute(s).`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const user = await this.prisma.user.findFirst({
       where: {
         OR: [
-          dto.email ? { email: dto.email } : undefined,
-          dto.phone ? { phone: dto.phone } : undefined,
+          email ? { email: { equals: email, mode: 'insensitive' } } : undefined,
+          phone ? { phone } : undefined,
         ].filter(Boolean) as any,
       },
     });
 
     if (!user) {
+      this.loginTracker.recordFailure(identifier);
       throw new UnauthorizedException('Identifiants invalides');
     }
 
     const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordValid) {
+      const failure = this.loginTracker.recordFailure(identifier);
+      await this.audit.log({
+        actorUserId: user.id,
+        action: failure.locked ? 'user.login_locked' : 'user.login_failed',
+        entityType: 'User',
+        entityId: user.id,
+        afterState: { attemptsRemaining: failure.attemptsRemaining },
+        ipAddress: ip,
+      });
+      if (failure.locked) {
+        throw new HttpException(
+          'Trop de tentatives échouées. Compte temporairement verrouillé pendant 15 minutes.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
       throw new UnauthorizedException('Identifiants invalides');
     }
 
     if (user.status === 'BANNED' || user.status === 'SUSPENDED') {
       throw new UnauthorizedException('Ce compte est suspendu. Contactez le support.');
     }
+
+    this.loginTracker.recordSuccess(identifier);
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'user.login_success',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: ip,
+    });
 
     return this.issueTokens(user.id);
   }

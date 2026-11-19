@@ -392,6 +392,23 @@ export function OrderTrackingPage() {
             </div>
           )}
 
+          {/* Handover Photo Proof */}
+          {delivery.status === 'DELIVERED' && delivery.deliveryProof?.fileUrl && (
+            <div className="rounded-card border border-seve/25 bg-white p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-display font-bold text-nuit">Preuve photo de remise</span>
+                <span className="font-mono text-[10px] text-encre/60">
+                  {new Date(delivery.deliveryProof.recordedAt).toLocaleTimeString('fr-FR')}
+                </span>
+              </div>
+              <img
+                src={delivery.deliveryProof.fileUrl}
+                alt="Preuve photo de remise du colis"
+                className="w-full max-h-48 object-cover rounded-lg border border-encre/10"
+              />
+            </div>
+          )}
+
           <div className="rounded-card border border-seve/25 bg-seve/10 p-4 text-xs text-seve flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
             <p className="leading-relaxed">

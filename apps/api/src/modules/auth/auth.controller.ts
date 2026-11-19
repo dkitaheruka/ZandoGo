@@ -50,8 +50,12 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } }) // 10 tentatives / min / IP
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { accessToken, refreshToken } = await this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Ip() ip: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, refreshToken } = await this.authService.login(dto, ip);
     res.cookie('refresh_token', refreshToken, REFRESH_COOKIE_OPTIONS);
     return { accessToken };
   }
@@ -71,7 +75,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie('refresh_token', { path: '/api/auth' });
+    res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
     return { success: true };
   }
 }

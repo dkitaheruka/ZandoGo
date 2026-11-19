@@ -1,5 +1,13 @@
 import { Currency } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterDto {
   @IsOptional()
@@ -15,6 +23,10 @@ export class RegisterDto {
   @IsString()
   @MinLength(10)
   @MaxLength(64)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
+    message:
+      'Le mot de passe doit contenir au moins 10 caractères, une majuscule, une minuscule et un chiffre.',
+  })
   password: string;
 
   @IsString()

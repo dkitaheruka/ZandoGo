@@ -171,8 +171,19 @@ export class CatalogService {
     // sinon on pourrait rattacher à son produit l'image d'un autre vendeur. Vérifié avant
     // toute écriture en base.
     const imageKeys = dto.imageKeys ?? [];
+    if (imageKeys.length > 3) {
+      throw new BadRequestException(
+        'Vous pouvez ajouter jusqu’à 3 photos maximum par produit.',
+      );
+    }
     for (const key of imageKeys) {
       this.uploads.assertOwnedKey(user, 'PRODUCT_IMAGE', key);
+    }
+
+    let videoUrl: string | undefined;
+    if (dto.videoKey) {
+      this.uploads.assertOwnedKey(user, 'PRODUCT_VIDEO', dto.videoKey);
+      videoUrl = this.uploads.publicUrlFor(dto.videoKey);
     }
 
     const existingSlug = await this.prisma.product.findUnique({ where: { slug: dto.slug } });
@@ -191,6 +202,8 @@ export class CatalogService {
         description: dto.description,
         basePriceUsd: dto.basePriceUsd,
         basePriceCdf,
+        videoUrl,
+        videoDurationSec: videoUrl ? (dto.videoDurationSec ?? 10) : undefined,
         status: ProductStatus.DRAFT, // le vendeur doit explicitement passer en ACTIVE
         variants: {
           create: dto.variants.map((v) => ({
@@ -205,10 +218,11 @@ export class CatalogService {
           create: imageKeys.map((key, position) => ({
             url: this.uploads.publicUrlFor(key),
             position,
+            altText: dto.imageAltTexts?.[position]?.trim() || undefined,
           })),
         },
       },
-      include: { variants: true, images: true },
+      include: { variants: true, images: { orderBy: { position: 'asc' } } },
     });
 
     await this.audit.log({
@@ -243,9 +257,51 @@ export class CatalogService {
       throw new ForbiddenException("Vous n'êtes pas propriétaire de ce produit");
     }
 
-    const updated = await this.prisma.product.update({
-      where: { id: productId },
-      data: dto,
+    const { imageKeys, imageAltTexts, videoKey, videoDurationSec, removeVideo, ...scalarPatch } = dto;
+
+    if (imageKeys !== undefined) {
+      if (imageKeys.length < 1 || imageKeys.length > 3) {
+        throw new BadRequestException('Un produit doit contenir entre 1 et 3 photos.');
+      }
+      for (const key of imageKeys) {
+        this.uploads.assertOwnedKey(user, 'PRODUCT_IMAGE', key);
+      }
+    }
+
+    let nextVideoUrl: string | null | undefined;
+    let nextVideoDurationSec: number | null | undefined;
+    if (removeVideo) {
+      nextVideoUrl = null;
+      nextVideoDurationSec = null;
+    } else if (videoKey) {
+      this.uploads.assertOwnedKey(user, 'PRODUCT_VIDEO', videoKey);
+      nextVideoUrl = this.uploads.publicUrlFor(videoKey);
+      nextVideoDurationSec = videoDurationSec ?? 10;
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (imageKeys !== undefined) {
+        await tx.productImage.deleteMany({ where: { productId } });
+      }
+      return tx.product.update({
+        where: { id: productId },
+        data: {
+          ...scalarPatch,
+          ...(nextVideoUrl !== undefined ? { videoUrl: nextVideoUrl, videoDurationSec: nextVideoDurationSec } : {}),
+          ...(imageKeys !== undefined
+            ? {
+                images: {
+                  create: imageKeys.map((key, position) => ({
+                    url: this.uploads.publicUrlFor(key),
+                    position,
+                    altText: imageAltTexts?.[position]?.trim() || undefined,
+                  })),
+                },
+              }
+            : {}),
+        },
+        include: { images: { orderBy: { position: 'asc' } }, variants: true },
+      });
     });
 
     await this.audit.log({
@@ -273,7 +329,7 @@ export class CatalogService {
         storeId: params.storeId,
         title: params.search ? { contains: params.search, mode: 'insensitive' } : undefined,
       },
-      include: { images: true, variants: true, store: { select: { storeName: true, slug: true } } },
+      include: { images: { orderBy: { position: 'asc' } }, variants: true, store: { select: { storeName: true, slug: true } } },
       orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
       take: 40,
     });
@@ -283,7 +339,7 @@ export class CatalogService {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       include: {
-        images: true,
+        images: { orderBy: { position: 'asc' } },
         variants: true,
         category: true,
         // Sélection explicite : cette route est publique, donc jamais de

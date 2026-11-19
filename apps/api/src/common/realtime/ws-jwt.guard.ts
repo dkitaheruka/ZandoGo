@@ -33,9 +33,10 @@ export class WsJwtGuard implements CanActivate {
       const token = client.handshake.auth?.token as string | undefined;
       if (!token) return false;
 
-      const payload = await this.jwtService.verifyAsync(token, {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; type?: string }>(token, {
         secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
+      if (payload.type !== 'access' || !payload.sub) return false;
 
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },

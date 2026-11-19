@@ -8,6 +8,7 @@ import {
 import { RoleName, StoreStatus, Currency } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { AssistantService } from '../assistant/assistant.service';
 import { FinanceService } from '../finance/finance.service';
 import { MaishaPayService } from '../payments/maishapay.service';
 import { AfricasTalkingSmsService } from '../realtime/africastalking-sms.service';
@@ -26,6 +27,7 @@ export class VendorsService {
     private readonly finance: FinanceService,
     private readonly maishaPay: MaishaPayService,
     private readonly sms: AfricasTalkingSmsService,
+    private readonly assistant: AssistantService,
   ) {}
 
   private getServiceFee(
@@ -155,12 +157,21 @@ export class VendorsService {
     });
 
     if (dto.customerPhone) {
-      await this.sms
-        .sendSms(
-          dto.customerPhone,
-          `ZandoGo Goma : Boutique "${store.storeName}" achetée (${creationFeeUsd}$ · Réf ${paymentRef ?? ''}). Modules activés : ${enabledServices.join(', ')}.`,
-        )
-        .catch(() => {});
+      const smsFallback = `Bienvenue sur ZandoGo ! Boutique "${store.storeName}" activée (${creationFeeUsd}$ · Réf ${paymentRef ?? 'OK'}).`;
+      const smsMsg = await this.assistant.composeContextualMessage({
+        scenario: 'STORE_CREATED_OR_SERVICE',
+        channel: 'sms',
+        recipientRole: 'VENDOR',
+        facts: {
+          storeName: store.storeName,
+          amountUsd: `${creationFeeUsd}$`,
+          paymentRef: paymentRef || 'OK',
+          modules: enabledServices.join(', '),
+        },
+        requiredTokens: [store.storeName, ...(paymentRef ? [paymentRef] : [])],
+        fallbackText: smsFallback,
+      });
+      await this.sms.sendSms(dto.customerPhone, smsMsg.text).catch(() => {});
     }
 
     await this.audit.log({
@@ -202,6 +213,36 @@ export class VendorsService {
     );
   }
 
+  /** Liste complète des boutiques pour la console admin (avec config services, solde USD et nombre de commandes) */
+  async listAllStoresForAdmin() {
+    const stores = await this.prisma.vendorStore.findMany({
+      include: {
+        owner: { select: { id: true, fullName: true, email: true, phone: true } },
+        _count: { select: { subOrders: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const wallets = await this.prisma.wallet.findMany({
+      where: { ownerType: 'VENDOR', currency: Currency.USD },
+      select: { ownerId: true, balance: true },
+    });
+    const balanceByStore = new Map(wallets.map((w) => [w.ownerId, Number(w.balance)]));
+
+    return Promise.all(
+      stores.map(async (s) => {
+        const svc = await this.getStoreServiceConfig(s.id);
+        return {
+          ...s,
+          ...svc,
+          commissionRate: Number(s.commissionRate ?? 5),
+          balanceUsd: balanceByStore.get(s.id) ?? 0,
+          totalOrders: s._count.subOrders,
+        };
+      }),
+    );
+  }
+
   /** File d'attente admin : boutiques à valider, les plus anciennes d'abord */
   async listPendingStores() {
     return this.prisma.vendorStore.findMany({
@@ -228,7 +269,8 @@ export class VendorsService {
 
     const svc = await this.getStoreServiceConfig(storeId);
     if (!isOwner && !isAdmin) {
-      const { commissionRate: _hidden, ...publicStore } = store;
+      const { commissionRate: _hiddenRate, payoutBlockReason: _hiddenReason, ...publicStore } =
+        store;
       return { ...publicStore, ...svc };
     }
 
@@ -458,15 +500,29 @@ export class VendorsService {
       },
     });
 
+    const blockFallback =
+      updated.payoutBlockReason ??
+      `Bonne nouvelle : les retraits Mobile Money / banque pour « ${store.storeName} » sont de nouveau disponibles.`;
+    const blockBody = await this.assistant.composeContextualMessage({
+      scenario: 'VENDOR_PAYOUT_STATUS',
+      channel: 'inapp',
+      recipientRole: 'VENDOR',
+      facts: {
+        storeName: store.storeName,
+        payoutBlocked: blocked,
+        reason: updated.payoutBlockReason ?? 'Mesure levée',
+      },
+      requiredTokens: [store.storeName],
+      fallbackText: blockFallback,
+    });
+
     await this.notifications.notifyUser({
       userId: store.ownerId,
       type: blocked ? 'vendor_store.payout_blocked' : 'vendor_store.payout_unblocked',
       title: blocked
-        ? 'Retraits temporairement bloqués sur votre boutique'
-        : 'Retraits débloqués sur votre boutique',
-      body:
-        updated.payoutBlockReason ??
-        'Vos demandes de retrait Mobile Money / banque sont de nouveau autorisées.',
+        ? 'Retraits temporairement suspendus sur votre boutique'
+        : 'Retraits réactivés sur votre boutique',
+      body: blockBody.text,
       data: { storeId, payoutBlocked: blocked },
     });
 
@@ -495,15 +551,28 @@ export class VendorsService {
       },
     });
 
+    const immediateFallback = enabled
+      ? `Bonne nouvelle ! Le Super Admin autorise désormais les retraits immédiats sur votre boutique « ${store.storeName} ».`
+      : `Bonjour, le délai standard de 48h à compter du paiement s’applique désormais à « ${store.storeName} ».`;
+    const immediateBody = await this.assistant.composeContextualMessage({
+      scenario: 'VENDOR_PAYOUT_STATUS',
+      channel: 'inapp',
+      recipientRole: 'VENDOR',
+      facts: {
+        storeName: store.storeName,
+        immediateWithdrawalEnabled: enabled,
+      },
+      requiredTokens: [store.storeName],
+      fallbackText: immediateFallback,
+    });
+
     await this.notifications.notifyUser({
       userId: store.ownerId,
       type: 'vendor_store.immediate_withdrawal',
       title: enabled
-        ? 'Retrait immédiat activé par le Super Admin'
+        ? 'Retrait immédiat activé sur votre boutique'
         : 'Rétention standard 48h rétablie',
-      body: enabled
-        ? `Le Super Admin autorise désormais les retraits immédiats sur votre boutique « ${store.storeName} ».`
-        : `Le délai standard de 48h à compter du paiement s’applique à « ${store.storeName} ».`,
+      body: immediateBody.text,
       data: { storeId, immediateWithdrawalEnabled: enabled },
     });
 
@@ -564,14 +633,31 @@ export class VendorsService {
       return store2;
     });
 
+    const reviewFallback =
+      dto.status === StoreStatus.ACTIVE
+        ? `Félicitations ! Votre boutique « ${store.storeName} » est désormais active sur ZandoGo.`
+        : dto.note ?? `Mise à jour de votre boutique « ${store.storeName} » : statut ${dto.status}.`;
+    const reviewBody = await this.assistant.composeContextualMessage({
+      scenario: 'STORE_CREATED_OR_SERVICE',
+      channel: 'inapp',
+      recipientRole: 'VENDOR',
+      facts: {
+        storeName: store.storeName,
+        status: dto.status,
+        note: dto.note,
+      },
+      requiredTokens: [store.storeName],
+      fallbackText: reviewFallback,
+    });
+
     await this.notifications.notifyUser({
       userId: store.ownerId,
       type: 'vendor_store.status_change',
       title:
         dto.status === StoreStatus.ACTIVE
-          ? 'Votre boutique a été approuvée !'
-          : 'Le statut de votre boutique a changé',
-      body: dto.note ?? `Nouveau statut : ${dto.status}`,
+          ? 'Votre boutique est prête sur ZandoGo !'
+          : 'Mise à jour de votre boutique',
+      body: reviewBody.text,
       data: { storeId, status: dto.status },
     });
 

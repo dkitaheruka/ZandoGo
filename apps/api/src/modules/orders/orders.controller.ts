@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { RoleName } from '@prisma/client';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -13,6 +14,7 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('checkout')
   checkout(@CurrentUser() user: AuthenticatedUser, @Body() dto: CheckoutDto) {
     return this.orders.checkout(user, dto);

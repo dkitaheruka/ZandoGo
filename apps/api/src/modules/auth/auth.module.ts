@@ -7,6 +7,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
@@ -20,9 +21,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtStrategy,
     JwtRefreshStrategy,
     JwtAuthGuard,
+    OptionalJwtAuthGuard,
     JwtRefreshGuard,
     RolesGuard,
   ],
-  exports: [AuthService, JwtModule, JwtAuthGuard, JwtRefreshGuard, RolesGuard],
+  exports: [AuthService, JwtModule, JwtAuthGuard, OptionalJwtAuthGuard, JwtRefreshGuard, RolesGuard],
 })
 export class AuthModule {}

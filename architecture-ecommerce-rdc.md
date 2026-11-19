@@ -27,7 +27,7 @@ ORM             : Prisma (migrations versionnées, typage automatique bout-en-bo
 Cache/Files     : Redis (sessions, files d'attente BullMQ, cache catalogue, pub/sub temps réel)
 Temps réel      : Socket.io (namespaces séparés : /tracking, /chat, /notifications)
 Stockage médias : S3-compatible (Backblaze B2 ou DigitalOcean Spaces — coût très inférieur à AWS S3)
-Paiement        : CinetPay (agrégateur — couvre RDC en CDF/USD, Orange/Airtel/M-Pesa + cartes) + Stripe (cartes internationales) + module Cash-on-Delivery interne
+Paiement        : MaishaPay (agrégateur RDC — Mobile Money M-Pesa / Orange / Airtel / MTN + décaissements B2C) + Stripe (cartes Visa/Mastercard) + module Cash-on-Delivery interne
 Recherche       : PostgreSQL full-text search au départ (extension pg_trgm), migration vers Meilisearch si le catalogue grossit
 Conteneurisation: Docker + docker-compose (portabilité, un seul VPS au départ, migration facile vers K8s plus tard)
 Reverse proxy   : Caddy ou Nginx (HTTPS automatique, faible coût de configuration)
@@ -157,7 +157,7 @@ payment_methods (id, code ENUM('mobile_money_orange','mobile_money_airtel',
                                 'mobile_money_mpesa','card_stripe','cash_on_delivery'))
 
 payment_transactions (
-  id, order_id FK, method_id FK, provider_reference VARCHAR, -- ID renvoyé par CinetPay/Stripe
+  id, order_id FK, method_id FK, provider_reference VARCHAR, -- ID renvoyé par MaishaPay/Stripe
   amount, currency, exchange_rate_applied DECIMAL,
   status ENUM('initiated','pending','success','failed','refunded'),
   raw_provider_payload JSONB, -- on garde TOUTE la réponse brute du fournisseur = preuve légale
@@ -247,13 +247,13 @@ Toute action sensible (changement de prix, suppression produit, modification de 
 
 ## 4. Logique de paiement détaillée
 
-### 4.1 Flux pour Mobile Money (Orange/Airtel/M-Pesa via CinetPay)
+### 4.1 Flux pour Mobile Money (Orange/Airtel/M-Pesa/MTN via MaishaPay)
 
 1. Le client choisit Mobile Money au checkout → sélection de l'opérateur.
 2. Le backend crée une ligne `payment_transactions(status='initiated')`.
-3. Appel API CinetPay → déclenche un **push USSD/STK** vers le téléphone du client.
+3. Appel API MaishaPay → déclenche un **push USSD/STK** vers le téléphone du client.
 4. Le client valide avec son code PIN sur son téléphone.
-5. CinetPay envoie un **webhook** de confirmation → le backend vérifie la signature du webhook (obligatoire pour la sécurité), met à jour `payment_transactions(status='success')`, stocke la réponse brute dans `raw_provider_payload`.
+5. MaishaPay envoie un **webhook** de confirmation → le backend vérifie la signature HMAC et contre-vérifie via `/transaction/rest/v2/check`, met à jour `payment_transactions(status='success')`, et stocke la réponse brute dans `raw_provider_payload`.
 6. Une transaction `wallet_transactions` de type `commission` crédite le vendeur (moins la commission plateforme) et une autre crédite le wallet plateforme.
 7. La commande passe automatiquement à `paid` → notification temps réel au vendeur.
 
@@ -356,7 +356,7 @@ Redis Pub/Sub est utilisé en interne comme adaptateur Socket.io (`@socket.io/re
 
 - Authentification : JWT access token (courte durée) + refresh token en cookie `httpOnly` `secure`.
 - 2FA obligatoire pour `SUPER_ADMIN` et `ADMIN` (OTP par SMS ou app authenticator).
-- Toutes les routes financières protégées par vérification de signature webhook (CinetPay/Stripe) — jamais de confiance aveugle dans un webhook entrant.
+- Toutes les routes financières protégées par vérification de signature webhook (MaishaPay HMAC / Stripe `stripe-signature`) — jamais de confiance aveugle dans un webhook entrant.
 - Rate limiting (par IP + par utilisateur) sur les endpoints sensibles (login, paiement).
 - Validation stricte des inputs (class-validator côté NestJS) + protection CSRF pour les formulaires.
 - Chiffrement au repos des documents KYC (bucket privé, URLs signées à durée limitée).

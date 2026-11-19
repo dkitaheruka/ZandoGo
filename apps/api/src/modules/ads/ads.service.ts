@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AdCampaignStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { CinetPayService } from '../payments/cinetpay.service';
+import { MaishaPayService } from '../payments/maishapay.service';
 import { StripeService } from '../payments/stripe.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -19,7 +19,7 @@ export class AdsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
-    private readonly cinetpay: CinetPayService,
+    private readonly maishapay: MaishaPayService,
     private readonly stripe: StripeService,
   ) {}
 
@@ -110,38 +110,60 @@ export class AdsService {
       data: { status: AdCampaignStatus.PENDING_PAYMENT },
     });
 
-    const appUrl = this.config.get<string>('APP_URL');
-
     if (dto.methodCode === 'CARD_STRIPE') {
-      const intent = await this.stripe.createPaymentIntent({
+      if (this.stripe.isConfigured()) {
+        const intent = await this.stripe.createPaymentIntent({
+          amount: Number(campaign.budgetAmount),
+          currency: (campaign.currency || 'USD').toLowerCase(),
+          orderId: `ad-campaign:${campaignId}`,
+          transactionId: `ad-${campaignId}`,
+          customerEmail: user.email || undefined,
+        });
+        return { method: 'card_stripe', clientSecret: intent.client_secret, paymentRef: intent.id, campaignId };
+      }
+      const cardFallback = await this.maishapay.initiatePayment({
+        orderId: `ad-${campaignId}`,
         amount: Number(campaign.budgetAmount),
-        currency: 'usd',
-        orderId: `ad-campaign:${campaignId}`, // réutilise le champ metadata, pas une vraie commande
+        currency: campaign.currency as 'USD' | 'CDF',
+        methodCode: 'CARD_STRIPE',
+        customerPhone: dto.phoneNumber,
+        customerEmail: user.email || undefined,
+        description: `Campagne publicitaire ${campaign.type}`,
       });
-      return { method: 'card_stripe', clientSecret: intent.client_secret, campaignId };
+      return {
+        method: 'card_stripe',
+        paymentRef: cardFallback.providerReference,
+        paymentUrl: cardFallback.paymentPageUrl,
+        campaignId,
+      };
     }
 
-    // Mobile Money
+    // Mobile Money RDC via MaishaPay
     if (!dto.phoneNumber) {
       throw new BadRequestException('Le numéro de téléphone Mobile Money est requis');
     }
-    const result = await this.cinetpay.initiatePayment({
-      transactionId: `ad-${campaignId}`,
+    const result = await this.maishapay.initiatePayment({
+      orderId: `ad-${campaignId}`,
       amount: Number(campaign.budgetAmount),
       currency: campaign.currency as 'USD' | 'CDF',
-      description: `Campagne publicitaire ${campaign.type}`,
+      methodCode: dto.methodCode,
       customerPhone: dto.phoneNumber,
-      returnUrl: `${appUrl}/ads/${campaignId}`,
-      notifyUrl: `${appUrl}/api/ads/webhooks/cinetpay`,
+      customerEmail: user.email || undefined,
+      description: `Campagne publicitaire ${campaign.type}`,
     });
 
-    return { method: dto.methodCode, paymentUrl: result.data?.payment_url, campaignId };
+    return {
+      method: dto.methodCode,
+      paymentRef: result.providerReference,
+      ussdCode: result.ussdCode,
+      paymentUrl: result.paymentPageUrl,
+      campaignId,
+    };
   }
 
   /**
-   * Confirmation de paiement (webhook CinetPay/Stripe dédié, ou appel direct
-   * pour ce squelette — à brancher sur les webhooks réels comme pour le
-   * module payments, avec la même contre-vérification systématique).
+   * Confirmation de paiement (webhook MaishaPay/Stripe dédié, ou appel direct
+   * avec contre-vérification serveur systématique).
    */
   async activateCampaign(campaignId: string, providerReference: string) {
     const campaign = await this.prisma.adCampaign.findUnique({ where: { id: campaignId } });

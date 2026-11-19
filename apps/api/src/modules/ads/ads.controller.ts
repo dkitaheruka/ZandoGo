@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { AdsService } from './ads.service';
@@ -38,6 +39,7 @@ export class AdsController {
   }
 
   /** Suivi public — appelé par le frontend à chaque affichage/clic d'une annonce */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('campaigns/:id/impressions')
   trackImpression(
     @Param('id') id: string,
@@ -47,6 +49,7 @@ export class AdsController {
     return this.adsService.recordImpression(id, viewerUserId, page);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('campaigns/:id/clicks')
   trackClick(@Param('id') id: string, @Query('viewerUserId') viewerUserId?: string) {
     return this.adsService.recordClick(id, viewerUserId);

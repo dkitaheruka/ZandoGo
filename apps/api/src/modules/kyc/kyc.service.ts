@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { KycStatus, KycType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { AssistantService } from '../assistant/assistant.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { UploadsService } from '../uploads/uploads.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -13,6 +14,7 @@ export class KycService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsGateway,
     private readonly uploads: UploadsService,
+    private readonly assistant: AssistantService,
   ) {}
 
   /**
@@ -90,7 +92,12 @@ export class KycService {
       afterState: { ownerUserId: doc.userId, type: doc.type },
     });
 
-    return { url };
+    const ext = doc.fileKey.split('.').pop()?.toLowerCase();
+    const mimeType =
+      ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : 'image/jpeg';
+    const fileName = `justificatif-${doc.type.toLowerCase()}-${doc.id.slice(0, 8)}.${ext || 'jpg'}`;
+
+    return { url, mimeType, fileName };
   }
 
   async review(
@@ -124,11 +131,28 @@ export class KycService {
       afterState: { status },
     });
 
+    const kycFallback =
+      status === KycStatus.APPROVED
+        ? `Bravo ! Votre justificatif (${doc.type}) a bien été validé sur ZandoGo.`
+        : `Bonjour, votre justificatif (${doc.type}) n’a pas pu être validé pour le moment. Vous pouvez envoyer une photo plus nette depuis votre espace.`;
+
+    const kycMsg = await this.assistant.composeContextualMessage({
+      scenario: 'KYC_REVIEWED',
+      channel: 'inapp',
+      recipientRole: 'VENDOR',
+      facts: {
+        documentType: doc.type,
+        decision: status,
+      },
+      requiredTokens: [doc.type],
+      fallbackText: kycFallback,
+    });
+
     await this.notifications.notifyUser({
       userId: doc.userId,
       type: 'kyc.status_change',
-      title: status === KycStatus.APPROVED ? 'Document approuvé' : 'Document refusé',
-      body: `Votre document (${doc.type}) a été ${status === KycStatus.APPROVED ? 'approuvé' : 'refusé'}.`,
+      title: status === KycStatus.APPROVED ? 'Justificatif validé !' : 'Justificatif à renouveler',
+      body: kycMsg.text,
       data: { documentId, status },
     });
 

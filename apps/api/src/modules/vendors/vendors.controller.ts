@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CatalogService } from '../catalog/catalog.service';
 import { CreateProductDto } from '../catalog/dto/create-product.dto';
@@ -11,6 +13,48 @@ import { CreateStoreDto } from './dto/create-store.dto';
 import { ReviewStoreDto } from './dto/review-store.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
 import { VendorsService } from './vendors.service';
+
+class PayoutBlockDto {
+  @IsBoolean()
+  blocked: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+class ImmediateWithdrawalDto {
+  @IsBoolean()
+  enabled: boolean;
+}
+
+class SubscribeAdDto {
+  @IsOptional()
+  @IsIn(['ESSENTIAL_29', 'PRO_CAROUSEL_59'])
+  plan?: string;
+}
+
+class SubscribeCertificationDto {
+  @IsOptional()
+  @IsIn(['MONTHLY', 'QUARTERLY'])
+  billing?: string;
+}
+
+class ActivateStoreServiceDto {
+  @IsIn(['PHYSICAL', 'DIGITAL', 'SERVICE'])
+  service: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  customerPhone?: string;
+}
 
 @Controller('vendors/stores')
 export class VendorsController {
@@ -33,14 +77,22 @@ export class VendorsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Get('admin/all')
+  listAllForAdmin() {
+    return this.vendors.listAllStoresForAdmin();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.ADMIN, RoleName.SUPER_ADMIN)
   @Get('pending')
   listPending() {
     return this.vendors.listPendingStores();
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.vendors.getStoreById(id);
+  getById(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser | null) {
+    return this.vendors.getStoreById(id, user ?? undefined);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -70,9 +122,9 @@ export class VendorsController {
   setPayoutBlock(
     @CurrentUser() admin: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { blocked: boolean; reason?: string },
+    @Body() body: PayoutBlockDto,
   ) {
-    return this.vendors.setPayoutBlock(admin, id, Boolean(body.blocked), body.reason);
+    return this.vendors.setPayoutBlock(admin, id, body.blocked, body.reason);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -81,9 +133,9 @@ export class VendorsController {
   setImmediateWithdrawal(
     @CurrentUser() admin: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { enabled: boolean },
+    @Body() body: ImmediateWithdrawalDto,
   ) {
-    return this.vendors.setImmediateWithdrawal(admin, id, Boolean(body.enabled));
+    return this.vendors.setImmediateWithdrawal(admin, id, body.enabled);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -92,7 +144,7 @@ export class VendorsController {
   subscribeAd(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { plan?: string },
+    @Body() body: SubscribeAdDto,
   ) {
     return this.vendors.subscribeMonthlyAd(user, id, body.plan ?? 'PRO_CAROUSEL_59');
   }
@@ -103,7 +155,7 @@ export class VendorsController {
   subscribeCertification(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
-    @Body() body: { billing?: string },
+    @Body() body: SubscribeCertificationDto,
   ) {
     return this.vendors.subscribeCertification(user, id, body.billing ?? 'MONTHLY');
   }
@@ -114,12 +166,7 @@ export class VendorsController {
   activateService(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
-    @Body()
-    body: {
-      service: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
-      paymentMethod?: string;
-      customerPhone?: string;
-    },
+    @Body() body: ActivateStoreServiceDto,
   ) {
     return this.vendors.activateStoreService(user, id, body);
   }

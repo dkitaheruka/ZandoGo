@@ -12,8 +12,26 @@ import {
   MapPin,
   Navigation,
   X,
+  Sparkles,
+  Languages,
+  ImagePlus,
+  Camera,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import {
+  acceptAttribute,
+  compressImageFile,
+  readCompressedImageDataUrl,
+  uploadFile,
+  validateFile,
+} from '../lib/upload';
+import {
+  AI_LANGUAGES,
+  type AiLanguage,
+  getPreferredAiLanguage,
+  getPreferredAiModel,
+  setPreferredAiLanguage,
+} from '../lib/ai-preference';
 import { useAuth } from '../lib/auth-context';
 import { useStore } from '../lib/store-context';
 import type { ChatMessage, Conversation, NegotiationOffer } from '../lib/types';
@@ -63,8 +81,27 @@ export function ChatPage() {
   const [mapsUrlInput, setMapsUrlInput] = useState('');
   const [deliveryOfferInput, setDeliveryOfferInput] = useState('5');
   const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [suggestingAi, setSuggestingAi] = useState(false);
+  const [aiSuggestError, setAiSuggestError] = useState<string | null>(null);
+  const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => getPreferredAiLanguage());
+  const [recipientLanguage, setRecipientLanguage] = useState<'auto' | AiLanguage>('auto');
+  const [autoTranslateEnabled, setAutoTranslateEnabled] = useState(true);
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({});
+  const [revealedOriginals, setRevealedOriginals] = useState<Record<string, boolean>>({});
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; name: string; previewUrl: string } | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatPhotoInputRef = useRef<HTMLInputElement>(null);
+  const chatCameraInputRef = useRef<HTMLInputElement>(null);
+
+  const langDisplayName = (code?: string) => {
+    if (code === 'ln') return 'Lingala';
+    if (code === 'sw') return 'Kiswahili';
+    if (code === 'en') return 'English';
+    return 'Français';
+  };
 
   function loadAll() {
     api
@@ -102,16 +139,98 @@ export function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  async function handleLanguageChange(next: AiLanguage) {
+    setAiLanguage(next);
+    setPreferredAiLanguage(next);
+    api.patch('/users/me/language', { preferredLanguage: next }).catch(() => {});
+  }
+
+  async function handleTranslateMessage(msg: ChatMessage, targetLang: AiLanguage = aiLanguage) {
+    if (!msg.content.trim() || translatingIds[msg.id]) return;
+    setTranslatingIds((prev) => ({ ...prev, [msg.id]: true }));
+    setAiSuggestError(null);
+    try {
+      const { data } = await api.post<{
+        id: string;
+        sourceLanguage?: string;
+        translations?: Record<string, string>;
+        translatedText?: string;
+        translationEngine?: string;
+        translationModel?: string;
+      }>(`/chat/messages/${msg.id}/translate`, {
+        targetLanguage: targetLang,
+        preferredModel: getPreferredAiModel() || undefined,
+      });
+
+      const patchMsg = (item: ChatMessage): ChatMessage => {
+        if (item.id !== msg.id) return item;
+        const mergedTranslations = {
+          ...(item.translations || {}),
+          ...(data.translations || {}),
+          ...(data.translatedText && (data.sourceLanguage || item.sourceLanguage) !== targetLang
+            ? { [targetLang]: data.translatedText }
+            : {}),
+        };
+        return {
+          ...item,
+          sourceLanguage: data.sourceLanguage || item.sourceLanguage,
+          translations: mergedTranslations,
+          translationEngine: data.translationEngine || item.translationEngine,
+          translationModel: data.translationModel || item.translationModel,
+        };
+      };
+
+      setMessages((prev) => prev.map(patchMsg));
+      setConversations((prev) =>
+        prev.map((c) => (c.id === msg.conversationId ? { ...c, messages: (c.messages || []).map(patchMsg) } : c)),
+      );
+    } catch (err: any) {
+      setAiSuggestError(
+        err?.response?.data?.message ||
+          "Traduction IA indisponible : démarrez Ollama en local ou vérifiez le service en ligne.",
+      );
+    } finally {
+      setTranslatingIds((prev) => ({ ...prev, [msg.id]: false }));
+    }
+  }
+
+  async function handleChatPhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    setPhotoError(null);
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const validationMsg = validateFile(file, 'CHAT_IMAGE');
+    if (validationMsg) {
+      setPhotoError(validationMsg);
+      return;
+    }
+
+    try {
+      const [{ dataUrl: previewUrl }, optimizedFile] = await Promise.all([
+        readCompressedImageDataUrl(file),
+        compressImageFile(file),
+      ]);
+      setPendingPhoto({ file: optimizedFile, name: optimizedFile.name, previewUrl });
+    } catch (err: any) {
+      setPhotoError(err?.message || 'Impossible de charger cette photo.');
+    }
+  }
+
   async function handleSend(e: FormEvent) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content || !activeId || sending) return;
+    const photoToSend = pendingPhoto;
+    if ((!content && !photoToSend) || !activeId || sending) return;
 
+    const tempId = `m-${Date.now()}`;
     const optimisticMsg: ChatMessage = {
-      id: `m-${Date.now()}`,
+      id: tempId,
       conversationId: activeId,
       senderId: user?.id || 'usr-1',
       content,
+      attachmentUrl: photoToSend?.previewUrl || undefined,
+      sourceLanguage: aiLanguage,
       createdAt: new Date().toISOString(),
     };
 
@@ -120,9 +239,47 @@ export function ChatPage() {
       prev.map((c) => (c.id === activeId ? { ...c, messages: [...(c.messages || []), optimisticMsg] } : c)),
     );
     setDraft('');
+    setPendingPhoto(null);
+    setPhotoError(null);
     setSending(true);
     try {
-      await api.post(`/chat/conversations/${activeId}/messages`, { content });
+      let attachmentUrl: string | undefined;
+      if (photoToSend) {
+        if (import.meta.env.VITE_API_URL) {
+          attachmentUrl = await uploadFile(photoToSend.file, 'CHAT_IMAGE');
+        } else {
+          attachmentUrl = photoToSend.previewUrl;
+        }
+      }
+
+      const { data: savedMsg } = await api.post<ChatMessage>(`/chat/conversations/${activeId}/messages`, {
+        content,
+        attachmentUrl,
+        senderLanguage: aiLanguage,
+        targetLanguage: recipientLanguage,
+        autoTranslate: autoTranslateEnabled,
+        preferredModel: getPreferredAiModel() || undefined,
+      });
+      if (savedMsg && savedMsg.id) {
+        const replaceTemp = (list: ChatMessage[]) =>
+          list.map((item) => (item.id === tempId ? { ...optimisticMsg, ...savedMsg } : item));
+        setMessages(replaceTemp);
+        setConversations((prev) =>
+          prev.map((c) => (c.id === activeId ? { ...c, messages: replaceTemp(c.messages || []) } : c)),
+        );
+      }
+    } catch (err: any) {
+      setPhotoError(
+        err?.response?.data?.message || err?.message || "Échec de l'envoi du message ou de la photo.",
+      );
+      setMessages((prev) => prev.filter((item) => item.id !== tempId));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeId ? { ...c, messages: (c.messages || []).filter((item) => item.id !== tempId) } : c,
+        ),
+      );
+      if (content) setDraft(content);
+      if (photoToSend) setPendingPhoto(photoToSend);
     } finally {
       setSending(false);
     }
@@ -202,6 +359,46 @@ export function ChatPage() {
       );
     } finally {
       setDeliveryBusy(false);
+    }
+  }
+
+  async function handleSuggestReply() {
+    if (!activeConv || suggestingAi) return;
+    setSuggestingAi(true);
+    setAiSuggestError(null);
+    try {
+      const { data } = await api.post<{ suggestion: string; engine: string; model: string }>(
+        '/assistant/suggest-reply',
+        {
+          conversationTitle: activeConv.storeName,
+          productTitle: activeConv.productTitle,
+          productPriceUsd: activeConv.productPriceUsd,
+          distanceKm: activeConv.distanceKm,
+          conversationType: activeConv.type,
+          hasClientLocation: Boolean(activeConv.clientLocation),
+          deliveryProposedFeeUsd: activeConv.deliveryNegotiation?.proposedFeeUsd,
+          messages: messages.slice(-6).map((m) => {
+            const mine = m.senderId === user?.id || m.senderId === 'usr-me' || m.senderId === 'usr-1';
+            return {
+              sender: mine ? 'Moi' : activeConv.storeName || 'Interlocuteur',
+              content: m.content,
+            };
+          }),
+          preferredModel: getPreferredAiModel() || undefined,
+          language: aiLanguage,
+        },
+      );
+      setDraft(data.suggestion);
+      setAcceptingNotice(
+        `Suggestion prête (${data.engine === 'ollama' ? `Ollama local · ${data.model}` : `Cloud · ${data.model}`}). Relisez ou modifiez avant d'envoyer.`,
+      );
+    } catch (err: any) {
+      setAiSuggestError(
+        err?.response?.data?.message ||
+          "Suggestion IA indisponible : démarrez Ollama en local ou vérifiez le service en ligne.",
+      );
+    } finally {
+      setSuggestingAi(false);
     }
   }
 
@@ -293,7 +490,13 @@ export function ChatPage() {
                       </span>
                     </div>
                     <p className={`text-xs line-clamp-2 leading-relaxed ${active ? 'text-brume/75' : 'text-encre/60'}`}>
-                      {lastMsg ? lastMsg.content : 'Nouvelle conversation'}
+                      {lastMsg
+                        ? lastMsg.attachmentUrl
+                          ? lastMsg.content
+                            ? `📷 ${lastMsg.content}`
+                            : '📷 Photo partagée'
+                          : lastMsg.content
+                        : 'Nouvelle conversation'}
                     </p>
                     <div className="mt-2 flex items-center gap-2">
                       <span
@@ -549,6 +752,13 @@ export function ChatPage() {
           <div className="flex-1 overflow-y-auto p-6 space-y-3 bg-brume/30">
             {messages.map((m) => {
               const mine = m.senderId === user?.id || m.senderId === 'usr-me' || m.senderId === 'usr-1';
+              const incomingTranslated = !mine && autoTranslateEnabled ? m.translations?.[aiLanguage] : undefined;
+              const isIncomingTranslated =
+                Boolean(incomingTranslated) && (!m.sourceLanguage || m.sourceLanguage !== aiLanguage);
+              const outgoingTranslationEntries = mine && m.translations ? Object.entries(m.translations) : [];
+              const isTranslating = Boolean(translatingIds[m.id]);
+              const showOriginal = Boolean(revealedOriginals[m.id]);
+
               return (
                 <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -558,7 +768,84 @@ export function ChatPage() {
                         : 'bg-white text-encre border border-encre/10 rounded-bl-none shadow-xs font-sans'
                     }`}
                   >
-                    <p>{m.content}</p>
+                    {isIncomingTranslated && (
+                      <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-seve/10 border border-seve/25 text-[10px] font-semibold text-seve">
+                        <Languages className="w-3 h-3" />
+                        <span>
+                          Traduit · {langDisplayName(m.sourceLanguage)} → {langDisplayName(aiLanguage)}
+                        </span>
+                      </div>
+                    )}
+
+                    {m.attachmentUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setLightboxImage(m.attachmentUrl || null)}
+                        className="block rounded-lg overflow-hidden border border-black/10 bg-black/5 hover:opacity-95 transition"
+                        title="Agrandir la photo"
+                      >
+                        <img
+                          src={m.attachmentUrl}
+                          alt="Photo partagée dans le chat"
+                          referrerPolicy="no-referrer"
+                          className="max-h-56 w-auto object-cover rounded-lg"
+                        />
+                      </button>
+                    )}
+
+                    {m.content && (
+                      <p>{isIncomingTranslated ? incomingTranslated : m.content}</p>
+                    )}
+
+                    {isIncomingTranslated && (
+                      <div className="pt-1 border-t border-encre/10 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRevealedOriginals((prev) => ({ ...prev, [m.id]: !prev[m.id] }))
+                          }
+                          className="text-[10px] font-semibold text-encre/55 hover:text-nuit underline"
+                        >
+                          {showOriginal ? "Masquer l'original" : `Voir l'original (${langDisplayName(m.sourceLanguage)})`}
+                        </button>
+                        {showOriginal && (
+                          <p className="text-[11px] italic text-encre/70 bg-brume/60 px-2.5 py-1.5 rounded-lg">
+                            {m.content}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {!mine && !isIncomingTranslated && m.content.trim().length > 0 && (
+                      <div>
+                        <button
+                          type="button"
+                          disabled={isTranslating}
+                          onClick={() => handleTranslateMessage(m, aiLanguage)}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-seve hover:text-nuit transition disabled:opacity-50"
+                        >
+                          <Languages className="w-3 h-3" />
+                          <span>
+                            {isTranslating
+                              ? 'Traduction…'
+                              : `Traduire en ${langDisplayName(aiLanguage)}`}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
+                    {mine && outgoingTranslationEntries.length > 0 && (
+                      <div className="pt-1.5 border-t border-white/20 space-y-1">
+                        {outgoingTranslationEntries.map(([targetCode, translatedText]) => (
+                          <p key={targetCode} className="text-[11px] text-brume/90">
+                            <span className="font-semibold text-safran">
+                              Traduit en {langDisplayName(targetCode)} :
+                            </span>{' '}
+                            « {translatedText} »
+                          </p>
+                        ))}
+                      </div>
+                    )}
 
                     {m.location && (
                       <a
@@ -612,6 +899,104 @@ export function ChatPage() {
             <div ref={bottomRef} />
           </div>
 
+          {/* AI Reply Suggestion & Bidirectional Translation Toolbar */}
+          {activeConv && (
+            <div className="px-3 pt-2 pb-1.5 border-t border-encre/10 bg-brume/40 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={suggestingAi}
+                  onClick={handleSuggestReply}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-card bg-nuit text-safran border border-safran/30 text-[11px] font-display font-bold hover:bg-nuit/90 transition disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{suggestingAi ? 'Rédaction IA…' : 'Suggérer une réponse (IA)'}</span>
+                </button>
+
+                <label className="inline-flex items-center gap-1 text-[10px] font-semibold text-encre/70">
+                  <span>Ma langue :</span>
+                  <select
+                    value={aiLanguage}
+                    onChange={(e) => handleLanguageChange(e.target.value as AiLanguage)}
+                    aria-label="Ma langue dans ce chat"
+                    className="rounded-card border border-encre/15 bg-white px-2 py-1 text-[11px] font-mono text-nuit outline-none focus:border-seve"
+                  >
+                    {AI_LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="inline-flex items-center gap-1 text-[10px] font-semibold text-encre/70">
+                  <Languages className="w-3 h-3 text-seve" />
+                  <span>Traduire pour :</span>
+                  <select
+                    value={recipientLanguage}
+                    onChange={(e) => setRecipientLanguage(e.target.value as 'auto' | AiLanguage)}
+                    aria-label="Langue du destinataire"
+                    className="rounded-card border border-encre/15 bg-white px-2 py-1 text-[11px] font-mono text-nuit outline-none focus:border-seve"
+                  >
+                    <option value="auto">Auto (profil)</option>
+                    {AI_LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setAutoTranslateEnabled((v) => !v)}
+                  className={`px-2 py-1 rounded-card text-[10px] font-mono font-bold border transition ${
+                    autoTranslateEnabled
+                      ? 'bg-seve/15 text-seve border-seve/30'
+                      : 'bg-white text-encre/55 border-encre/15'
+                  }`}
+                >
+                  {autoTranslateEnabled ? 'Trad. Auto ON' : 'Trad. Auto OFF'}
+                </button>
+              </div>
+              {aiSuggestError ? (
+                <span className="text-[11px] text-wax font-medium">{aiSuggestError}</span>
+              ) : (
+                <span className="text-[10px] text-encre/55">
+                  Écrivez en {langDisplayName(aiLanguage)} : l’interlocuteur reçoit la traduction dans sa langue.
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Pending Photo Preview & Validation Error */}
+          {(pendingPhoto || photoError) && (
+            <div className="px-3 py-2 border-t border-encre/10 bg-brume/50 flex flex-wrap items-center justify-between gap-2">
+              {pendingPhoto && (
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={pendingPhoto.previewUrl}
+                    alt={pendingPhoto.name}
+                    className="h-12 w-12 rounded-lg object-cover border border-encre/15"
+                  />
+                  <div className="text-xs">
+                    <p className="font-semibold text-nuit truncate max-w-[200px]">{pendingPhoto.name}</p>
+                    <p className="text-[10px] text-seve">Prête à envoyer (ajoutez un message optionnel)</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPendingPhoto(null)}
+                    className="p-1 rounded-full text-encre/50 hover:text-wax hover:bg-wax/10 transition"
+                    title="Retirer la photo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {photoError && <p className="text-[11px] font-semibold text-wax">{photoError}</p>}
+            </div>
+          )}
+
           {/* Input Bar */}
           <form onSubmit={handleSend} className="p-3 border-t border-encre/10 bg-white flex items-center gap-2">
             {activeConv?.type === 'CUSTOMER_DELIVERY' && (
@@ -625,18 +1010,51 @@ export function ChatPage() {
               </button>
             )}
             <input
+              ref={chatPhotoInputRef}
+              type="file"
+              accept={acceptAttribute('CHAT_IMAGE')}
+              onChange={handleChatPhotoSelect}
+              className="hidden"
+            />
+            <input
+              ref={chatCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleChatPhotoSelect}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => chatPhotoInputRef.current?.click()}
+              className="p-2.5 rounded-card border border-encre/15 text-seve hover:bg-seve/10 transition shrink-0"
+              title="Choisir une photo depuis la galerie (JPEG, PNG, WebP · max 5 Mo)"
+              aria-label="Joindre une photo depuis la galerie"
+            >
+              <ImagePlus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => chatCameraInputRef.current?.click()}
+              className="p-2.5 rounded-card border border-encre/15 text-nuit hover:bg-brume transition shrink-0"
+              title="Prendre une photo avec la caméra"
+              aria-label="Prendre une photo avec la caméra"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+            <input
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Écrire votre message (tarif course, repères, délai…)..."
+              placeholder="Écrire votre message (ou joindre une photo)..."
               className="flex-1 px-4 py-2.5 rounded-card border border-encre/20 text-xs text-encre outline-none focus:border-seve focus:ring-1 focus:ring-seve bg-white placeholder-encre/40"
             />
             <button
               type="submit"
-              disabled={!draft.trim() || sending}
+              disabled={(!draft.trim() && !pendingPhoto) || sending}
               className="px-5 py-2.5 rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold text-xs transition disabled:opacity-40 flex items-center gap-1.5 shadow-xs"
             >
-              <span>Envoyer</span>
+              <span>{sending ? 'Envoi…' : 'Envoyer'}</span>
               <Send className="w-3.5 h-3.5" />
             </button>
           </form>
@@ -729,6 +1147,31 @@ export function ChatPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Photo Modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-nuit/85 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-3xl max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-3 -right-3 h-8 w-8 rounded-full bg-white text-nuit shadow-lg flex items-center justify-center hover:bg-brume"
+              aria-label="Fermer l'aperçu"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <img
+              src={lightboxImage}
+              alt="Aperçu photo plein écran"
+              referrerPolicy="no-referrer"
+              className="max-h-[82vh] w-auto rounded-card shadow-2xl border border-white/15 object-contain"
+            />
           </div>
         </div>
       )}

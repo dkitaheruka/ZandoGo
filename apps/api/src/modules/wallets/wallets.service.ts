@@ -2,12 +2,13 @@ import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { resolveVendorSettlementEligibility } from '../../common/commerce-rules';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { FinanceService } from '../finance/finance.service';
 import { MaishaPayService } from '../payments/maishapay.service';
 import { RequestPayoutDto } from './dto/request-payout.dto';
 
-const RETENTION_HOURS = 48; // règle de gestion validée : 48h à compter du paiement
+const RETENTION_HOURS = 48; // règle de gestion par défaut : 48h à compter du paiement (désactivable par Super Admin)
 
 @Injectable()
 export class WalletsService {
@@ -35,6 +36,9 @@ export class WalletsService {
 
     const delta = type === 'CREDIT' ? amount : -amount;
     const balanceAfter = Number(wallet.balance) + delta;
+    if (type === 'DEBIT' && referenceType === 'WITHDRAWAL' && balanceAfter < 0) {
+      throw new BadRequestException('Solde insuffisant pour effectuer ce retrait');
+    }
 
     await tx.wallet.update({ where: { id: walletId }, data: { balance: balanceAfter } });
 
@@ -89,12 +93,34 @@ export class WalletsService {
 
     const subOrder = await this.prisma.orderSubOrder.findUnique({
       where: { id: subOrderId },
-      include: { order: true },
+      include: { order: true, store: true },
     });
     if (!subOrder) throw new NotFoundException('Sous-commande introuvable');
 
+    const [pricing, storeImmediateSetting, openDispute] = await Promise.all([
+      this.finance.getPlatformPricing(),
+      this.prisma.platformSetting.findUnique({
+        where: { key: `store_immediate_withdrawal:${subOrder.storeId}` },
+      }),
+      this.prisma.dispute.findFirst({
+        where: {
+          orderId: subOrder.orderId,
+          status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+        },
+      }),
+    ]);
+
+    const settlement = resolveVendorSettlementEligibility({
+      storePayoutBlocked: Boolean(subOrder.store.payoutBlocked),
+      hasOpenDispute: Boolean(openDispute),
+      globalImmediateWithdrawal: Boolean(pricing.allowImmediateVendorWithdrawal),
+      storeImmediateWithdrawal: Boolean((storeImmediateSetting?.value as { enabled?: boolean } | null)?.enabled),
+    });
+
     const vendorAmount = Math.max(0, Number(subOrder.subtotal) - Number(subOrder.commissionAmount));
-    const availableAt = new Date(anchorDate.getTime() + RETENTION_HOURS * 60 * 60 * 1000);
+    const availableAt = settlement.canReleaseImmediately
+      ? anchorDate
+      : new Date(anchorDate.getTime() + RETENTION_HOURS * 60 * 60 * 1000);
 
     return this.prisma.$transaction(async (tx) => {
       const again = await tx.walletTransaction.findFirst({
@@ -143,7 +169,7 @@ export class WalletsService {
         vendorAmount,
         'ORDER_PAYOUT',
         subOrderId,
-        'LOCKED',
+        settlement.initialTxStatus,
         availableAt,
       );
 
@@ -425,49 +451,44 @@ export class WalletsService {
       }
     }
 
-    // Si le retrait immédiat est activé par le Super Admin, on libère les crédits en attente (hors litige)
-    if (immediateAuthorized && wallet.ownerType === 'VENDOR') {
-      const lockedTxs = await this.prisma.walletTransaction.findMany({
-        where: { walletId: wallet.id, status: 'LOCKED', type: 'CREDIT' },
-      });
-      for (const tx of lockedTxs) {
-        await this.prisma.walletTransaction.update({
-          where: { id: tx.id },
+    const payout = await this.prisma.$transaction(async (tx) => {
+      // Si le retrait immédiat est activé par le Super Admin, on libère les crédits en attente (hors litige)
+      if (immediateAuthorized && wallet.ownerType === 'VENDOR') {
+        await tx.walletTransaction.updateMany({
+          where: { walletId: wallet.id, status: 'LOCKED', type: 'CREDIT' },
           data: { status: 'AVAILABLE', availableAt: new Date() },
         });
-      }
-    } else {
-      // Libérer les fonds dont le délai de 48h (calculé depuis le paiement) est écoulé
-      const maturedTxs = await this.prisma.walletTransaction.findMany({
-        where: { walletId: wallet.id, status: 'LOCKED', type: 'CREDIT', availableAt: { lte: new Date() } },
-      });
-      for (const tx of maturedTxs) {
-        await this.prisma.walletTransaction.update({
-          where: { id: tx.id },
+      } else {
+        // Libérer les fonds dont le délai de 48h (calculé depuis le paiement) est écoulé
+        await tx.walletTransaction.updateMany({
+          where: {
+            walletId: wallet.id,
+            status: 'LOCKED',
+            type: 'CREDIT',
+            availableAt: { lte: new Date() },
+          },
           data: { status: 'AVAILABLE' },
         });
       }
-    }
 
-    const [creditsAgg, debitsAgg] = await Promise.all([
-      this.prisma.walletTransaction.aggregate({
-        where: { walletId: wallet.id, status: 'AVAILABLE', type: 'CREDIT' },
-        _sum: { amount: true },
-      }),
-      this.prisma.walletTransaction.aggregate({
-        where: { walletId: wallet.id, status: 'AVAILABLE', type: 'DEBIT' },
-        _sum: { amount: true },
-      }),
-    ]);
+      const [creditsAgg, debitsAgg] = await Promise.all([
+        tx.walletTransaction.aggregate({
+          where: { walletId: wallet.id, status: 'AVAILABLE', type: 'CREDIT' },
+          _sum: { amount: true },
+        }),
+        tx.walletTransaction.aggregate({
+          where: { walletId: wallet.id, status: 'AVAILABLE', type: 'DEBIT' },
+          _sum: { amount: true },
+        }),
+      ]);
 
-    const balance = Number(creditsAgg._sum.amount ?? 0) - Number(debitsAgg._sum.amount ?? 0);
-    if (dto.amount > balance) {
-      throw new BadRequestException(
-        `Solde disponible insuffisant (disponible : ${balance.toFixed(2)} ${wallet.currency})`,
-      );
-    }
+      const balance = Number(creditsAgg._sum.amount ?? 0) - Number(debitsAgg._sum.amount ?? 0);
+      if (dto.amount > balance) {
+        throw new BadRequestException(
+          `Solde disponible insuffisant (disponible : ${balance.toFixed(2)} ${wallet.currency})`,
+        );
+      }
 
-    const payout = await this.prisma.$transaction(async (tx) => {
       const createdPayout = await tx.payoutRequest.create({
         data: {
           walletId: wallet.id,

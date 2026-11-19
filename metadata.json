@@ -1,4 +1,7 @@
 {
   "name": "ZandoGo Goma",
-  "description": "La place de marché de Goma (Nord-Kivu) et de la RDC : vendeurs vérifiés, Airtel Money, M-Pesa Vodacom, Orange Money, MTN MoMo, Cartes et livraison suivie."
+  "description": "La place de marché de Goma (Nord-Kivu) et de la RDC : vendeurs vérifiés, Airtel Money, M-Pesa Vodacom, Orange Money, MTN MoMo, Cartes et livraison suivie.",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

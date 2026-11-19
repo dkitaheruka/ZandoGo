@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart3,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import { PWAInstallButton } from '../PWAInstallButton';
@@ -25,6 +26,7 @@ const ADMIN_NAV = [
   { to: '/admin/agents', label: 'Transporteurs & Coursiers', icon: Truck },
   { to: '/admin/pricing', label: 'Tarifs & Commissions', icon: SlidersHorizontal },
   { to: '/admin/exchange-rate', label: 'Taux de change USD/CDF', icon: ArrowLeftRight },
+  { to: '/admin/ai-logs', label: 'Journal Messages IA', icon: Bot },
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {

@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Package, FileText, Sparkles, Layers, Heart, Scale, MapPin, Truck } from 'lucide-react';
+import { Search, Package, FileText, Sparkles, Layers, Heart, Scale, MapPin, Truck, X } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { api } from '../lib/api';
+import { getPreferredAiModel } from '../lib/ai-preference';
 import { useStore } from '../lib/store-context';
 import type { Product } from '../lib/types';
 
@@ -34,6 +35,14 @@ export function ProductListPage() {
   const [sortBy, setSortBy] = useState<SortKey>('RELEVANCE');
   const [favoritesOnly, setFavoritesOnly] = useState<boolean>(urlFavorites);
   const [transportOnly, setTransportOnly] = useState<boolean>(searchParams.get('transport') === '1');
+  const [maxPriceUsd, setMaxPriceUsd] = useState<number | null>(null);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiSearchBanner, setAiSearchBanner] = useState<{
+    explanation: string;
+    engine: string;
+    model: string;
+  } | null>(null);
+  const [aiSearchError, setAiSearchError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,12 +101,82 @@ export function ProductListPage() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    setAiSearchError(null);
+    setAiSearchBanner(null);
     const trimmed = search.trim();
     setQuery(trimmed);
     const next = new URLSearchParams(searchParams);
     if (trimmed) next.set('q', trimmed);
     else next.delete('q');
     setSearchParams(next);
+  }
+
+  async function handleSmartSearch() {
+    const trimmed = search.trim();
+    if (trimmed.length < 2) {
+      setAiSearchError('Décrivez votre besoin en au moins 2 caractères (ex : "livre pdf à moins de 20$").');
+      return;
+    }
+    setAiSearching(true);
+    setAiSearchError(null);
+    try {
+      const { data } = await api.post<{
+        searchQuery: string;
+        productType: TypeFilter;
+        audience: AudienceFilter;
+        maxPriceUsd: number | null;
+        transportOnly: boolean;
+        categoryId: string;
+        explanation: string;
+        engine: string;
+        model: string;
+      }>('/assistant/smart-search', {
+        query: trimmed,
+        preferredModel: getPreferredAiModel() || undefined,
+      });
+
+      setQuery(data.searchQuery || '');
+      setTypeFilter(data.productType || 'ALL');
+      setAudienceFilter(data.audience || 'ALL');
+      setSelectedCategory(data.categoryId || 'ALL');
+      setTransportOnly(Boolean(data.transportOnly));
+      setMaxPriceUsd(typeof data.maxPriceUsd === 'number' && data.maxPriceUsd > 0 ? data.maxPriceUsd : null);
+      setAiSearchBanner({
+        explanation: data.explanation,
+        engine: data.engine,
+        model: data.model,
+      });
+
+      const next = new URLSearchParams();
+      if (data.searchQuery) next.set('q', data.searchQuery);
+      if (data.productType && data.productType !== 'ALL') next.set('type', data.productType);
+      if (data.categoryId && data.categoryId !== 'ALL') next.set('category', data.categoryId);
+      if (data.audience && data.audience !== 'ALL') next.set('audience', data.audience);
+      if (data.transportOnly) next.set('transport', '1');
+      setSearchParams(next);
+    } catch (err: any) {
+      setAiSearchError(
+        err?.response?.data?.message ||
+          "Recherche IA indisponible : démarrez Ollama en local ou vérifiez le service en ligne.",
+      );
+    } finally {
+      setAiSearching(false);
+    }
+  }
+
+  function resetAllFilters() {
+    setSearch('');
+    setQuery('');
+    setTypeFilter('ALL');
+    setSelectedCategory('ALL');
+    setAudienceFilter('ALL');
+    setSelectedCity('ALL');
+    setFavoritesOnly(false);
+    setTransportOnly(false);
+    setMaxPriceUsd(null);
+    setAiSearchBanner(null);
+    setAiSearchError(null);
+    setSearchParams(new URLSearchParams());
   }
 
   function handleSelectType(nextType: TypeFilter) {
@@ -135,6 +214,7 @@ export function ProductListPage() {
       if (audienceFilter !== 'ALL' && p.audience !== audienceFilter) return false;
       if (selectedCity !== 'ALL' && p.store.city !== selectedCity) return false;
       if (favoritesOnly && !wishlistIds.includes(p.id)) return false;
+      if (maxPriceUsd !== null && Number(p.basePriceUsd) > maxPriceUsd) return false;
       if (
         transportOnly &&
         !(p.store.isTransportAgency || (p.store.transportDestinations && p.store.transportDestinations.length > 0))
@@ -171,25 +251,75 @@ export function ProductListPage() {
           </p>
         </div>
 
-        <form onSubmit={submit} className="flex w-full max-w-md gap-2">
-          <div className="relative flex-1">
+        <form onSubmit={submit} className="flex flex-wrap sm:flex-nowrap w-full max-w-xl gap-2">
+          <div className="relative flex-1 min-w-[210px]">
             <Search className="absolute left-3.5 top-3 w-4 h-4 text-encre/40" />
             <input
               id="product-search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Wax, café du Kivu, fibre pro, smartphone..."
+              placeholder="Ex : livre pdf gestion à moins de 20$, transport Goma..."
               className="w-full rounded-card border border-encre/20 bg-white pl-10 pr-4 py-2.5 text-xs text-encre outline-none focus:border-seve focus:ring-1 focus:ring-seve transition shadow-xs"
             />
           </div>
           <button
             type="submit"
-            className="rounded-card bg-seve px-5 py-2.5 text-xs font-display font-bold text-brume hover:bg-seve/90 transition shadow-xs shrink-0"
+            className="rounded-card bg-seve px-4 py-2.5 text-xs font-display font-bold text-brume hover:bg-seve/90 transition shadow-xs shrink-0"
           >
             Rechercher
           </button>
+          <button
+            type="button"
+            disabled={aiSearching}
+            onClick={handleSmartSearch}
+            title="Interpréter votre phrase en langage naturel et appliquer les filtres automatiquement"
+            className="inline-flex items-center gap-1.5 rounded-card bg-nuit px-4 py-2.5 text-xs font-display font-bold text-safran border border-safran/35 hover:bg-nuit/90 transition shadow-xs shrink-0 disabled:opacity-50"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{aiSearching ? 'Analyse…' : 'Recherche IA'}</span>
+          </button>
         </form>
       </div>
+
+      {aiSearchError && (
+        <div className="mt-4 rounded-card border border-wax/30 bg-wax/10 px-4 py-2.5 text-xs text-wax flex items-center justify-between gap-3">
+          <span>{aiSearchError}</span>
+          <button type="button" onClick={() => setAiSearchError(null)} className="text-wax/80 hover:text-wax">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {aiSearchBanner && (
+        <div className="mt-4 rounded-card border border-safran/45 bg-nuit text-brume px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-safran/20 text-safran font-display font-bold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Recherche IA</span>
+            </span>
+            <span>{aiSearchBanner.explanation}</span>
+            {maxPriceUsd !== null && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-seve/25 text-seve border border-seve/40 font-mono font-bold">
+                Budget ≤ ${maxPriceUsd}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-brume/60">
+              {aiSearchBanner.engine === 'ollama'
+                ? `Ollama local (${aiSearchBanner.model})`
+                : `Cloud (${aiSearchBanner.model})`}
+            </span>
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="text-[11px] font-semibold text-safran hover:underline"
+            >
+              Réinitialiser
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Type Tabs + Secondary Filters */}
       <div className="mt-6 space-y-4">
@@ -392,17 +522,7 @@ export function ProductListPage() {
             <h3 className="text-base font-display font-semibold text-nuit">Aucune offre trouvée</h3>
             <p className="mt-1 text-xs text-encre/60">Modifiez vos critères de recherche ou réinitialisez les filtres.</p>
             <button
-              onClick={() => {
-                setSearch('');
-                setQuery('');
-                setTypeFilter('ALL');
-                setSelectedCategory('ALL');
-                setAudienceFilter('ALL');
-                setSelectedCity('ALL');
-                setFavoritesOnly(false);
-                setTransportOnly(false);
-                setSearchParams(new URLSearchParams());
-              }}
+              onClick={resetAllFilters}
               className="mt-4 px-5 py-2.5 rounded-card bg-seve text-brume font-display font-medium text-xs hover:bg-seve/90 transition"
             >
               Afficher tout le catalogue

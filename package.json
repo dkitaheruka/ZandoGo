@@ -6,10 +6,12 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@ecommerce/web",
-    "build": "npm run build --workspace=@ecommerce/web",
+    "build": "npm run build --workspace=@ecommerce/web && rm -rf dist && cp -r apps/web/dist dist",
+    "preview": "npm run preview --workspace=@ecommerce/web",
     "lint": "npm run typecheck --workspace=@ecommerce/web"
   },
   "dependencies": {
+    "@google/genai": "^3.4.0",
     "lucide-react": "^1.72.0"
   },
   "devDependencies": {

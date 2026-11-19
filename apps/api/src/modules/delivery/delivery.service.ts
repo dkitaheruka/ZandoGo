@@ -7,8 +7,10 @@ import {
 import { KycStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { AssistantService } from '../assistant/assistant.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { PaymentsService } from '../payments/payments.service';
+import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { TrackingGateway } from '../realtime/tracking.gateway';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { haversineDistanceKm } from '../../common/geo/haversine';
@@ -31,6 +33,8 @@ export class DeliveryService {
     private readonly wallets: WalletsService,
     private readonly payments: PaymentsService,
     private readonly tracking: TrackingGateway,
+    private readonly notifications: NotificationsGateway,
+    private readonly assistant: AssistantService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -454,6 +458,29 @@ export class DeliveryService {
     await this.wallets.creditOrderFundsOnDelivery(delivery.subOrderId, deliveredAt);
 
     this.tracking.emitStatusChange(deliveryId, 'DELIVERED');
+
+    const deliveredFallback = `Bonne nouvelle ! Votre commande ${delivery.subOrder.order.orderNumber} vient d’être remise. Merci pour votre confiance sur ZandoGo !`;
+    const deliveredMsg = await this.assistant.composeContextualMessage({
+      scenario: 'DELIVERY_COMPLETED',
+      channel: 'inapp',
+      recipientRole: 'CLIENT',
+      facts: {
+        orderNumber: delivery.subOrder.order.orderNumber,
+        proofType: dto.proofType,
+      },
+      requiredTokens: [delivery.subOrder.order.orderNumber],
+      fallbackText: deliveredFallback,
+    });
+
+    await this.notifications
+      .notifyUser({
+        userId: delivery.subOrder.order.customerId,
+        type: 'delivery.completed',
+        title: `Colis remis · ${delivery.subOrder.order.orderNumber}`,
+        body: deliveredMsg.text,
+        data: { deliveryId, orderId: delivery.subOrder.orderId },
+      })
+      .catch(() => {});
 
     await this.audit.log({
       actorUserId: user.id,

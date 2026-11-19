@@ -11,7 +11,7 @@ project/
 │   │   ├── prisma/
 │   │   └── src/
 │   │       ├── common/{access,audit,geo,realtime}/
-│   │       ├── modules/{ads,auth,catalog,delivery,disputes,finance,kyc,orders,payments,realtime,uploads,users,vendors,wallets}/
+│   │       ├── modules/{ads,analytics,assistant,auth,catalog,delivery,disputes,finance,kyc,orders,payments,realtime,uploads,users,vendors,wallets}/
 │   │       ├── prisma/
 │   │       ├── app.module.ts
 │   │       └── main.ts
@@ -39,7 +39,7 @@ La liste d'avancement plus bas décrit la conception prévue; elle ne signifie p
 ```bash
 # 1. Préparer l'environnement (à faire une seule fois)
 cp apps/api/.env.example apps/api/.env
-# → éditer les secrets (JWT, CinetPay, Stripe) avant d'aller plus loin
+# → éditer les secrets (JWT, MaishaPay, Stripe, Gemini) avant d'aller plus loin
 
 # 2. Installer les dépendances de toutes les applications (à faire une seule fois)
 npm ci
@@ -70,15 +70,17 @@ Pour préparer les fichiers statiques utilisés par Caddy dans Compose, exécute
 - ✅ Module `catalog` : catégories, commission par catégorie (append-only), produits + variantes, prix USD/CDF auto-calculé via le dernier taux de change admin.
 - ✅ Module `finance` : saisie manuelle du taux de change USD/CDF par un admin (append-only, historisé).
 - ✅ Module `orders` : panier, checkout multi-vendeur, commission figée par sous-commande au moment de la commande, historique de statut, progression vendeur limitée (le passage à `DELIVERED` est réservé au module `delivery`).
-- ✅ Module `payments` : CinetPay (Mobile Money Orange/Airtel/M-Pesa, contre-vérification systématique des webhooks), Stripe (cartes, signature vérifiée sur raw body), Cash à la livraison (confirmation différée par le livreur). Échec de paiement → restock automatique + commande annulée.
-- ✅ Module `wallets` : grand livre append-only, rétention 48h (`LOCKED` → `AVAILABLE`), gel automatique en cas de litige (`HELD_FOR_DISPUTE`), demandes de retrait.
-- ✅ Module `kyc` : soumission de documents, validation admin (comble une dépendance manquante des modules vendors/delivery).
+- ✅ Module `payments` : MaishaPay (Mobile Money M-Pesa/Airtel/Orange/MTN & carte 3DS, signature HMAC-SHA256 et contre-vérification serveur systématique), Stripe (cartes Visa/Mastercard, signature vérifiée sur raw body), Cash à la livraison (confirmation différée par le livreur). Échec de paiement → restock automatique + commande annulée.
+- ✅ Module `wallets` : grand livre append-only, rétention 48h (`LOCKED` → `AVAILABLE`, avec déblocage immédiat activable par le Super Admin), gel automatique en cas de litige (`HELD_FOR_DISPUTE`), demandes de retrait B2C.
+- ✅ Module `kyc` : soumission de documents avec contrôle des *magic bytes*, validation admin et inspection modale sécurisée (auditée).
 - ✅ Module `delivery` : candidature livreur (approuvée seulement après KYC permis/pièce d'identité), création de course avec calcul de frais par distance (haversine), assignation automatique au livreur du pool le plus proche ou à un livreur dédié vendeur, tracking GPS (pings horodatés), preuve de livraison obligatoire (signature/photo/OTP). **C'est ce module qui déclenche enfin `WalletsService.creditOrderFundsOnDelivery`, bouclant tout le cycle commande → paiement → livraison → argent.**
 - ✅ Module `disputes` : ouverture par client ou vendeur, gel immédiat des fonds (`HELD_FOR_DISPUTE`), SLA 48h avec file triée par échéance, **résolution exclusivement réservée au SUPER_ADMIN** (vérifié deux fois : guard + contrôle explicite dans le service), écritures comptables compensatoires append-only en cas de remboursement (jamais de modification des écritures d'origine).
-- ✅ Module `ads` : campagnes (CPC/CPM/forfait), paiement CinetPay/Stripe (jamais en cash), activation du boost catalogue (`isFeatured`/`boostedUntil`, déjà utilisés par le tri de `catalog`), pause automatique dès budget atteint, **désactivable via `ADS_ENABLED=false`** en attendant que vous soyez prêt commercialement.
+- ✅ Module `ads` : campagnes (CPC/CPM/forfait), paiement MaishaPay/Stripe (jamais en cash), activation du boost catalogue (`isFeatured`/`boostedUntil`, déjà utilisés par le tri de `catalog`), pause automatique dès budget atteint, **désactivable via `ADS_ENABLED=false`** en attendant que vous soyez prêt commercialement.
 - ✅ Module `realtime` : trois namespaces Socket.io (`/notifications`, `/chat`, `/tracking`), authentifiés par JWT (`WsJwtGuard`, le socket ne peut pas porter de header `Authorization`), adaptateur Redis pub/sub branché dès le démarrage pour scaler horizontalement sans réécriture. `NotificationsGateway` centralise désormais la persistance + diffusion live pour `vendors`, `kyc` et `disputes` ; `TrackingGateway` diffuse en direct les pings GPS et changements de statut de `delivery`, sans polling côté client.
+- ✅ Module `analytics` : indicateurs agrégés vendeurs et plateforme (ventes, commissions, conversions).
+- ✅ Module `assistant` : IA hybride (Ollama local ou Google Gemini Cloud) pour assistant contextuel, rédaction chaleureuse des notifications/SMS et traduction temps réel dans le chat (`fr`, `ln`, `sw`, `en`).
 
-## Backend : les 14 modules prévus sont maintenant en place
+## Backend : les 16 modules NestJS sont en place
 
 ## Frontend React (`apps/web`)
 
