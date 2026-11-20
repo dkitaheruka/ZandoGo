@@ -45,6 +45,108 @@ function mockApiPlugin(): Plugin {
     return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(1));
   }
 
+  const SAME_CITY_DISPUTE_WINDOW_HOURS = 48;
+
+  function normalizeCityName(raw?: string | null): string | null {
+    if (!raw) return null;
+    const withoutParens = raw.replace(/\([^)]*\)/g, ' ').trim();
+    const baseSegment = withoutParens.split(/[,/|–—-]+/)[0]?.trim() || '';
+    const ascii = baseSegment
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\b(rdc|congo|nord-kivu|sud-kivu|province|ville)\b/g, ' ')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!ascii) return null;
+    if (ascii === 'karisimbi' || ascii === 'himbi' || ascii === 'les volcans' || ascii === 'ndosho') {
+      return 'goma';
+    }
+    return ascii;
+  }
+
+  function areSameCity(cityA?: string | null, cityB?: string | null): boolean {
+    const normA = normalizeCityName(cityA);
+    const normB = normalizeCityName(cityB);
+    return Boolean(normA && normB && normA === normB);
+  }
+
+  function evaluateOrderDisputeEligibility(ord: any) {
+    if (!ord) {
+      return {
+        canOpenDispute: true,
+        sameCity: false,
+        customerCity: null,
+        vendorCity: null,
+        windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+        deadlineAt: null,
+        hoursRemaining: 0,
+        reasonIfBlocked: null,
+      };
+    }
+
+    const customerCity: string | null =
+      ord.deliveryAddress?.ville ||
+      ord.deliveryAddress?.commune ||
+      (typeof ord.subOrders?.[0]?.destinationCity === 'string' &&
+      !ord.subOrders[0].destinationCity.toLowerCase().includes('pdf')
+        ? ord.subOrders[0].destinationCity
+        : null) ||
+      addresses[0]?.ville ||
+      addresses[0]?.commune ||
+      null;
+
+    const vendorCities: string[] = (ord.subOrders || [])
+      .map((so: any) => {
+        const matchedStore = stores.find((s) => s.id === so.storeId);
+        return matchedStore?.city || so.store?.city || 'Goma (Nord-Kivu)';
+      })
+      .filter(Boolean);
+
+    const matchedVendorCity =
+      vendorCities.find((vc) => areSameCity(customerCity, vc)) || vendorCities[0] || null;
+    const sameCity = Boolean(
+      customerCity && vendorCities.some((vc) => areSameCity(customerCity, vc)),
+    );
+
+    const refRaw = ord.deliveredAt || ord.paidAt || ord.createdAt;
+    const refDate = refRaw ? new Date(refRaw) : null;
+    const hasValidRef = Boolean(refDate && !Number.isNaN(refDate.getTime()));
+    const deadlineDate =
+      hasValidRef && refDate
+        ? new Date(refDate.getTime() + SAME_CITY_DISPUTE_WINDOW_HOURS * 3600 * 1000)
+        : null;
+    const msRemaining = deadlineDate ? deadlineDate.getTime() - Date.now() : 0;
+    const hoursRemaining = deadlineDate ? Math.max(0, Number((msRemaining / 3600000).toFixed(1))) : 0;
+    const windowExpired = Boolean(sameCity && deadlineDate && msRemaining <= 0);
+
+    if (windowExpired) {
+      const cityLabel = (customerCity || matchedVendorCity || 'la même ville').trim();
+      return {
+        canOpenDispute: false,
+        sameCity: true,
+        customerCity,
+        vendorCity: matchedVendorCity,
+        windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+        deadlineAt: deadlineDate?.toISOString() ?? null,
+        hoursRemaining: 0,
+        reasonIfBlocked: `Le délai de ${SAME_CITY_DISPUTE_WINDOW_HOURS}h pour déclarer un litige est expiré (client et vendeur situés dans la même ville : ${cityLabel}).`,
+      };
+    }
+
+    return {
+      canOpenDispute: true,
+      sameCity,
+      customerCity,
+      vendorCity: matchedVendorCity,
+      windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+      deadlineAt: sameCity && deadlineDate ? deadlineDate.toISOString() : null,
+      hoursRemaining: sameCity ? hoursRemaining : 0,
+      reasonIfBlocked: null,
+    };
+  }
+
   function buildRealPdfBuffer(title: string, orderNumber: string, fileName: string): Buffer {
     const sanitize = (str: string) =>
       str
@@ -584,6 +686,7 @@ function mockApiPlugin(): Plugin {
       deliveryFee: 3.5,
       currency: 'USD',
       deliveryOption: deliveryOptions[0],
+      deliveryAddress: addresses[0],
       hasDigitalItems: false,
       subOrders: [
         {
@@ -592,7 +695,7 @@ function mockApiPlugin(): Plugin {
           status: 'SHIPPED',
           buyerName: 'David Kitenge',
           destinationCity: 'Goma (Himbi)',
-          store: { storeName: 'Boutique Virunga Wax' },
+          store: { id: 'store-1', storeName: 'Boutique Virunga Wax', city: 'Goma (Nord-Kivu)' },
           items: [
             { id: 'item-1', quantity: 1, productTitle: 'Veste Tailleur Haute Couture Motif Kuba', unitPrice: 85, productType: 'PHYSICAL' },
           ],
@@ -635,7 +738,7 @@ function mockApiPlugin(): Plugin {
           autoFulfilled: true,
           buyerName: 'David Kitenge',
           destinationCity: 'Envoi automatique du lien PDF',
-          store: { storeName: 'Kivu Business Insights' },
+          store: { id: 'store-digital', storeName: 'Kivu Business Insights', city: 'Goma (Nord-Kivu)' },
           items: [
             { id: 'item-2', quantity: 1, productTitle: 'Guide d’Investissement & Stratégie PME RDC', unitPrice: 29, productType: 'DIGITAL' },
           ],
@@ -662,7 +765,7 @@ function mockApiPlugin(): Plugin {
           status: 'PENDING',
           buyerName: 'David Kitenge',
           destinationCity: 'Bukavu (Sud-Kivu)',
-          store: { storeName: 'Boutique Virunga Wax' },
+          store: { id: 'store-1', storeName: 'Boutique Virunga Wax', city: 'Goma (Nord-Kivu)' },
           items: [
             { id: 'item-3', quantity: 3, productTitle: 'Pagne Super Wax Vlisco Original (6 yards)', unitPrice: 65, productType: 'PHYSICAL' },
           ],
@@ -691,9 +794,84 @@ function mockApiPlugin(): Plugin {
           status: 'PENDING',
           buyerName: 'David Kitenge',
           destinationCity: 'Goma (Karisimbi — Ndosho)',
-          store: { storeName: 'Kivu Digital & Tech' },
+          store: { id: 'store-2', storeName: 'Kivu Digital & Tech', city: 'Goma (Nord-Kivu)' },
           items: [
             { id: 'item-4', quantity: 1, productTitle: 'Smartphone Tecno Camon 30 Premier 5G (512GB)', unitPrice: 380, productType: 'PHYSICAL' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'ord-1005',
+      orderNumber: 'ZGO-2026-1005',
+      status: 'DELIVERED',
+      isPaid: true,
+      paymentStatus: 'PAID',
+      paymentGateway: 'MOBILE_MONEY',
+      paymentOperator: 'MOBILE_MONEY_MPESA',
+      paymentRef: 'ZG-PAY-261005',
+      escrowStatus: 'HELD',
+      createdAt: new Date(Date.now() - 96 * 3600 * 1000).toISOString(),
+      paidAt: new Date(Date.now() - 95 * 3600 * 1000).toISOString(),
+      deliveredAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
+      total: 57.5,
+      deliveryFee: 3.5,
+      currency: 'USD',
+      deliveryOption: deliveryOptions[0],
+      deliveryAddress: addresses[0],
+      hasDigitalItems: false,
+      subOrders: [
+        {
+          id: 'sub-5',
+          storeId: 'store-1',
+          status: 'DELIVERED',
+          buyerName: 'David Kitenge',
+          destinationCity: 'Goma (Himbi)',
+          store: { id: 'store-1', storeName: 'Boutique Virunga Wax', city: 'Goma (Nord-Kivu)' },
+          items: [
+            { id: 'item-5', quantity: 1, productTitle: 'Robe Portefeuille Wax Contemporaine — Femme', unitPrice: 54, productType: 'PHYSICAL' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'ord-1006',
+      orderNumber: 'ZGO-2026-1006',
+      status: 'DELIVERED',
+      isPaid: true,
+      paymentStatus: 'PAID',
+      paymentGateway: 'MOBILE_MONEY',
+      paymentOperator: 'MOBILE_MONEY_AIRTEL',
+      paymentRef: 'ZG-PAY-261006',
+      escrowStatus: 'HELD',
+      createdAt: new Date(Date.now() - 96 * 3600 * 1000).toISOString(),
+      paidAt: new Date(Date.now() - 95 * 3600 * 1000).toISOString(),
+      deliveredAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
+      total: 128.0,
+      deliveryFee: 8.0,
+      currency: 'USD',
+      deliveryOption: deliveryOptions[1],
+      deliveryAddress: {
+        id: 'addr-bkv-1',
+        email: 'david.kitenge@example.cd',
+        commune: 'Ibanda',
+        quartier: 'Muhumba',
+        ville: 'Bukavu (Sud-Kivu)',
+        referencePoint: 'Avenue du Gouverneur, près de la Place de l’Indépendance',
+        latitude: -2.5083,
+        longitude: 28.8608,
+      },
+      hasDigitalItems: false,
+      subOrders: [
+        {
+          id: 'sub-6',
+          storeId: 'store-2',
+          status: 'DELIVERED',
+          buyerName: 'David Kitenge',
+          destinationCity: 'Bukavu (Sud-Kivu)',
+          store: { id: 'store-2', storeName: 'Kivu Digital & Tech', city: 'Goma (Nord-Kivu)' },
+          items: [
+            { id: 'item-6', quantity: 1, productTitle: 'Écouteurs Sans Fil ANC Pro & Powerbank', unitPrice: 120, productType: 'PHYSICAL' },
           ],
         },
       ],
@@ -753,6 +931,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-1',
       storeName: 'Boutique Virunga Wax',
       slug: 'virunga-wax',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'RETAIL',
       enabledServices: ['PHYSICAL'],
       serviceFeesPaidUsd: { PHYSICAL: 15 },
@@ -779,6 +958,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-1',
       storeName: 'Kivu Digital & Tech',
       slug: 'kivu-digital',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'RETAIL',
       enabledServices: ['PHYSICAL', 'SERVICE'],
       serviceFeesPaidUsd: { PHYSICAL: 15, SERVICE: 20 },
@@ -805,6 +985,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-1',
       storeName: 'Kivu Business Insights',
       slug: 'kivu-insights',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'DIGITAL',
       enabledServices: ['DIGITAL'],
       serviceFeesPaidUsd: { DIGITAL: 10 },
@@ -831,6 +1012,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-2',
       storeName: 'GomaConnect Télécoms',
       slug: 'goma-connect',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'SERVICES',
       enabledServices: ['SERVICE'],
       serviceFeesPaidUsd: { SERVICE: 20 },
@@ -857,6 +1039,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-1',
       storeName: 'Nyiragongo Express Logistique',
       slug: 'nyiragongo-express',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'LOGISTICS',
       isTransportAgency: true,
       transportDestinations: [
@@ -892,6 +1075,7 @@ function mockApiPlugin(): Plugin {
       ownerId: 'usr-3',
       storeName: 'Coopérative Kivu Terroir',
       slug: 'kivu-terroir',
+      city: 'Goma (Nord-Kivu)',
       storeType: 'RETAIL',
       enabledServices: ['PHYSICAL'],
       serviceFeesPaidUsd: { PHYSICAL: 15 },
@@ -2516,7 +2700,7 @@ function mockApiPlugin(): Plugin {
 
         // --- ORDERS & CHECKOUT ---
         if (path === '/orders' && method === 'GET') {
-          return json(orders);
+          return json(orders.map((o) => ({ ...o, disputeEligibility: evaluateOrderDisputeEligibility(o) })));
         }
         const orderInvoiceMatch = path.match(/^\/orders\/([^/]+)\/invoice$/);
         if (orderInvoiceMatch && method === 'GET') {
@@ -2660,7 +2844,8 @@ function mockApiPlugin(): Plugin {
         const singleOrderMatch = path.match(/^\/orders\/([^/]+)$/);
         if (singleOrderMatch && method === 'GET') {
           const found = orders.find((o) => o.id === singleOrderMatch[1]);
-          return json(found || orders[0]);
+          const target = found || orders[0];
+          return json({ ...target, disputeEligibility: evaluateOrderDisputeEligibility(target) });
         }
         if (path === '/orders/checkout' && method === 'POST') {
           readBody().then((body) => {
@@ -2711,12 +2896,14 @@ function mockApiPlugin(): Plugin {
             const distKm = chosenAddr ? haversineKm(-1.6741, 29.2285, chosenAddr.latitude, chosenAddr.longitude) : 0;
 
             // Group cart items by their actual store
-            const storeGroups = new Map<string, { storeId: string; storeName: string; items: any[] }>();
+            const storeGroups = new Map<string, { storeId: string; storeName: string; storeCity: string; items: any[] }>();
             cart.items.forEach((it: any) => {
               const prod = products.find((p) => p.id === it.variant?.product?.id);
               const sId = prod?.store?.id || (onlyDigital ? 'store-digital' : 'store-1');
-              const sName = prod?.store?.storeName || (onlyDigital ? 'Kivu Business Insights' : 'Boutique Virunga Wax');
-              const group = storeGroups.get(sId) || { storeId: sId, storeName: sName, items: [] };
+              const matchedStore = stores.find((s) => s.id === sId);
+              const sName = prod?.store?.storeName || matchedStore?.storeName || (onlyDigital ? 'Kivu Business Insights' : 'Boutique Virunga Wax');
+              const sCity = matchedStore?.city || prod?.store?.city || 'Goma (Nord-Kivu)';
+              const group = storeGroups.get(sId) || { storeId: sId, storeName: sName, storeCity: sCity, items: [] };
               group.items.push({
                 id: it.id,
                 quantity: it.quantity,
@@ -2738,9 +2925,9 @@ function mockApiPlugin(): Plugin {
               destinationCity: grp.items.every((it) => it.productType === 'DIGITAL')
                 ? 'Envoi automatique du lien PDF'
                 : chosenAddr
-                ? `Goma (${chosenAddr.commune})`
+                ? `${chosenAddr.ville || 'Goma'} (${chosenAddr.commune || 'Centre'})`
                 : 'Goma (Nord-Kivu)',
-              store: { storeName: grp.storeName },
+              store: { id: grp.storeId, storeName: grp.storeName, city: grp.storeCity },
               items: grp.items,
             }));
 
@@ -3572,6 +3759,7 @@ function mockApiPlugin(): Plugin {
               ownerId: currentUser.id,
               storeName: body.storeName,
               slug: body.slug,
+              city: typeof body.city === 'string' && body.city.trim() ? body.city.trim() : 'Goma (Nord-Kivu)',
               storeType: derivedStoreType,
               isTransportAgency: Boolean(body.isTransportAgency || derivedStoreType === 'LOGISTICS'),
               transportDestinations: Array.isArray(body.transportDestinations)
@@ -4555,6 +4743,21 @@ function mockApiPlugin(): Plugin {
         if (path === '/disputes' && method === 'POST') {
           readBody().then((body) => {
             const ord = orders.find((o) => o.id === body.orderId);
+            if (!ord) {
+              return json({ statusCode: 404, message: 'Commande introuvable.' }, 404);
+            }
+            const eligibility = evaluateOrderDisputeEligibility(ord);
+            if (!eligibility.canOpenDispute && body.actingAs !== 'VENDOR') {
+              return json(
+                {
+                  statusCode: 403,
+                  message:
+                    eligibility.reasonIfBlocked ||
+                    'Le délai de 48h pour déclarer un litige est expiré (client et vendeur dans la même ville).',
+                },
+                403,
+              );
+            }
             const storeId = ord?.subOrders?.[0]?.storeId || 'store-1';
             const storeName = ord?.subOrders?.[0]?.store?.storeName || 'Boutique Partenaire';
             const severity = body.severity === 'HIGH' ? 'HIGH' : body.severity === 'LOW' ? 'LOW' : 'MEDIUM';
@@ -5615,46 +5818,98 @@ function mockApiPlugin(): Plugin {
   };
 }
 
+const pwaManifest = {
+  id: '/',
+  name: 'ZandoGo — Place de Marché RDC & Environs',
+  short_name: 'ZandoGo',
+  description:
+    'Place de marché B2B & B2C en RDC : Mobile Money, cartes bancaires, agences de transport, livres numériques et séquestre garanti.',
+  theme_color: '#172320',
+  background_color: '#F5F2EB',
+  display: 'standalone' as const,
+  orientation: 'portrait-primary' as const,
+  start_url: '/',
+  scope: '/',
+  lang: 'fr',
+  icons: [
+    {
+      src: '/pwa-192x192.png',
+      sizes: '192x192',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: '/pwa-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'any',
+    },
+    {
+      src: '/pwa-maskable-512x512.png',
+      sizes: '512x512',
+      type: 'image/png',
+      purpose: 'maskable',
+    },
+  ],
+};
+
+function devManifestPlugin(): Plugin {
+  const selfUnregisterSw = `
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    await self.registration.unregister();
+  })());
+});
+`.trim();
+
+  return {
+    name: 'zandogo-dev-manifest',
+    apply: 'serve',
+    transformIndexHtml(html) {
+      if (html.includes('rel="manifest"')) return html;
+      return html.replace('</head>', '  <link rel="manifest" href="/manifest.webmanifest" />\n  </head>');
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const cleanUrl = (req.url || '').split('?')[0];
+        if (cleanUrl === '/manifest.webmanifest') {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify(pwaManifest, null, 2));
+          return;
+        }
+        if (cleanUrl === '/@vite-plugin-pwa/pwa-entry-point-loaded') {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end('export default function registerDevSW() {}\n');
+          return;
+        }
+        if (cleanUrl === '/dev-sw.js' || cleanUrl === '/sw.js') {
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(selfUnregisterSw);
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     mockApiPlugin(),
+    devManifestPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: {
-        id: '/',
-        name: 'ZandoGo — Place de Marché RDC & Environs',
-        short_name: 'ZandoGo',
-        description:
-          'Place de marché B2B & B2C en RDC : Mobile Money, cartes bancaires, agences de transport, livres numériques et séquestre garanti.',
-        theme_color: '#172320',
-        background_color: '#F5F2EB',
-        display: 'standalone',
-        orientation: 'portrait-primary',
-        start_url: '/',
-        scope: '/',
-        lang: 'fr',
-        icons: [
-          {
-            src: '/pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: '/pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: '/pwa-maskable-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
-        ],
-      },
+      manifest: pwaManifest,
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
@@ -5694,8 +5949,8 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        enabled: true,
-        type: 'module',
+        // Disabled in dev because vite-plugin-pwa calls import.meta.hot.send() before/without WS when HMR is off
+        enabled: false,
       },
     }),
   ],

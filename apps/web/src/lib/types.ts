@@ -166,6 +166,7 @@ export interface VendorStore {
   id: string;
   storeName: string;
   slug: string;
+  city?: string;
   description?: string | null;
   storeType?: 'RETAIL' | 'DIGITAL' | 'SERVICES' | 'LOGISTICS';
   enabledServices?: StoreServiceModule[];
@@ -256,6 +257,17 @@ export interface SmsDispatchRecord {
   sentAt: string;
 }
 
+export interface DisputeEligibility {
+  canOpenDispute: boolean;
+  sameCity: boolean;
+  customerCity?: string | null;
+  vendorCity?: string | null;
+  windowHours: number;
+  deadlineAt?: string | null;
+  hoursRemaining: number;
+  reasonIfBlocked?: string | null;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -267,7 +279,9 @@ export interface Order {
   paymentRef?: string;
   escrowStatus?: 'HELD' | 'RELEASED_TO_VENDOR' | 'REFUNDED_TO_BUYER';
   paidAt?: string;
+  deliveredAt?: string;
   escrowReleaseAt?: string;
+  disputeEligibility?: DisputeEligibility;
   createdAt: string;
   total: string | number;
   transactionFeePercent?: number;
@@ -297,7 +311,7 @@ export interface Order {
     storeId?: string;
     status?: string;
     autoFulfilled?: boolean;
-    store: { storeName: string };
+    store: { id?: string; storeName: string; city?: string };
     items: {
       id: string;
       quantity?: number;

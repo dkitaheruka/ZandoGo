@@ -122,3 +122,93 @@ export function isValidTranslationOutput(translated: string, original: string): 
   });
 }
 
+export const SAME_CITY_DISPUTE_WINDOW_HOURS = 48;
+
+export interface DisputeEligibilityResult {
+  canOpenDispute: boolean;
+  sameCity: boolean;
+  customerCity: string | null;
+  vendorCity: string | null;
+  windowHours: number;
+  deadlineAt: string | null;
+  hoursRemaining: number;
+  reasonIfBlocked: string | null;
+}
+
+export function normalizeCityName(raw?: string | null): string | null {
+  if (!raw) return null;
+  const withoutParens = raw.replace(/\([^)]*\)/g, ' ').trim();
+  const baseSegment = withoutParens.split(/[,/|–—-]+/)[0]?.trim() || '';
+  const ascii = baseSegment
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(rdc|congo|nord-kivu|sud-kivu|province|ville)\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!ascii) return null;
+  if (ascii === 'karisimbi' || ascii === 'himbi' || ascii === 'les volcans' || ascii === 'ndosho') {
+    return 'goma';
+  }
+  return ascii;
+}
+
+export function areSameCity(cityA?: string | null, cityB?: string | null): boolean {
+  const normA = normalizeCityName(cityA);
+  const normB = normalizeCityName(cityB);
+  return Boolean(normA && normB && normA === normB);
+}
+
+export function evaluateCustomerDisputeEligibility(params: {
+  isCustomer: boolean;
+  customerCity?: string | null;
+  vendorCities: (string | null | undefined)[];
+  referenceDate?: string | Date | null;
+  now?: Date;
+}): DisputeEligibilityResult {
+  const now = params.now ?? new Date();
+  const cleanVendorCities = params.vendorCities
+    .map((c) => (typeof c === 'string' ? c.trim() : ''))
+    .filter(Boolean);
+  const matchedVendorCity =
+    cleanVendorCities.find((vc) => areSameCity(params.customerCity, vc)) || cleanVendorCities[0] || null;
+  const sameCity = Boolean(
+    params.customerCity && cleanVendorCities.some((vc) => areSameCity(params.customerCity, vc)),
+  );
+
+  const refDate = params.referenceDate ? new Date(params.referenceDate) : null;
+  const hasValidRef = Boolean(refDate && !Number.isNaN(refDate.getTime()));
+  const deadlineDate =
+    hasValidRef && refDate
+      ? new Date(refDate.getTime() + SAME_CITY_DISPUTE_WINDOW_HOURS * 3600 * 1000)
+      : null;
+  const msRemaining = deadlineDate ? deadlineDate.getTime() - now.getTime() : 0;
+  const hoursRemaining = deadlineDate ? Math.max(0, Number((msRemaining / 3600000).toFixed(1))) : 0;
+  const windowExpired = Boolean(sameCity && deadlineDate && msRemaining <= 0);
+
+  if (params.isCustomer && windowExpired) {
+    const cityLabel = (params.customerCity || matchedVendorCity || 'la même ville').trim();
+    return {
+      canOpenDispute: false,
+      sameCity: true,
+      customerCity: params.customerCity ?? null,
+      vendorCity: matchedVendorCity,
+      windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+      deadlineAt: deadlineDate?.toISOString() ?? null,
+      hoursRemaining: 0,
+      reasonIfBlocked: `Le délai de ${SAME_CITY_DISPUTE_WINDOW_HOURS}h pour déclarer un litige est expiré (client et vendeur situés dans la même ville : ${cityLabel}).`,
+    };
+  }
+
+  return {
+    canOpenDispute: true,
+    sameCity,
+    customerCity: params.customerCity ?? null,
+    vendorCity: matchedVendorCity,
+    windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+    deadlineAt: sameCity && deadlineDate ? deadlineDate.toISOString() : null,
+    hoursRemaining: sameCity ? hoursRemaining : 0,
+    reasonIfBlocked: null,
+  };
+}

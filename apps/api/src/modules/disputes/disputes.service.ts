@@ -8,6 +8,7 @@ import {
 import { DisputeStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { evaluateCustomerDisputeEligibility } from '../../common/commerce-rules';
 import { isSafeMediaReference } from '../../common/security-rules';
 import { WalletsService } from '../wallets/wallets.service';
 import { AssistantService } from '../assistant/assistant.service';
@@ -88,7 +89,24 @@ export class DisputesService {
   async openDispute(user: AuthenticatedUser, dto: OpenDisputeDto) {
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
-      include: { subOrders: true },
+      include: {
+        deliveryAddress: true,
+        customer: { select: { addresses: { orderBy: { isDefault: 'desc' }, take: 1 } } },
+        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        statusHistory: { orderBy: { createdAt: 'desc' } },
+        subOrders: {
+          include: {
+            delivery: true,
+            store: {
+              select: {
+                id: true,
+                city: true,
+                owner: { select: { addresses: { orderBy: { isDefault: 'desc' }, take: 1 } } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!order) throw new NotFoundException('Commande introuvable');
 
@@ -103,6 +121,34 @@ export class DisputesService {
     if (!['DELIVERED', 'OUT_FOR_DELIVERY', 'SHIPPED', 'PROCESSING'].includes(order.status)) {
       throw new BadRequestException(
         'Un litige ne peut être ouvert que sur une commande en cours ou livrée',
+      );
+    }
+
+    const deliveredEntry = order.statusHistory.find((h) => h.toStatus === 'DELIVERED');
+    const deliveredAtFromDelivery = order.subOrders.find((so) => so.delivery?.deliveredAt)?.delivery?.deliveredAt;
+    const referenceDate =
+      deliveredAtFromDelivery ??
+      deliveredEntry?.createdAt ??
+      order.paymentTransactions[0]?.confirmedAt ??
+      order.createdAt;
+    const customerCity =
+      order.deliveryAddress?.ville ??
+      order.deliveryAddress?.commune ??
+      order.customer?.addresses?.[0]?.ville ??
+      null;
+    const vendorCities = order.subOrders.map(
+      (so) => so.store.city ?? so.store.owner?.addresses?.[0]?.ville ?? null,
+    );
+    const disputeEligibility = evaluateCustomerDisputeEligibility({
+      isCustomer: isCustomer && !isVendor,
+      customerCity,
+      vendorCities,
+      referenceDate,
+    });
+    if (!disputeEligibility.canOpenDispute) {
+      throw new ForbiddenException(
+        disputeEligibility.reasonIfBlocked ||
+          'Le délai de 48h pour déclarer un litige dans la même ville est expiré.',
       );
     }
 

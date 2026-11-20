@@ -1,0 +1,1 @@
+ALTER TABLE "vendor_stores" ADD COLUMN IF NOT EXISTS "city" TEXT DEFAULT 'Goma';

@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { evaluateCustomerDisputeEligibility } from '../../common/commerce-rules';
 import { CatalogService } from '../catalog/catalog.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CheckoutDto } from './dto/checkout.dto';
@@ -25,7 +26,7 @@ interface SubOrderDraft {
 }
 
 // Champs de boutique visibles par un client : jamais commissionRate (négociée, confidentielle).
-const PUBLIC_STORE_SELECT = { select: { id: true, storeName: true, slug: true } } as const;
+const PUBLIC_STORE_SELECT = { select: { id: true, storeName: true, slug: true, city: true } } as const;
 
 /**
  * La commission prélevée par la plateforme n'est destinée ni au client ni à
@@ -202,21 +203,43 @@ export class OrdersService {
   async getMyOrders(user: AuthenticatedUser) {
     const orders = await this.prisma.order.findMany({
       where: { customerId: user.id },
-      include: { subOrders: { include: { items: true, store: PUBLIC_STORE_SELECT } } },
+      include: {
+        deliveryAddress: true,
+        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        statusHistory: { orderBy: { createdAt: 'desc' } },
+        subOrders: { include: { items: true, delivery: true, store: PUBLIC_STORE_SELECT } },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
-    return orders.map((order) => ({
-      ...order,
-      subOrders: order.subOrders.map(withoutCommission),
-    }));
+    return orders.map((order) => {
+      const deliveredAt =
+        order.subOrders.find((so) => so.delivery?.deliveredAt)?.delivery?.deliveredAt ??
+        order.statusHistory.find((h) => h.toStatus === 'DELIVERED')?.createdAt ??
+        order.paymentTransactions[0]?.confirmedAt ??
+        order.createdAt;
+      const disputeEligibility = evaluateCustomerDisputeEligibility({
+        isCustomer: true,
+        customerCity: order.deliveryAddress?.ville ?? order.deliveryAddress?.commune ?? null,
+        vendorCities: order.subOrders.map((so) => so.store.city ?? null),
+        referenceDate: deliveredAt,
+      });
+
+      return {
+        ...order,
+        disputeEligibility,
+        subOrders: order.subOrders.map(withoutCommission),
+      };
+    });
   }
 
   async getOrder(user: AuthenticatedUser, orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        subOrders: { include: { items: true, store: PUBLIC_STORE_SELECT } },
+        deliveryAddress: true,
+        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        subOrders: { include: { items: true, delivery: true, store: PUBLIC_STORE_SELECT } },
         statusHistory: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -234,13 +257,25 @@ export class OrdersService {
       throw new ForbiddenException('Accès non autorisé à cette commande');
     }
 
+    const deliveredAt =
+      order.subOrders.find((so) => so.delivery?.deliveredAt)?.delivery?.deliveredAt ??
+      order.statusHistory.find((h) => h.toStatus === 'DELIVERED')?.createdAt ??
+      order.paymentTransactions[0]?.confirmedAt ??
+      order.createdAt;
+    const disputeEligibility = evaluateCustomerDisputeEligibility({
+      isCustomer: isCustomer && !isVendorOfSubOrder,
+      customerCity: order.deliveryAddress?.ville ?? order.deliveryAddress?.commune ?? null,
+      vendorCities: order.subOrders.map((so) => so.store.city ?? null),
+      referenceDate: deliveredAt,
+    });
+
     // Ordre de priorité volontaire : admin > client > vendeur. Quelqu'un qui est à la
     // fois client et vendeur de la même commande reçoit la vue la plus restrictive
     // sur les commissions (celle du client).
-    if (isAdmin) return order;
+    if (isAdmin) return { ...order, disputeEligibility };
 
     if (isCustomer) {
-      return { ...order, subOrders: order.subOrders.map(withoutCommission) };
+      return { ...order, disputeEligibility, subOrders: order.subOrders.map(withoutCommission) };
     }
 
     // Vendeur : uniquement SES sous-commandes. Il ne voit ni les articles et montants

@@ -33,7 +33,73 @@ import {
   detectOperatorFromPhone,
   type PaymentMethodCodeType,
 } from '../components/PaymentOperatorLogos';
-import type { OfficialInvoice, Order, PlatformPricing } from '../lib/types';
+import type { DisputeEligibility, OfficialInvoice, Order, PlatformPricing } from '../lib/types';
+
+const SAME_CITY_DISPUTE_WINDOW_HOURS = 48;
+
+function normalizeCityName(raw?: string | null): string | null {
+  if (!raw) return null;
+  const withoutParens = raw.replace(/\([^)]*\)/g, ' ').trim();
+  const baseSegment = withoutParens.split(/[,/|–—-]+/)[0]?.trim() || '';
+  const ascii = baseSegment
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(rdc|congo|nord-kivu|sud-kivu|province|ville)\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!ascii) return null;
+  if (ascii === 'karisimbi' || ascii === 'himbi' || ascii === 'les volcans' || ascii === 'ndosho') {
+    return 'goma';
+  }
+  return ascii;
+}
+
+function areSameCity(cityA?: string | null, cityB?: string | null): boolean {
+  const normA = normalizeCityName(cityA);
+  const normB = normalizeCityName(cityB);
+  return Boolean(normA && normB && normA === normB);
+}
+
+function resolveOrderDisputeEligibility(order: Order): DisputeEligibility {
+  if (order.disputeEligibility) {
+    return order.disputeEligibility;
+  }
+
+  const customerCity = order.deliveryAddress?.ville || order.deliveryAddress?.commune || null;
+  const vendorCities = (order.subOrders || [])
+    .map((so) => so.store?.city)
+    .filter((c): c is string => Boolean(c));
+
+  const matchedVendorCity =
+    vendorCities.find((vc) => areSameCity(customerCity, vc)) || vendorCities[0] || null;
+  const sameCity = Boolean(customerCity && vendorCities.some((vc) => areSameCity(customerCity, vc)));
+
+  const refRaw = order.deliveredAt || order.paidAt || order.createdAt;
+  const refDate = refRaw ? new Date(refRaw) : null;
+  const hasValidRef = Boolean(refDate && !Number.isNaN(refDate.getTime()));
+  const deadlineDate =
+    hasValidRef && refDate
+      ? new Date(refDate.getTime() + SAME_CITY_DISPUTE_WINDOW_HOURS * 3600 * 1000)
+      : null;
+  const msRemaining = deadlineDate ? deadlineDate.getTime() - Date.now() : 0;
+  const hoursRemaining = deadlineDate ? Math.max(0, Number((msRemaining / 3600000).toFixed(1))) : 0;
+  const expired = Boolean(sameCity && deadlineDate && msRemaining <= 0);
+
+  return {
+    canOpenDispute: !expired,
+    sameCity,
+    customerCity,
+    vendorCity: matchedVendorCity,
+    windowHours: SAME_CITY_DISPUTE_WINDOW_HOURS,
+    deadlineAt: sameCity && deadlineDate ? deadlineDate.toISOString() : null,
+    hoursRemaining: sameCity ? hoursRemaining : 0,
+    reasonIfBlocked: expired
+      ? `Le délai de ${SAME_CITY_DISPUTE_WINDOW_HOURS}h pour déclarer un litige est expiré (client et vendeur dans la même ville).`
+      : null,
+  };
+}
 
 export function OrdersListPage() {
   const navigate = useNavigate();
@@ -198,6 +264,14 @@ export function OrdersListPage() {
   async function handleSubmitDispute(e: FormEvent) {
     e.preventDefault();
     if (!disputeOrder || !disputeDescription.trim()) return;
+    const eligibility = resolveOrderDisputeEligibility(disputeOrder);
+    if (!eligibility.canOpenDispute) {
+      setDisputeUploadError(
+        eligibility.reasonIfBlocked ||
+          'Le délai de 48h pour déclarer un litige est expiré (client et vendeur dans la même ville).',
+      );
+      return;
+    }
     setDisputeSending(true);
     setDisputeUploadError(null);
     try {
@@ -396,7 +470,17 @@ export function OrdersListPage() {
               !isDisputed &&
               (order.escrowStatus === 'HELD' ||
                 order.status === 'OUT_FOR_DELIVERY' ||
-                order.status === 'ESCROW_HELD');
+                order.status === 'ESCROW_HELD' ||
+                order.status === 'DELIVERED');
+            const canEvaluateDispute =
+              !isUnpaid &&
+              !isCompleted &&
+              !isDisputed &&
+              (isEscrowActive ||
+                order.status === 'PAID' ||
+                order.status === 'PROCESSING' ||
+                order.status === 'SHIPPED');
+            const disputeEligibility = resolveOrderDisputeEligibility(order);
 
             return (
               <div
@@ -731,8 +815,8 @@ export function OrdersListPage() {
                       </button>
                     )}
 
-                    {isEscrowActive && (
-                      <>
+                    {canEvaluateDispute &&
+                      (disputeEligibility.canOpenDispute ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -743,17 +827,31 @@ export function OrdersListPage() {
                           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card border border-wax/40 text-wax hover:bg-wax/10 text-xs font-semibold transition"
                         >
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Litige</span>
+                          <span>
+                            {disputeEligibility.sameCity && disputeEligibility.hoursRemaining > 0
+                              ? `Litige (${Math.ceil(disputeEligibility.hoursRemaining)}h)`
+                              : 'Litige'}
+                          </span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleReleaseEscrow(order.id)}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-bold transition shadow-xs"
+                      ) : (
+                        <span
+                          title={disputeEligibility.reasonIfBlocked || undefined}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-card bg-encre/5 border border-encre/15 text-encre/60 text-xs font-medium"
                         >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Confirmer réception</span>
-                        </button>
-                      </>
+                          <Clock className="w-3.5 h-3.5 text-encre/45" />
+                          <span>Délai litige 48h expiré (même ville)</span>
+                        </span>
+                      ))}
+
+                    {isEscrowActive && (
+                      <button
+                        type="button"
+                        onClick={() => handleReleaseEscrow(order.id)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card bg-seve hover:bg-seve/90 text-brume text-xs font-display font-bold transition shadow-xs"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Confirmer réception</span>
+                      </button>
                     )}
 
                     {!isUnpaid && !isCompleted && !order.noDeliveryNeeded && (
@@ -800,6 +898,15 @@ export function OrdersListPage() {
             <p className="text-xs text-encre/65">
               Les fonds restent gelés sous séquestre pendant l’examen par l’équipe d’arbitrage ZandoGo (réponse max sous 48h).
             </p>
+            {(() => {
+              const modalElig = resolveOrderDisputeEligibility(disputeOrder);
+              if (!modalElig.sameCity) return null;
+              return (
+                <div className="p-2.5 rounded-card bg-safran/15 border border-safran/40 text-[11px] text-nuit">
+                  Client et vendeur situés dans la même ville ({modalElig.customerCity || modalElig.vendorCity || 'même localité'}) : déclaration de litige autorisée pendant 48h maximum ({modalElig.hoursRemaining}h restantes).
+                </div>
+              );
+            })()}
 
             <div>
               <label className="block text-xs font-semibold text-encre/80 mb-1">Motif de la réclamation</label>

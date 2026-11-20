@@ -303,6 +303,7 @@ model VendorStore {
   storeName          String
   slug               String          @unique
   description        String?
+  city               String?         @default("Goma")
   logoUrl            String?
   bannerUrl          String?
   status             StoreStatus     @default(PENDING)

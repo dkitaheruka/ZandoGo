@@ -112,6 +112,7 @@ export class VendorsService {
           storeName: dto.storeName,
           slug: dto.slug,
           description: dto.description,
+          city: dto.city?.trim() || 'Goma',
           fulfillmentMode: dto.fulfillmentMode ?? 'SELF_SHIP',
           commissionRate: pricing.defaultCommissionPercent,
           status: StoreStatus.PENDING,

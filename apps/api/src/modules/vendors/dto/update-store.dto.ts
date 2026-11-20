@@ -15,6 +15,11 @@ export class UpdateStoreDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(2048)
   logoUrl?: string;
 

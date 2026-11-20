@@ -7,6 +7,9 @@ import {
   isValidContextualMessage,
   isValidTranslationOutput,
   normalizeAiLanguage,
+  normalizeCityName,
+  areSameCity,
+  evaluateCustomerDisputeEligibility,
   resolveVendorSettlementEligibility,
 } from '../src/common/commerce-rules';
 import {
@@ -265,4 +268,63 @@ describe('official downloadable invoice & PDF proof', () => {
     expect(invoice.totals.chargedTotalUsd).toBe(54);
   });
 });
+
+describe('same-city 48h customer dispute window rule', () => {
+  it('normalizes DRC city names including parenthetical provinces and Goma communes', () => {
+    expect(normalizeCityName('Goma (Nord-Kivu)')).toBe('goma');
+    expect(normalizeCityName('Karisimbi — Ndosho')).toBe('goma');
+    expect(normalizeCityName('Himbi')).toBe('goma');
+    expect(normalizeCityName('Bukavu (Sud-Kivu)')).toBe('bukavu');
+    expect(areSameCity('Goma (Himbi)', 'Goma (Nord-Kivu)')).toBe(true);
+    expect(areSameCity('Goma', 'Bukavu (Sud-Kivu)')).toBe(false);
+  });
+
+  it('allows customer dispute within 48h when buyer and vendor are in the same city', () => {
+    const now = new Date('2026-11-20T12:00:00.000Z');
+    const ref = new Date(now.getTime() - 47.5 * 3600 * 1000);
+    const res = evaluateCustomerDisputeEligibility({
+      isCustomer: true,
+      customerCity: 'Goma (Himbi)',
+      vendorCities: ['Goma (Nord-Kivu)'],
+      referenceDate: ref,
+      now,
+    });
+    expect(res.sameCity).toBe(true);
+    expect(res.canOpenDispute).toBe(true);
+    expect(res.hoursRemaining).toBe(0.5);
+    expect(res.reasonIfBlocked).toBeNull();
+  });
+
+  it('blocks customer dispute after 48h when buyer and vendor are in the same city', () => {
+    const now = new Date('2026-11-20T12:00:00.000Z');
+    const ref = new Date(now.getTime() - 48.1 * 3600 * 1000);
+    const res = evaluateCustomerDisputeEligibility({
+      isCustomer: true,
+      customerCity: 'Goma (Karisimbi — Ndosho)',
+      vendorCities: ['Goma'],
+      referenceDate: ref,
+      now,
+    });
+    expect(res.sameCity).toBe(true);
+    expect(res.canOpenDispute).toBe(false);
+    expect(res.hoursRemaining).toBe(0);
+    expect(res.reasonIfBlocked).toContain('48h');
+  });
+
+  it('keeps customer dispute open after 48h for inter-city orders', () => {
+    const now = new Date('2026-11-20T12:00:00.000Z');
+    const ref = new Date(now.getTime() - 96 * 3600 * 1000);
+    const res = evaluateCustomerDisputeEligibility({
+      isCustomer: true,
+      customerCity: 'Bukavu (Sud-Kivu)',
+      vendorCities: ['Goma (Nord-Kivu)'],
+      referenceDate: ref,
+      now,
+    });
+    expect(res.sameCity).toBe(false);
+    expect(res.canOpenDispute).toBe(true);
+    expect(res.reasonIfBlocked).toBeNull();
+  });
+});
+
 
