@@ -6,26 +6,28 @@ import {
   Param,
   Post,
   Query,
+  Res,
   StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { IsIn, Matches } from 'class-validator';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
-import { UPLOAD_PURPOSES, PresignUploadDto, UploadPurpose } from './dto/presign-upload.dto';
-import { UploadsService } from './uploads.service';
+import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
+import { PresignUploadDto, UPLOAD_PURPOSES, UploadPurpose } from './dto/presign-upload.dto';
+import { PublicUploadFolder, UploadsService } from './uploads.service';
 
 class LocalUploadDto {
   @IsIn(UPLOAD_PURPOSES)
   purpose: UploadPurpose;
 
-  @Matches(/^(kyc|chat)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf)$/)
+  @Matches(
+    /^(kyc|chat|products|products-videos|disputes|delivery-proofs)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf|mp4|webm|mov)$/,
+  )
   key: string;
 }
 
@@ -33,6 +35,116 @@ interface LocalUploadedFile {
   buffer: Buffer;
   mimetype: string;
   size: number;
+}
+
+const ALLOWED_LOCAL_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+];
+
+function applyPrivateSecurityHeaders(response: Response) {
+  response.set({
+    'Cache-Control': 'private, no-store',
+    'Content-Security-Policy': 'sandbox',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+  });
+}
+
+/**
+ * Routes de lecture média locales pour balises <img> / <video> :
+ * - les médias privés (chat, litiges, preuves livraison) exigent une signature HMAC temporaire ;
+ * - les médias catalogue publics ne sont servis qu'en mode développement local.
+ */
+@Controller('uploads/local')
+export class LocalUploadsMediaController {
+  constructor(private readonly uploadsService: UploadsService) {}
+
+  @Get('public/:folder/:userId/:fileName')
+  async readLocalPublicMedia(
+    @Param('folder') folder: string,
+    @Param('userId') userId: string,
+    @Param('fileName') fileName: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (folder !== 'products' && folder !== 'products-videos') {
+      throw new BadRequestException('Dossier média non autorisé');
+    }
+    const media = await this.uploadsService.readLocalPublic(
+      folder as PublicUploadFolder,
+      userId,
+      fileName,
+    );
+    response.set({
+      'Cache-Control': 'public, max-age=300',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return new StreamableFile(media.buffer, {
+      type: media.contentType,
+      disposition: 'inline',
+    });
+  }
+
+  @Get('chat/:userId/:fileName')
+  async readLocalChatImage(
+    @Param('userId') userId: string,
+    @Param('fileName') fileName: string,
+    @Query('expires') expires: string,
+    @Query('signature') signature: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'chat');
+    applyPrivateSecurityHeaders(response);
+    return new StreamableFile(document.buffer, {
+      type: document.contentType,
+      disposition: 'inline',
+    });
+  }
+
+  @Get('disputes/:userId/:fileName')
+  async readLocalDisputeEvidence(
+    @Param('userId') userId: string,
+    @Param('fileName') fileName: string,
+    @Query('expires') expires: string,
+    @Query('signature') signature: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'disputes');
+    applyPrivateSecurityHeaders(response);
+    return new StreamableFile(document.buffer, {
+      type: document.contentType,
+      disposition: 'inline',
+    });
+  }
+
+  @Get('delivery-proofs/:userId/:fileName')
+  async readLocalDeliveryProof(
+    @Param('userId') userId: string,
+    @Param('fileName') fileName: string,
+    @Query('expires') expires: string,
+    @Query('signature') signature: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const document = await this.uploadsService.readLocal(
+      userId,
+      fileName,
+      expires,
+      signature,
+      'delivery-proofs',
+    );
+    applyPrivateSecurityHeaders(response);
+    return new StreamableFile(document.buffer, {
+      type: document.contentType,
+      disposition: 'inline',
+    });
+  }
 }
 
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -52,9 +164,9 @@ export class UploadsController {
   @Post('local')
   @UseInterceptors(
     FileInterceptor('file', {
-      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+      limits: { fileSize: 15 * 1024 * 1024, files: 1 },
       fileFilter: (_request, file, callback) => {
-        if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype)) {
+        if (!ALLOWED_LOCAL_MIME_TYPES.includes(file.mimetype)) {
           callback(new BadRequestException('Type de fichier non accepté'), false);
           return;
         }
@@ -71,30 +183,8 @@ export class UploadsController {
     return { key: await this.uploadsService.storeLocal(user, dto.purpose, dto.key, file) };
   }
 
-  @Get('local/chat/:userId/:fileName')
-  async readLocalChatImage(
-    @Param('userId') userId: string,
-    @Param('fileName') fileName: string,
-    @Query('expires') expires: string,
-    @Query('signature') signature: string,
-    @Res({ passthrough: true }) response: Response,
-  ) {
-    const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'chat');
-    response.set({
-      'Cache-Control': 'private, no-store',
-      'Content-Security-Policy': 'sandbox',
-      'Cross-Origin-Resource-Policy': 'same-origin',
-      'Referrer-Policy': 'no-referrer',
-      'X-Content-Type-Options': 'nosniff',
-    });
-    return new StreamableFile(document.buffer, {
-      type: document.contentType,
-      disposition: 'inline',
-    });
-  }
-
   @Get('local/:userId/:fileName')
-  async readLocal(
+  async readLocalKyc(
     @Param('userId') userId: string,
     @Param('fileName') fileName: string,
     @Query('expires') expires: string,
@@ -102,13 +192,7 @@ export class UploadsController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const document = await this.uploadsService.readLocal(userId, fileName, expires, signature, 'kyc');
-    response.set({
-      'Cache-Control': 'private, no-store',
-      'Content-Security-Policy': 'sandbox',
-      'Cross-Origin-Resource-Policy': 'same-origin',
-      'Referrer-Policy': 'no-referrer',
-      'X-Content-Type-Options': 'nosniff',
-    });
+    applyPrivateSecurityHeaders(response);
     return new StreamableFile(document.buffer, {
       type: document.contentType,
       disposition: 'inline',

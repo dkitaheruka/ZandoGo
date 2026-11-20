@@ -26,4 +26,10 @@ export class OpenDisputeDto {
   @ArrayMaxSize(5)
   @IsString({ each: true })
   evidenceUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  evidenceImages?: string[];
 }

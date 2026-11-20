@@ -492,3 +492,67 @@ export interface AdminAnalyticsPayload {
   regionalBreakdown: AnalyticsSegmentItem[];
 }
 
+export interface OfficialInvoice {
+  invoiceNumber: string;
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  issuedAt: string;
+  paidAt?: string | null;
+  issuer: {
+    name: string;
+    city: string;
+    country: string;
+    supportEmail: string;
+    legalNotice: string;
+  };
+  buyer: {
+    id: string;
+    fullName: string;
+    phone?: string | null;
+    email?: string | null;
+  };
+  deliveryAddress: {
+    commune?: string | null;
+    quartier?: string | null;
+    ville?: string | null;
+    referencePoint?: string | null;
+    formatted: string;
+  };
+  payment: {
+    status: string;
+    methodCode: string;
+    operatorLabel: string;
+    providerReference: string;
+    escrowStatus: string;
+    paidAt?: string | null;
+  };
+  stores: { storeId: string; storeName: string; subtotalUsd: number }[];
+  items: {
+    title: string;
+    storeName: string;
+    variantLabel?: string | null;
+    productType?: string;
+    quantity: number;
+    unitPriceUsd: number;
+    totalPriceUsd: number;
+  }[];
+  totals: {
+    currency: Currency;
+    itemsSubtotalUsd: number;
+    deliveryFeeUsd: number;
+    transactionFeePercent: number;
+    transactionFeeAmountUsd: number;
+    chargedTotalUsd: number;
+    exchangeRateUsdToCdf: number;
+    chargedTotalCdf: number;
+  };
+  digitalDownloads?: { title: string; fileName: string }[];
+  verification: {
+    proofCode: string;
+    algorithm: 'SHA-256';
+    verifiedPurchase: boolean;
+  };
+}
+
+

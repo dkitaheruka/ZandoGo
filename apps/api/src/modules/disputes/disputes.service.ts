@@ -8,9 +8,11 @@ import {
 import { DisputeStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { isSafeMediaReference } from '../../common/security-rules';
 import { WalletsService } from '../wallets/wallets.service';
 import { AssistantService } from '../assistant/assistant.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
+import { UploadsService } from '../uploads/uploads.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
 import { AddDisputeMessageDto } from './dto/add-dispute-message.dto';
@@ -26,7 +28,57 @@ export class DisputesService {
     private readonly wallets: WalletsService,
     private readonly notifications: NotificationsGateway,
     private readonly assistant: AssistantService,
+    private readonly uploads: UploadsService,
   ) {}
+
+  private sanitizeIncomingEvidence(user: AuthenticatedUser, dto: OpenDisputeDto): string[] {
+    const raw = [
+      ...(Array.isArray(dto.evidenceUrls) ? dto.evidenceUrls : []),
+      ...(Array.isArray(dto.evidenceImages) ? dto.evidenceImages : []),
+    ];
+    const clean: string[] = [];
+    for (const item of raw) {
+      if (typeof item !== 'string') continue;
+      const trimmed = item.trim();
+      if (!trimmed) continue;
+      if (!isSafeMediaReference(trimmed, ['disputes', 'chat'])) {
+        throw new BadRequestException('Preuve photo invalide ou format non autorisé (SVG/script bloqué)');
+      }
+      if (trimmed.startsWith('disputes/')) {
+        this.uploads.assertOwnedKey(user, 'DISPUTE_EVIDENCE', trimmed);
+      } else if (trimmed.startsWith('chat/')) {
+        this.uploads.assertOwnedKey(user, 'CHAT_IMAGE', trimmed);
+      }
+      if (!clean.includes(trimmed)) {
+        clean.push(trimmed);
+      }
+      if (clean.length >= 5) break;
+    }
+    return clean;
+  }
+
+  private async hydrateEvidence<T extends { evidenceUrls?: unknown }>(dispute: T): Promise<T & { evidenceUrls: string[]; evidenceImages: string[] }> {
+    const entries = Array.isArray(dispute.evidenceUrls)
+      ? dispute.evidenceUrls.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+      : [];
+    const resolved = await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.startsWith('disputes/') || entry.startsWith('chat/')) {
+          try {
+            return await this.uploads.signedReadUrl(entry);
+          } catch {
+            return entry;
+          }
+        }
+        return entry;
+      }),
+    );
+    return {
+      ...dispute,
+      evidenceUrls: resolved,
+      evidenceImages: resolved,
+    };
+  }
 
   /**
    * Le client OU le vendeur peuvent ouvrir un litige. Dès l'ouverture, les
@@ -67,6 +119,7 @@ export class DisputesService {
     const openedAt = new Date();
     const slaDeadline = new Date(openedAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
     const isCritical = dto.severity === 'HIGH';
+    const sanitizedEvidence = this.sanitizeIncomingEvidence(user, dto);
 
     const dispute = await this.prisma.$transaction(async (tx) => {
       const created = await tx.dispute.create({
@@ -78,7 +131,7 @@ export class DisputesService {
           severity: dto.severity ?? 'MEDIUM',
           payoutFrozen: isCritical,
           description: dto.description,
-          evidenceUrls: dto.evidenceUrls,
+          evidenceUrls: sanitizedEvidence,
           status: DisputeStatus.OPEN,
           openedAt,
           slaDeadline,
@@ -117,7 +170,7 @@ export class DisputesService {
       },
     });
 
-    return dispute;
+    return this.hydrateEvidence(dispute);
   }
 
   async addMessage(user: AuthenticatedUser, disputeId: string, dto: AddDisputeMessageDto) {
@@ -156,15 +209,17 @@ export class DisputesService {
 
   async getDispute(user: AuthenticatedUser, disputeId: string) {
     await this.getDisputeForUser(user, disputeId);
-    return this.prisma.dispute.findUnique({
+    const found = await this.prisma.dispute.findUnique({
       where: { id: disputeId },
       include: { messages: { orderBy: { sentAt: 'asc' } }, order: true },
     });
+    if (!found) throw new NotFoundException('Litige introuvable');
+    return this.hydrateEvidence(found);
   }
 
   /** File d'attente admin, triée par échéance — pour ne jamais dépasser le SLA de 48h */
   async listOpenDisputes() {
-    return this.prisma.dispute.findMany({
+    const rows = await this.prisma.dispute.findMany({
       where: { status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] } },
       orderBy: { slaDeadline: 'asc' },
       include: {
@@ -180,6 +235,7 @@ export class DisputesService {
         },
       },
     });
+    return Promise.all(rows.map((row) => this.hydrateEvidence(row)));
   }
 
   async setStorePayoutFreeze(

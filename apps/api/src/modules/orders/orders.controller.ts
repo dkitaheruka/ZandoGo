@@ -25,6 +25,11 @@ export class OrdersController {
     return this.orders.getMyOrders(user);
   }
 
+  @Get(':id/invoice')
+  getInvoice(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.orders.getOrderInvoice(user, id);
+  }
+
   @Get(':id')
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.orders.getOrder(user, id);

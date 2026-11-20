@@ -16,6 +16,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { buildFallbackInvoiceFromOrder, downloadOfficialInvoicePdf } from '../lib/invoice-pdf';
 import { useStore } from '../lib/store-context';
 import { useAuth } from '../lib/auth-context';
 import { CardPaymentForm } from '../components/CardPaymentForm';
@@ -26,7 +27,7 @@ import {
   detectOperatorFromPhone,
   type PaymentMethodCodeType,
 } from '../components/PaymentOperatorLogos';
-import type { Address, Currency, Order, PlatformPricing } from '../lib/types';
+import type { Address, Currency, OfficialInvoice, Order, PlatformPricing } from '../lib/types';
 
 function parseGoogleMapsCoords(input: string): { lat: number; lng: number } | null {
   const atMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -41,7 +42,7 @@ function parseGoogleMapsCoords(input: string): { lat: number; lng: number } | nu
 export function CheckoutPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { cart, currency: preferredCurrency, refreshCart, formatPrimaryPrice } = useStore();
+  const { cart, currency: preferredCurrency, refreshCart, formatPrimaryPrice, exchangeRate } = useStore();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressId, setAddressId] = useState<string>('');
   const [showNewAddress, setShowNewAddress] = useState(false);
@@ -85,6 +86,9 @@ export function CheckoutPage() {
   const [paidFeePercent, setPaidFeePercent] = useState<number>(0);
   const [paidFeeAmount, setPaidFeeAmount] = useState<number>(0);
   const [paidChargedTotal, setPaidChargedTotal] = useState<number>(0);
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
+  const [invoiceDownloadedNotice, setInvoiceDownloadedNotice] = useState<string | null>(null);
+  const [downloadedInvoiceMeta, setDownloadedInvoiceMeta] = useState<OfficialInvoice | null>(null);
 
   // Email-based address recovery & inline editing
   const [lookupEmail, setLookupEmail] = useState<string>(user?.email || '');
@@ -356,6 +360,52 @@ export function CheckoutPage() {
     }
   }
 
+  async function handleDownloadOfficialInvoice() {
+    if (!orderId) return;
+    setInvoiceBusy(true);
+    setInvoiceDownloadedNotice(null);
+    try {
+      let invoiceData: OfficialInvoice | null = null;
+      try {
+        const { data } = await api.get<OfficialInvoice>(`/orders/${orderId}/invoice`);
+        if (data?.invoiceNumber) invoiceData = data;
+      } catch {
+        invoiceData = null;
+      }
+      if (!invoiceData) {
+        const fallbackOrder: Order = {
+          id: orderId,
+          orderNumber: orderNumber || `ZGO-${orderId.slice(0, 8)}`,
+          status: 'PAID',
+          isPaid: true,
+          paymentStatus: 'PAID',
+          paymentOperator: paidOperator || method,
+          paymentRef: paymentRef || undefined,
+          escrowStatus: noDeliveryNeeded ? 'RELEASED_TO_VENDOR' : 'HELD',
+          paidAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          total: orderTotal,
+          deliveryFee: orderDeliveryFee,
+          transactionFeePercent: paidFeePercent || txFeePercent,
+          transactionFeeAmount: paidFeeAmount || txFeeAmount,
+          chargedTotal: paidChargedTotal || exactDebitedTotal,
+          deliveryAddress: addresses.find((a) => a.id === addressId),
+          currency,
+          digitalDownloads,
+          subOrders: [],
+        };
+        invoiceData = buildFallbackInvoiceFromOrder(fallbackOrder, user, exchangeRate);
+      }
+      setDownloadedInvoiceMeta(invoiceData);
+      downloadOfficialInvoicePdf(invoiceData);
+      setInvoiceDownloadedNotice(
+        `Facture ${invoiceData.invoiceNumber} téléchargée (Preuve ${invoiceData.verification.proofCode}).`,
+      );
+    } finally {
+      setInvoiceBusy(false);
+    }
+  }
+
   if (step === 'done') {
     return (
       <div className="mx-auto max-w-xl px-6 py-16 text-center">
@@ -475,6 +525,42 @@ export function CheckoutPage() {
               ? 'Aucune livraison nécessaire (produit digital)'
               : `${selectedDelivery?.name || 'Transporteur'} · ${orderDeliveryFee > 0 ? `$${orderDeliveryFee.toFixed(2)}` : 'Gratuit'}`}
           </p>
+        </div>
+
+        {/* Official Proof Invoice Download Box */}
+        <div className="mt-5 p-4 rounded-card bg-nuit text-brume text-left max-w-md mx-auto border border-safran/35 space-y-2.5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-wider text-safran font-bold">
+                Preuve Officielle d’Achat & Paiement
+              </p>
+              <p className="text-xs font-display font-bold text-white">
+                Facture complète téléchargeable (PDF)
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={invoiceBusy}
+              onClick={handleDownloadOfficialInvoice}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-card bg-safran hover:bg-safran/90 text-nuit text-xs font-display font-bold transition shadow-xs disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              <span>{invoiceBusy ? 'Génération…' : 'Télécharger la facture (PDF)'}</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-brume/75 leading-relaxed">
+            Contient vos coordonnées acheteur, adresse de livraison, articles détaillés, frais exacts USD/CDF, référence Mobile Money/Carte et empreinte cryptographique SHA-256.
+          </p>
+          {invoiceDownloadedNotice && (
+            <p className="text-[11px] font-mono text-safran bg-white/10 px-2.5 py-1.5 rounded">
+              ✓ {invoiceDownloadedNotice}
+            </p>
+          )}
+          {downloadedInvoiceMeta && (
+            <p className="text-[10px] font-mono text-brume/60">
+              Code preuve : {downloadedInvoiceMeta.verification.proofCode}
+            </p>
+          )}
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

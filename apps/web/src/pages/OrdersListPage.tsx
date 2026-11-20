@@ -21,8 +21,9 @@ import {
   ImagePlus,
   Camera,
 } from 'lucide-react';
-import { api } from '../lib/api';
-import { acceptAttribute, readCompressedImageDataUrl, validateFile } from '../lib/upload';
+import { api, isRealApiMode } from '../lib/api';
+import { acceptAttribute, dataUrlToFile, readCompressedImageDataUrl, uploadFile, validateFile } from '../lib/upload';
+import { buildFallbackInvoiceFromOrder, downloadOfficialInvoicePdf } from '../lib/invoice-pdf';
 import { useStore } from '../lib/store-context';
 import { useAuth } from '../lib/auth-context';
 import {
@@ -32,7 +33,7 @@ import {
   detectOperatorFromPhone,
   type PaymentMethodCodeType,
 } from '../components/PaymentOperatorLogos';
-import type { Order, PlatformPricing } from '../lib/types';
+import type { OfficialInvoice, Order, PlatformPricing } from '../lib/types';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
@@ -60,6 +61,9 @@ export function OrdersListPage() {
 
   // Invoice modal state
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceDetails, setInvoiceDetails] = useState<OfficialInvoice | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
   const [copiedDownloadId, setCopiedDownloadId] = useState<string | null>(null);
   const [pricing, setPricing] = useState<PlatformPricing | null>(null);
 
@@ -158,18 +162,61 @@ export function OrdersListPage() {
     }
   }
 
+  async function fetchOrderInvoice(order: Order): Promise<OfficialInvoice> {
+    try {
+      const { data } = await api.get<OfficialInvoice>(`/orders/${order.id}/invoice`);
+      if (data?.invoiceNumber) return data;
+    } catch {
+      // Fallback below
+    }
+    return buildFallbackInvoiceFromOrder(order, user, exchangeRate);
+  }
+
+  async function openInvoiceModal(order: Order) {
+    setInvoiceOrder(order);
+    setInvoiceDetails(buildFallbackInvoiceFromOrder(order, user, exchangeRate));
+    setInvoiceLoading(true);
+    try {
+      const loaded = await fetchOrderInvoice(order);
+      setInvoiceDetails(loaded);
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
+
+  async function handleDownloadOrderInvoice(order: Order, preloaded?: OfficialInvoice | null) {
+    setDownloadingInvoiceId(order.id);
+    try {
+      const inv = preloaded && preloaded.orderId === order.id ? preloaded : await fetchOrderInvoice(order);
+      downloadOfficialInvoicePdf(inv);
+      setActionMessage(`Facture officielle téléchargée : Facture-${inv.orderNumber}.pdf (${inv.verification.proofCode})`);
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  }
+
   async function handleSubmitDispute(e: FormEvent) {
     e.preventDefault();
     if (!disputeOrder || !disputeDescription.trim()) return;
     setDisputeSending(true);
+    setDisputeUploadError(null);
     try {
+      const evidencePayload = isRealApiMode
+        ? await Promise.all(
+            disputeEvidenceImages.map((img) =>
+              uploadFile(dataUrlToFile(img.dataUrl, img.name), 'DISPUTE_EVIDENCE'),
+            ),
+          )
+        : disputeEvidenceImages.map((img) => img.dataUrl);
+
       await api.post('/disputes', {
         orderId: disputeOrder.id,
         orderNumber: disputeOrder.orderNumber,
         reasonCategory: disputeReason,
         severity: disputeSeverity,
         description: disputeDescription.trim(),
-        evidenceImages: disputeEvidenceImages.map((img) => img.dataUrl),
+        evidenceUrls: evidencePayload,
+        evidenceImages: evidencePayload,
       });
       setDisputeOrder(null);
       setDisputeDescription('');
@@ -181,6 +228,9 @@ export function OrdersListPage() {
           : `Litige enregistré pour ${disputeOrder.orderNumber}. Les fonds sont gelés sous séquestre et l’équipe d’arbitrage statuera sous 48h.`,
       );
       load();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setDisputeUploadError(Array.isArray(msg) ? msg.join(' ') : (err?.message || msg || 'Impossible d’ouvrir le litige.'));
     } finally {
       setDisputeSending(false);
     }
@@ -631,11 +681,21 @@ export function OrdersListPage() {
                   <div className="flex flex-wrap items-center gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setInvoiceOrder(order)}
+                      disabled={downloadingInvoiceId === order.id}
+                      onClick={() => handleDownloadOrderInvoice(order)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card bg-nuit text-safran hover:bg-nuit/90 text-xs font-display font-bold transition shadow-xs disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{downloadingInvoiceId === order.id ? 'PDF…' : 'Télécharger Facture PDF'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openInvoiceModal(order)}
                       className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-card border border-encre/15 hover:border-nuit text-xs font-semibold text-encre transition"
                     >
                       <Printer className="w-3.5 h-3.5 text-encre/60" />
-                      <span>Reçu / Facture</span>
+                      <span>Détails Facture</span>
                     </button>
 
                     {isUnpaid && !order.noDeliveryNeeded && (
@@ -859,72 +919,102 @@ export function OrdersListPage() {
         </div>
       )}
 
-      {/* Printable Invoice / Proforma Modal */}
-      {invoiceOrder && (
-        <div className="fixed inset-0 z-50 bg-nuit/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-lg w-full p-6 shadow-2xl border border-encre/10 space-y-5">
+      {/* Official Proof Invoice Modal */}
+      {invoiceOrder && invoiceDetails && (
+        <div className="fixed inset-0 z-50 bg-nuit/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-card max-w-xl w-full p-6 shadow-2xl border border-encre/10 space-y-5 my-8 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between border-b border-encre/10 pb-4">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="h-7 w-7 rounded-lg bg-nuit text-safran font-display font-bold text-xs flex items-center justify-center">
                     ZG
                   </span>
-                  <span className="font-display font-extrabold text-base text-nuit">ZandoGo Goma</span>
+                  <span className="font-display font-extrabold text-base text-nuit">
+                    {invoiceDetails.issuer.name}
+                  </span>
                 </div>
-                <p className="text-[11px] font-mono text-encre/55 mt-1">
-                  Bordereau Officiel · {invoiceOrder.orderNumber}
+                <p className="text-[11px] font-mono text-encre/60 mt-1">
+                  {invoiceDetails.invoiceNumber} · Commande {invoiceDetails.orderNumber}
                 </p>
               </div>
-              <button type="button" onClick={() => setInvoiceOrder(null)} className="text-encre/40 hover:text-nuit">
+              <button
+                type="button"
+                onClick={() => {
+                  setInvoiceOrder(null);
+                  setInvoiceDetails(null);
+                }}
+                className="text-encre/40 hover:text-nuit"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="text-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="text-encre/60">Date d’émission :</span>
-                <span className="font-mono text-nuit">
-                  {new Date(invoiceOrder.createdAt).toLocaleDateString('fr-FR')}
-                </span>
+            {invoiceLoading && (
+              <p className="text-[11px] font-mono text-seve">Actualisation des données certifiées…</p>
+            )}
+
+            <div className="grid sm:grid-cols-2 gap-3 text-xs bg-brume/60 p-3.5 rounded-card border border-encre/10">
+              <div className="space-y-1">
+                <p className="text-[10px] font-display font-bold uppercase tracking-wider text-seve">
+                  Acheteur & Livraison
+                </p>
+                <p className="font-bold text-nuit">{invoiceDetails.buyer.fullName}</p>
+                {invoiceDetails.buyer.phone && (
+                  <p className="font-mono text-[11px] text-encre/75">{invoiceDetails.buyer.phone}</p>
+                )}
+                {invoiceDetails.buyer.email && (
+                  <p className="text-[11px] text-encre/75">{invoiceDetails.buyer.email}</p>
+                )}
+                <p className="text-[11px] text-encre/70 pt-0.5">{invoiceDetails.deliveryAddress.formatted}</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-encre/60">Taux de référence :</span>
-                <span className="font-mono text-nuit">1 USD = {exchangeRate.toLocaleString('fr-FR')} CDF</span>
+
+              <div className="space-y-1">
+                <p className="text-[10px] font-display font-bold uppercase tracking-wider text-seve">
+                  Paiement & Séquestre
+                </p>
+                <p className="font-semibold text-nuit">
+                  {invoiceDetails.payment.operatorLabel} ·{' '}
+                  <span className={invoiceDetails.payment.status === 'PAID' ? 'text-seve' : 'text-wax'}>
+                    {invoiceDetails.payment.status === 'PAID' ? 'PAYÉE' : 'EN ATTENTE'}
+                  </span>
+                </p>
+                <p className="font-mono text-[11px] text-encre/75">
+                  Réf : {invoiceDetails.payment.providerReference}
+                </p>
+                <p className="text-[11px] text-encre/70">
+                  Séquestre : <strong>{invoiceDetails.payment.escrowStatus}</strong>
+                </p>
+                <p className="text-[11px] text-encre/70">
+                  Émise le : {new Date(invoiceDetails.issuedAt).toLocaleString('fr-FR')}
+                </p>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-encre/60">Statut Séquestre :</span>
-                <span className="font-semibold text-seve">{invoiceOrder.status}</span>
-              </div>
-              {(invoiceOrder.paymentOperator || invoiceOrder.paymentRef) && (
-                <div className="flex justify-between items-center pt-1">
-                  <span className="text-encre/60">Paiement :</span>
-                  <PaymentOperatorBadge
-                    operator={invoiceOrder.paymentOperator}
-                    refCode={invoiceOrder.paymentRef}
-                  />
-                </div>
-              )}
             </div>
 
             <div className="border-t border-b border-encre/10 py-3 space-y-2 text-xs">
-              {invoiceOrder.subOrders?.flatMap((so) => so.items || []).map((item) => (
-                <div key={item.id} className="flex justify-between gap-4">
-                  <span className="text-encre font-medium">
-                    {item.quantity || 1} × {item.productTitle}
-                  </span>
-                  <span className="font-mono tabular-nums text-nuit">
-                    ${((item.unitPrice || 0) * (item.quantity || 1)).toFixed(2)}
+              {invoiceDetails.items.map((item, idx) => (
+                <div key={`${item.title}-${idx}`} className="flex justify-between gap-4">
+                  <div>
+                    <span className="text-encre font-medium block">
+                      {item.quantity} × {item.title}
+                    </span>
+                    <span className="text-[10px] text-encre/55">
+                      {item.storeName}
+                      {item.variantLabel ? ` · ${item.variantLabel}` : ''}
+                    </span>
+                  </div>
+                  <span className="font-mono tabular-nums text-nuit shrink-0">
+                    ${Number(item.totalPriceUsd).toFixed(2)}
                   </span>
                 </div>
               ))}
               <div className="flex justify-between text-encre/60 pt-1">
                 <span>Frais logistiques ({invoiceOrder.deliveryOption?.name || 'Standard'})</span>
-                <span className="font-mono tabular-nums">${(invoiceOrder.deliveryFee || 0).toFixed(2)}</span>
+                <span className="font-mono tabular-nums">${invoiceDetails.totals.deliveryFeeUsd.toFixed(2)}</span>
               </div>
-              {invoiceOrder.transactionFeeAmount !== undefined && invoiceOrder.transactionFeeAmount > 0 && (
+              {invoiceDetails.totals.transactionFeeAmountUsd > 0 && (
                 <div className="flex justify-between text-encre/60">
-                  <span>Frais de transaction paiement ({invoiceOrder.transactionFeePercent ?? 3.5}%)</span>
-                  <span className="font-mono tabular-nums">+${Number(invoiceOrder.transactionFeeAmount).toFixed(2)}</span>
+                  <span>Frais de transaction paiement ({invoiceDetails.totals.transactionFeePercent}%)</span>
+                  <span className="font-mono tabular-nums">+${invoiceDetails.totals.transactionFeeAmountUsd.toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -933,26 +1023,39 @@ export function OrdersListPage() {
               <div>
                 <span className="font-display font-bold text-sm text-nuit block">Total Exact Débité</span>
                 <span className="text-[11px] font-mono text-encre/55 tabular-nums">
-                  ≈{' '}
-                  {Math.round(
-                    Number(invoiceOrder.chargedTotal ?? invoiceOrder.total) * exchangeRate,
-                  ).toLocaleString('fr-FR')}{' '}
-                  CDF
+                  ≈ {invoiceDetails.totals.chargedTotalCdf.toLocaleString('fr-FR')} CDF (1 USD ={' '}
+                  {invoiceDetails.totals.exchangeRateUsdToCdf.toLocaleString('fr-FR')} CDF)
                 </span>
               </div>
               <span className="font-display text-2xl font-extrabold text-nuit tabular-nums">
-                ${Number(invoiceOrder.chargedTotal ?? invoiceOrder.total).toFixed(2)}
+                ${invoiceDetails.totals.chargedTotalUsd.toFixed(2)}
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="p-3 rounded-card bg-seve/10 border border-seve/25 text-[11px] space-y-1">
+              <p className="font-mono font-bold text-nuit">
+                Code de preuve ({invoiceDetails.verification.algorithm}) : {invoiceDetails.verification.proofCode}
+              </p>
+              <p className="text-encre/70">{invoiceDetails.issuer.legalNotice}</p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-card bg-nuit text-brume text-xs font-display font-bold hover:bg-nuit/90 transition"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-card border border-encre/20 text-nuit text-xs font-display font-semibold hover:border-nuit transition"
               >
-                <Printer className="w-4 h-4 text-safran" />
-                <span>Imprimer / PDF</span>
+                <Printer className="w-4 h-4 text-encre/70" />
+                <span>Imprimer</span>
+              </button>
+              <button
+                type="button"
+                disabled={downloadingInvoiceId === invoiceOrder.id}
+                onClick={() => handleDownloadOrderInvoice(invoiceOrder, invoiceDetails)}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-card bg-nuit text-safran text-xs font-display font-bold hover:bg-nuit/90 transition shadow-xs disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                <span>Télécharger Facture Officielle (PDF)</span>
               </button>
             </div>
           </div>

@@ -1,6 +1,13 @@
 import { IsIn, IsInt, IsString, Max, Min } from 'class-validator';
 
-export const UPLOAD_PURPOSES = ['KYC_DOCUMENT', 'PRODUCT_IMAGE', 'PRODUCT_VIDEO', 'CHAT_IMAGE'] as const;
+export const UPLOAD_PURPOSES = [
+  'KYC_DOCUMENT',
+  'PRODUCT_IMAGE',
+  'PRODUCT_VIDEO',
+  'CHAT_IMAGE',
+  'DISPUTE_EVIDENCE',
+  'DELIVERY_PROOF',
+] as const;
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
 export class PresignUploadDto {

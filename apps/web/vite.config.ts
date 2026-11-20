@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -1278,6 +1278,9 @@ function mockApiPlugin(): Plugin {
     },
   ];
 
+  const smsOptOuts = new Set<string>();
+  const smsCallbackLogs: any[] = [];
+
   return {
     name: 'mock-api-server',
     configureServer(server) {
@@ -1305,10 +1308,15 @@ function mockApiPlugin(): Plugin {
         const readBody = async (): Promise<any> => {
           const buf = await readRawBody();
           if (!buf.length) return {};
+          const raw = buf.toString('utf8');
+          const ct = String(req.headers['content-type'] || '').toLowerCase();
+          if (ct.includes('application/x-www-form-urlencoded')) {
+            return Object.fromEntries(new URLSearchParams(raw).entries());
+          }
           try {
-            return JSON.parse(buf.toString('utf8'));
+            return JSON.parse(raw);
           } catch {
-            return {};
+            return Object.fromEntries(new URLSearchParams(raw).entries());
           }
         };
 
@@ -2084,6 +2092,10 @@ function mockApiPlugin(): Plugin {
                 ? 'products-videos'
                 : purpose === 'CHAT_IMAGE'
                 ? 'chat'
+                : purpose === 'DISPUTE_EVIDENCE'
+                ? 'disputes'
+                : purpose === 'DELIVERY_PROOF'
+                ? 'delivery-proofs'
                 : 'products';
             const key = `${folder}/${currentUser.id}/${randomUUID()}.${ext}`;
             json({
@@ -2505,6 +2517,145 @@ function mockApiPlugin(): Plugin {
         // --- ORDERS & CHECKOUT ---
         if (path === '/orders' && method === 'GET') {
           return json(orders);
+        }
+        const orderInvoiceMatch = path.match(/^\/orders\/([^/]+)\/invoice$/);
+        if (orderInvoiceMatch && method === 'GET') {
+          const found = orders.find((o) => o.id === orderInvoiceMatch[1]) || orders[0];
+          if (!found) {
+            return json({ statusCode: 404, message: 'Commande introuvable' }, 404);
+          }
+          const operatorMap: Record<string, string> = {
+            MOBILE_MONEY_MPESA: 'Vodacom M-Pesa RDC',
+            MOBILE_MONEY_AIRTEL: 'Airtel Money RDC',
+            MOBILE_MONEY_ORANGE: 'Orange Money RDC',
+            MOBILE_MONEY_MTN: 'MTN Mobile Money',
+            CARD_STRIPE: 'Carte Bancaire (Visa / Mastercard)',
+            CASH_ON_DELIVERY: 'Paiement Cash à la Livraison',
+          };
+          const methodCode = found.paymentOperator || 'MOBILE_MONEY_MPESA';
+          const isPaid = Boolean(
+            found.isPaid ?? (found.status !== 'PENDING_PAYMENT' && found.paymentStatus !== 'UNPAID'),
+          );
+          const deliveryFeeUsd = Number(found.deliveryFee || 0);
+          const items = (found.subOrders || []).flatMap((so: any) =>
+            (so.items || []).map((it: any) => {
+              const qty = Math.max(1, Number(it.quantity || 1));
+              const unit = Number(it.unitPrice || 0);
+              return {
+                title: it.productTitle || 'Article ZandoGo',
+                storeName: so.store?.storeName || 'Boutique ZandoGo',
+                variantLabel: it.variantName || null,
+                productType: it.productType || 'PHYSICAL',
+                quantity: qty,
+                unitPriceUsd: unit,
+                totalPriceUsd: Number((unit * qty).toFixed(2)),
+              };
+            }),
+          );
+          const itemsSubtotalUsd =
+            items.length > 0
+              ? Number(items.reduce((s: number, it: any) => s + it.totalPriceUsd, 0).toFixed(2))
+              : Number(Math.max(0, Number(found.total || 0) - deliveryFeeUsd).toFixed(2));
+          const baseTotalUsd = Number((itemsSubtotalUsd + deliveryFeeUsd).toFixed(2));
+          const isCod = methodCode === 'CASH_ON_DELIVERY';
+          const feePct =
+            found.transactionFeePercent !== undefined
+              ? Number(found.transactionFeePercent)
+              : isCod
+              ? 0
+              : Number(platformPricing.paymentTransactionFeePercent ?? 3.5);
+          const feeAmt =
+            found.transactionFeeAmount !== undefined
+              ? Number(found.transactionFeeAmount)
+              : Number(((baseTotalUsd * feePct) / 100).toFixed(2));
+          const chargedTotalUsd =
+            found.chargedTotal !== undefined
+              ? Number(found.chargedTotal)
+              : Number((baseTotalUsd + feeAmt).toFixed(2));
+          const issuedAt = new Date(found.paidAt || found.createdAt || Date.now()).toISOString();
+          const providerRef =
+            found.paymentRef || `ZG-REF-${String(found.orderNumber || found.id).replace(/[^A-Z0-9]/gi, '')}`;
+          const canonical = [
+            found.id,
+            found.orderNumber,
+            currentUser.id,
+            chargedTotalUsd.toFixed(2),
+            providerRef,
+            issuedAt,
+          ].join('|');
+          const proofCode = `ZG-PROOF-${createHash('sha256').update(canonical).digest('hex').slice(0, 16).toUpperCase()}`;
+          const addr = found.deliveryAddress;
+          const addrFormatted = addr
+            ? [addr.commune, addr.quartier, addr.ville || 'Goma', addr.referencePoint].filter(Boolean).join(' · ')
+            : 'Retrait / Livraison numérique ZandoGo';
+
+          return json({
+            invoiceNumber: `FAC-${found.orderNumber}`,
+            orderId: found.id,
+            orderNumber: found.orderNumber,
+            orderStatus: found.status,
+            issuedAt,
+            paidAt: found.paidAt || null,
+            issuer: {
+              name: 'ZandoGo Marketplace RDC',
+              city: 'Goma, Nord-Kivu',
+              country: 'République Démocratique du Congo',
+              supportEmail: 'support@zandogo.cd',
+              legalNotice:
+                'Document commercial officiel généré par ZandoGo RDC — Preuve d’achat, de paiement et de protection séquestre 48h.',
+            },
+            buyer: {
+              id: currentUser.id,
+              fullName: currentUser.fullName,
+              phone: currentUser.phone || null,
+              email: currentUser.email || null,
+            },
+            deliveryAddress: {
+              commune: addr?.commune || null,
+              quartier: addr?.quartier || null,
+              ville: addr?.ville || 'Goma',
+              referencePoint: addr?.referencePoint || null,
+              formatted: addrFormatted,
+            },
+            payment: {
+              status: isPaid ? 'PAID' : 'UNPAID',
+              methodCode,
+              operatorLabel: operatorMap[methodCode] || methodCode,
+              providerReference: providerRef,
+              escrowStatus: found.escrowStatus || (isPaid ? 'HELD' : 'PENDING_PAYMENT'),
+              paidAt: found.paidAt || null,
+            },
+            stores: (found.subOrders || []).map((so: any) => ({
+              storeId: so.storeId || 'store-1',
+              storeName: so.store?.storeName || 'Boutique ZandoGo',
+              subtotalUsd: Number(
+                ((so.items || []).reduce(
+                  (s: number, it: any) => s + Number(it.unitPrice || 0) * Math.max(1, Number(it.quantity || 1)),
+                  0,
+                ) || itemsSubtotalUsd).toFixed(2),
+              ),
+            })),
+            items,
+            totals: {
+              currency: found.currency || 'USD',
+              itemsSubtotalUsd,
+              deliveryFeeUsd: Number(deliveryFeeUsd.toFixed(2)),
+              transactionFeePercent: feePct,
+              transactionFeeAmountUsd: Number(feeAmt.toFixed(2)),
+              chargedTotalUsd: Number(chargedTotalUsd.toFixed(2)),
+              exchangeRateUsdToCdf: exchangeRate,
+              chargedTotalCdf: Math.round(chargedTotalUsd * exchangeRate),
+            },
+            digitalDownloads: (found.digitalDownloads || []).map((dl: any) => ({
+              title: dl.title,
+              fileName: dl.fileName,
+            })),
+            verification: {
+              proofCode,
+              algorithm: 'SHA-256',
+              verifiedPurchase: isPaid,
+            },
+          });
         }
         const singleOrderMatch = path.match(/^\/orders\/([^/]+)$/);
         if (singleOrderMatch && method === 'GET') {
@@ -4409,18 +4560,20 @@ function mockApiPlugin(): Plugin {
             const severity = body.severity === 'HIGH' ? 'HIGH' : body.severity === 'LOW' ? 'LOW' : 'MEDIUM';
             const autoFreeze = severity === 'HIGH';
 
-            const safeEvidenceImages = Array.isArray(body.evidenceImages)
-              ? body.evidenceImages
-                  .map((u: unknown) => (typeof u === 'string' ? u.trim() : ''))
-                  .filter(
-                    (u: string) =>
-                      Boolean(u) &&
-                      ((u.startsWith('/api/uploads/') && !u.includes('..')) ||
-                        (u.startsWith('https://') && !u.toLowerCase().includes('.svg')) ||
-                        /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(u)),
-                  )
-                  .slice(0, 3)
-              : [];
+            const rawEvidenceList = [
+              ...(Array.isArray(body.evidenceImages) ? body.evidenceImages : []),
+              ...(Array.isArray(body.evidenceUrls) ? body.evidenceUrls : []),
+            ];
+            const safeEvidenceImages = rawEvidenceList
+              .map((u: unknown) => (typeof u === 'string' ? u.trim() : ''))
+              .filter(
+                (u: string) =>
+                  Boolean(u) &&
+                  ((u.startsWith('/api/uploads/') && !u.includes('..')) ||
+                    (u.startsWith('https://') && !u.toLowerCase().includes('.svg')) ||
+                    /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(u)),
+              )
+              .slice(0, 5);
 
             const newDispute = {
               id: `disp-${Date.now()}`,
@@ -4437,6 +4590,7 @@ function mockApiPlugin(): Plugin {
               reason: body.description || body.reason || 'Réclamation client',
               description: body.description || body.reason || 'Réclamation client',
               evidenceImages: safeEvidenceImages,
+              evidenceUrls: safeEvidenceImages,
               escrowAmount: Number(ord?.total || 0),
               createdAt: new Date().toISOString(),
             };
@@ -5351,6 +5505,105 @@ function mockApiPlugin(): Plugin {
             }
           });
           return;
+        }
+
+        // --- AFRICA'S TALKING SMS CALLBACKS & BULK SMS ---
+        if (path === '/sms/callbacks/delivery-reports' && method === 'POST') {
+          readBody().then((body) => {
+            const entry = {
+              action: 'SMS_DELIVERY_REPORT',
+              id: body.id || `dlr-${Date.now()}`,
+              status: body.status || 'Success',
+              phoneNumber: body.phoneNumber || '',
+              networkCode: body.networkCode || '',
+              failureReason: body.failureReason || undefined,
+              retryCount: body.retryCount ? Number(body.retryCount) : undefined,
+              createdAt: new Date().toISOString(),
+            };
+            smsCallbackLogs.unshift(entry);
+            json({ received: true, ...entry });
+          });
+          return;
+        }
+        if (path === '/sms/callbacks/incoming-messages' && method === 'POST') {
+          readBody().then((body) => {
+            const from = String(body.from || '').trim();
+            const text = String(body.text || '').trim();
+            const autoOptOut = ['STOP', 'ARRET', 'ARRÊT', 'UNSUBSCRIBE'].includes(text.toUpperCase());
+            if (autoOptOut && from) smsOptOuts.add(from);
+            const entry = {
+              action: 'SMS_INCOMING_MESSAGE',
+              id: body.id || `in-${Date.now()}`,
+              from,
+              to: body.to || '',
+              text,
+              linkId: body.linkId || undefined,
+              autoOptOut,
+              createdAt: new Date().toISOString(),
+            };
+            smsCallbackLogs.unshift(entry);
+            json({ received: true, ...entry });
+          });
+          return;
+        }
+        if (path === '/sms/callbacks/opt-out' && method === 'POST') {
+          readBody().then((body) => {
+            const phoneNumber = String(body.phoneNumber || '').trim();
+            if (phoneNumber) smsOptOuts.add(phoneNumber);
+            const entry = {
+              action: 'SMS_BULK_OPT_OUT',
+              senderId: body.senderId || 'ZandoGo',
+              phoneNumber,
+              createdAt: new Date().toISOString(),
+            };
+            smsCallbackLogs.unshift(entry);
+            json({ received: true, ...entry });
+          });
+          return;
+        }
+        if (path === '/sms/callbacks/subscriptions' && method === 'POST') {
+          readBody().then((body) => {
+            const entry = {
+              action: 'SMS_SUBSCRIPTION_UPDATE',
+              phoneNumber: body.phoneNumber || '',
+              shortCode: body.shortCode || '',
+              keyword: body.keyword || '',
+              updateType: body.updateType || 'addition',
+              createdAt: new Date().toISOString(),
+            };
+            smsCallbackLogs.unshift(entry);
+            json({ received: true, ...entry });
+          });
+          return;
+        }
+        if (path === '/sms/bulk' && method === 'POST') {
+          readBody().then((body) => {
+            const requested: string[] = Array.isArray(body.phoneNumbers) ? body.phoneNumbers : [];
+            const allowed = requested.filter((num) => !smsOptOuts.has(String(num).trim()));
+            const skippedOptOutCount = requested.length - allowed.length;
+            json({
+              sent: allowed.length > 0,
+              provider: 'AFRICASTALKING',
+              totalRequested: requested.length,
+              sentCount: allowed.length,
+              skippedOptOutCount,
+              summaryMessage: `Sent to ${allowed.length}/${requested.length}`,
+              recipients: allowed.map((num, idx) => ({
+                number: num,
+                statusCode: 101,
+                status: 'Success',
+                messageId: `ATPid_Dev_${Date.now()}_${idx}`,
+                accepted: true,
+              })),
+            });
+          });
+          return;
+        }
+        if (path === '/sms/opt-outs' && method === 'GET') {
+          return json(Array.from(smsOptOuts));
+        }
+        if (path === '/sms/callbacks/logs' && method === 'GET') {
+          return json(smsCallbackLogs.slice(0, 50));
         }
 
         if (method === 'GET') {

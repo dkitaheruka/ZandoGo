@@ -117,6 +117,8 @@ Idéal pour tester les vraies écritures en base de données, l'authentification
    AFRICASTALKING_USERNAME=
    AFRICASTALKING_API_KEY=
    AFRICASTALKING_SENDER_ID=ZandoGo
+   AFRICASTALKING_ENQUEUE=1
+   AFRICASTALKING_WEBHOOK_TOKEN=
 
    # Assistant IA Hybride (auto = détecte Ollama en local, sinon bascule sur Gemini Cloud)
    AI_MODE=auto
@@ -225,10 +227,19 @@ MAISHAPAY_WEBHOOK_SECRET=collez_le_secret_webhook_marchand
 STRIPE_SECRET_KEY=votre_cle_secrete_stripe
 STRIPE_WEBHOOK_SECRET=whsec_votre_secret_webhook_stripe
 
-# Notifications SMS (Africa's Talking)
+# Notifications SMS & Bulk SMS (Africa's Talking Live / Sandbox)
 AFRICASTALKING_USERNAME=votre_username_africastalking
 AFRICASTALKING_API_KEY=votre_cle_api_africastalking
 AFRICASTALKING_SENDER_ID=ZandoGo
+AFRICASTALKING_ENQUEUE=1
+# OBLIGATOIRE en production pour sécuriser les 4 URLs de callback SMS (?token=...)
+AFRICASTALKING_WEBHOOK_TOKEN=collez_un_jeton_secret_sms_32_caracteres
+
+# Callbacks à renseigner dans le Dashboard Africa's Talking (SMS -> SMS Callback URLs) :
+# - Delivery Reports : https://votredomaine.cd/api/sms/callbacks/delivery-reports?token=VOTRE_JETON
+# - Incoming Messages : https://votredomaine.cd/api/sms/callbacks/incoming-messages?token=VOTRE_JETON
+# - Bulk SMS Opt Out : https://votredomaine.cd/api/sms/callbacks/opt-out?token=VOTRE_JETON
+# - Subscription Notifications : https://votredomaine.cd/api/sms/callbacks/subscriptions?token=VOTRE_JETON
 
 # Assistant IA Hybride (en production, utilise Gemini Cloud si Ollama n'est pas actif)
 AI_MODE=auto

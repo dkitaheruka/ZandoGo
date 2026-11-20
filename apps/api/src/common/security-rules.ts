@@ -194,7 +194,37 @@ export function isSafeChatAttachmentUrl(value: string | undefined): boolean {
   }
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol === 'https:';
+    return parsed.protocol === 'https:' && !parsed.pathname.toLowerCase().endsWith('.svg');
+  } catch {
+    return false;
+  }
+}
+
+export function isSafeMediaReference(
+  value: string | undefined,
+  allowedKeyPrefixes: ('chat' | 'disputes' | 'delivery-proofs' | 'products')[] = ['disputes', 'delivery-proofs'],
+): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 7_000_000) return false;
+  if (trimmed.includes('..')) return false;
+
+  const prefixPattern = allowedKeyPrefixes.join('|');
+  if (new RegExp(`^(?:${prefixPattern})\\/[0-9a-f-]{36}\\/[0-9a-f-]{36}\\.(jpg|png|webp)$`).test(trimmed)) {
+    return true;
+  }
+  if (/^\/api\/uploads\/local\/(?:public\/products|chat|disputes|delivery-proofs)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)(\?.*)?$/.test(trimmed)) {
+    return true;
+  }
+  if (/^\/src\/assets\/images\/[a-z0-9_.-]+\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
+    return true;
+  }
+  if (/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' && !parsed.pathname.toLowerCase().endsWith('.svg');
   } catch {
     return false;
   }

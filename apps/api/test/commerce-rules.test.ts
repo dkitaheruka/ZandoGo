@@ -9,6 +9,12 @@ import {
   normalizeAiLanguage,
   resolveVendorSettlementEligibility,
 } from '../src/common/commerce-rules';
+import {
+  buildOfficialInvoicePayload,
+  computeInvoiceProofCode,
+  formatInvoiceOperatorLabel,
+} from '../src/modules/orders/invoice.helpers';
+import { generateOfficialInvoicePdfBytes } from '../../web/src/lib/invoice-pdf';
 
 describe('computePaymentTotals', () => {
   it('applies default 3.5% fee for electronic payment', () => {
@@ -148,6 +154,115 @@ describe('chat translation guardrails', () => {
 
     expect(isValidTranslationOutput(validFrench, lingala)).toBe(true);
     expect(isValidTranslationOutput(corruptedPrice, lingala)).toBe(false);
+  });
+});
+
+describe('official downloadable invoice & PDF proof', () => {
+  it('formats operators and computes deterministic SHA-256 proof code', () => {
+    expect(formatInvoiceOperatorLabel('MOBILE_MONEY_MPESA')).toBe('Vodacom M-Pesa RDC');
+    expect(formatInvoiceOperatorLabel('CASH_ON_DELIVERY')).toBe('Paiement Cash à la Livraison');
+
+    const params = {
+      orderId: 'ord-999',
+      orderNumber: 'ZG-2026-9999',
+      buyerId: 'usr-123',
+      chargedTotalUsd: 108.68,
+      providerReference: 'MPESA-TX-888',
+      issuedAt: '2026-11-19T12:00:00.000Z',
+    };
+    const code1 = computeInvoiceProofCode(params);
+    const code2 = computeInvoiceProofCode(params);
+    expect(code1).toMatch(/^ZG-PROOF-[A-F0-9]{16}$/);
+    expect(code1).toBe(code2);
+  });
+
+  it('builds complete invoice payload with exact USD/CDF totals and generates a valid A4 PDF 1.4', () => {
+    const invoice = buildOfficialInvoicePayload({
+      orderId: 'ord-abc-1',
+      orderNumber: 'ZG-2026-4401',
+      orderStatus: 'PAID',
+      currency: 'USD',
+      createdAt: '2026-11-19T10:00:00.000Z',
+      paidAt: '2026-11-19T10:02:00.000Z',
+      subtotalUsd: 100,
+      deliveryFeeUsd: 5,
+      exchangeRateUsdToCdf: 2850,
+      isPaid: true,
+      paymentMethodCode: 'MOBILE_MONEY_AIRTEL',
+      providerReference: 'AIRTEL-991234',
+      buyer: {
+        id: 'buyer-1',
+        fullName: 'Amani Kasongo',
+        phone: '+243998112233',
+        email: 'amani@zandogo.cd',
+      },
+      deliveryAddress: {
+        commune: 'Goma',
+        quartier: 'Himbi',
+        ville: 'Goma',
+        referencePoint: 'Pres du Rond-Point Birere',
+      },
+      stores: [{ storeId: 'st-1', storeName: 'Kivu Tech Store', subtotalUsd: 100 }],
+      items: [
+        {
+          title: 'Smartphone 5G Zando',
+          storeName: 'Kivu Tech Store',
+          variantLabel: 'Noir 128Go',
+          productType: 'PHYSICAL',
+          quantity: 1,
+          unitPriceUsd: 100,
+          totalPriceUsd: 100,
+        },
+      ],
+    });
+
+    expect(invoice.invoiceNumber).toBe('FAC-ZG-2026-4401');
+    expect(invoice.totals.transactionFeePercent).toBe(3.5);
+    expect(invoice.totals.transactionFeeAmountUsd).toBe(3.68);
+    expect(invoice.totals.chargedTotalUsd).toBe(108.68);
+    expect(invoice.totals.chargedTotalCdf).toBe(Math.round(108.68 * 2850));
+    expect(invoice.payment.operatorLabel).toBe('Airtel Money RDC');
+    expect(invoice.verification.verifiedPurchase).toBe(true);
+    expect(invoice.verification.proofCode).toMatch(/^ZG-PROOF-[A-F0-9]{16}$/);
+
+    const pdfBytes = generateOfficialInvoicePdfBytes(invoice);
+    const pdfText = Buffer.from(pdfBytes).toString('latin1');
+    expect(pdfText.startsWith('%PDF-1.4\n')).toBe(true);
+    expect(pdfText.trimEnd().endsWith('%%EOF')).toBe(true);
+    expect(pdfText).toContain('FAC-ZG-2026-4401');
+    expect(pdfText).toContain('Amani Kasongo');
+    expect(pdfText).toContain(invoice.verification.proofCode);
+    expect(pdfText).toContain('AIRTEL-991234');
+  });
+
+  it('waives transaction fees on cash on delivery invoices', () => {
+    const invoice = buildOfficialInvoicePayload({
+      orderId: 'ord-cod-1',
+      orderNumber: 'ZG-2026-5501',
+      orderStatus: 'CONFIRMED',
+      currency: 'USD',
+      createdAt: '2026-11-19T11:00:00.000Z',
+      subtotalUsd: 50,
+      deliveryFeeUsd: 4,
+      exchangeRateUsdToCdf: 2850,
+      isPaid: false,
+      paymentMethodCode: 'CASH_ON_DELIVERY',
+      buyer: { id: 'buyer-2', fullName: 'Mireille Neema' },
+      stores: [{ storeId: 'st-1', storeName: 'Goma Mode', subtotalUsd: 50 }],
+      items: [
+        {
+          title: 'Robe Wax Royale',
+          storeName: 'Goma Mode',
+          quantity: 1,
+          unitPriceUsd: 50,
+          totalPriceUsd: 50,
+        },
+      ],
+    });
+
+    expect(invoice.totals.transactionFeePercent).toBe(0);
+    expect(invoice.totals.transactionFeeAmountUsd).toBe(0);
+    expect(invoice.totals.chargedTotalUsd).toBe(54);
   });
 });
 

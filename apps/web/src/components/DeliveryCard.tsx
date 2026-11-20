@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { Camera, ImagePlus, X } from 'lucide-react';
-import { api } from '../lib/api';
-import { acceptAttribute, readCompressedImageDataUrl, validateFile } from '../lib/upload';
+import { api, isRealApiMode } from '../lib/api';
+import { acceptAttribute, dataUrlToFile, readCompressedImageDataUrl, uploadFile, validateFile } from '../lib/upload';
 import type { DeliveryJob } from '../lib/types';
 
 type ProofType = 'PHOTO' | 'SIGNATURE' | 'OTP_CODE';
@@ -142,10 +142,17 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
     setBusy(true);
     setError(null);
     try {
+      let submittedFileUrl: string | undefined = proofType === 'OTP_CODE' ? undefined : fileUrl;
+      if (proofType !== 'OTP_CODE' && isRealApiMode && fileUrl.startsWith('data:')) {
+        submittedFileUrl = await uploadFile(
+          dataUrlToFile(fileUrl, `preuve-${job.id.slice(0, 8)}`),
+          'DELIVERY_PROOF',
+        );
+      }
       const position = await getPosition({ lat: job.dropoffLat, lng: job.dropoffLng });
       await api.post(`/delivery/deliveries/${job.id}/complete`, {
         proofType,
-        fileUrl: proofType === 'OTP_CODE' ? undefined : fileUrl,
+        fileUrl: submittedFileUrl,
         otpValue: proofType === 'OTP_CODE' ? otp : undefined,
         lat: position.lat,
         lng: position.lng,

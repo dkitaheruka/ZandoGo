@@ -1,6 +1,12 @@
 import { api } from './api';
 
-export type UploadPurpose = 'KYC_DOCUMENT' | 'PRODUCT_IMAGE' | 'PRODUCT_VIDEO' | 'CHAT_IMAGE';
+export type UploadPurpose =
+  | 'KYC_DOCUMENT'
+  | 'PRODUCT_IMAGE'
+  | 'PRODUCT_VIDEO'
+  | 'CHAT_IMAGE'
+  | 'DISPUTE_EVIDENCE'
+  | 'DELIVERY_PROOF';
 
 const ACCEPTED: Record<
   UploadPurpose,
@@ -25,6 +31,18 @@ const ACCEPTED: Record<
     maxLabel: '15 Mo',
   },
   CHAT_IMAGE: {
+    types: ['image/jpeg', 'image/png', 'image/webp'],
+    label: 'JPEG, PNG ou WebP',
+    maxBytes: 5 * 1024 * 1024,
+    maxLabel: '5 Mo',
+  },
+  DISPUTE_EVIDENCE: {
+    types: ['image/jpeg', 'image/png', 'image/webp'],
+    label: 'JPEG, PNG ou WebP',
+    maxBytes: 5 * 1024 * 1024,
+    maxLabel: '5 Mo',
+  },
+  DELIVERY_PROOF: {
     types: ['image/jpeg', 'image/png', 'image/webp'],
     label: 'JPEG, PNG ou WebP',
     maxBytes: 5 * 1024 * 1024,
@@ -251,3 +269,31 @@ export async function uploadFile(file: File, purpose: UploadPurpose): Promise<st
 
   return presigned.key;
 }
+
+export function dataUrlToFile(dataUrl: string, fallbackName = 'media'): File {
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    throw new UploadError('Format média invalide pour téléversement.');
+  }
+  const mime = match[1].toLowerCase();
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const ext =
+    mime === 'image/png'
+      ? 'png'
+      : mime === 'image/webp'
+      ? 'webp'
+      : mime === 'video/mp4'
+      ? 'mp4'
+      : mime === 'video/webm'
+      ? 'webm'
+      : mime === 'video/quicktime'
+      ? 'mov'
+      : 'jpg';
+  const cleanBase = fallbackName.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-') || 'media';
+  return new File([bytes], `${cleanBase}.${ext}`, { type: mime });
+}
+

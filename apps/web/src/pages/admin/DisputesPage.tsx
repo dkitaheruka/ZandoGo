@@ -18,6 +18,7 @@ interface Dispute {
   reason?: string;
   description?: string;
   evidenceImages?: string[];
+  evidenceUrls?: string[];
   severity?: 'LOW' | 'MEDIUM' | 'HIGH';
   payoutFrozen?: boolean;
   storePayoutBlocked?: boolean;
@@ -154,6 +155,10 @@ function DisputeCard({
     dispute.payoutFrozen || dispute.storePayoutBlocked || dispute.order?.subOrders?.some((so) => so.store?.payoutBlocked),
   );
   const isCritical = dispute.severity === 'HIGH';
+  const evidenceList =
+    dispute.evidenceUrls && dispute.evidenceUrls.length > 0
+      ? dispute.evidenceUrls
+      : dispute.evidenceImages || [];
 
   async function handleTogglePayoutFreeze(blocked: boolean) {
     setFreezeBusy(true);
@@ -270,13 +275,13 @@ function DisputeCard({
         </p>
         <p>{dispute.reason || dispute.description || 'Colis non reçu dans le délai imparti de 48 heures.'}</p>
 
-        {dispute.evidenceImages && dispute.evidenceImages.length > 0 && (
+        {evidenceList.length > 0 && (
           <div className="pt-2 border-t border-white/10 space-y-1.5">
             <p className="text-[11px] font-display font-semibold text-safran">
-              Preuves photo fournies par l’acheteur ({dispute.evidenceImages.length}) :
+              Preuves photo fournies par l’acheteur ({evidenceList.length}) :
             </p>
             <div className="flex flex-wrap gap-2">
-              {dispute.evidenceImages.map((imgUrl, idx) => (
+              {evidenceList.map((imgUrl, idx) => (
                 <button
                   key={`${dispute.id}-ev-${idx}`}
                   type="button"

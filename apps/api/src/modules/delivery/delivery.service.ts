@@ -7,11 +7,13 @@ import {
 import { KycStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { isSafeMediaReference } from '../../common/security-rules';
 import { AssistantService } from '../assistant/assistant.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { PaymentsService } from '../payments/payments.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { TrackingGateway } from '../realtime/tracking.gateway';
+import { UploadsService } from '../uploads/uploads.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { haversineDistanceKm } from '../../common/geo/haversine';
 import { assertCanViewDelivery } from '../../common/access/delivery-access';
@@ -35,6 +37,7 @@ export class DeliveryService {
     private readonly tracking: TrackingGateway,
     private readonly notifications: NotificationsGateway,
     private readonly assistant: AssistantService,
+    private readonly uploads: UploadsService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -134,7 +137,7 @@ export class DeliveryService {
     const agent = await this.prisma.deliveryAgent.findUnique({ where: { userId: user.id } });
     if (!agent) throw new NotFoundException('Profil livreur introuvable');
 
-    return this.prisma.delivery.findMany({
+    const rows = await this.prisma.delivery.findMany({
       where: { agentId: agent.id },
       include: {
         proof: true,
@@ -153,6 +156,20 @@ export class DeliveryService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+
+    return Promise.all(
+      rows.map(async (row) => {
+        if (row.proof?.fileUrl && row.proof.fileUrl.startsWith('delivery-proofs/')) {
+          try {
+            const signed = await this.uploads.signedReadUrl(row.proof.fileUrl);
+            return { ...row, proof: { ...row.proof, fileUrl: signed } };
+          } catch {
+            return row;
+          }
+        }
+        return row;
+      }),
+    );
   }
 
   /** File d'attente admin : livreurs sans le rôle DELIVERY_AGENT, donc jamais encore approuvés */
@@ -399,6 +416,19 @@ export class DeliveryService {
     if (dto.proofType === 'OTP_CODE' && !dto.otpValue) {
       throw new BadRequestException('Le code OTP est requis');
     }
+    let cleanProofUrl: string | undefined;
+    if (dto.proofType !== 'OTP_CODE' && dto.fileUrl) {
+      const trimmed = dto.fileUrl.trim();
+      if (!isSafeMediaReference(trimmed, ['delivery-proofs', 'chat'])) {
+        throw new BadRequestException('Fichier preuve invalide ou format non autorisé');
+      }
+      if (trimmed.startsWith('delivery-proofs/')) {
+        this.uploads.assertOwnedKey(user, 'DELIVERY_PROOF', trimmed);
+      } else if (trimmed.startsWith('chat/')) {
+        this.uploads.assertOwnedKey(user, 'CHAT_IMAGE', trimmed);
+      }
+      cleanProofUrl = trimmed;
+    }
 
     const deliveredAt = new Date();
 
@@ -407,7 +437,7 @@ export class DeliveryService {
         data: {
           deliveryId,
           type: dto.proofType,
-          fileUrl: dto.fileUrl,
+          fileUrl: cleanProofUrl,
           otpValue: dto.otpValue,
           verifiedAt: deliveredAt,
         },

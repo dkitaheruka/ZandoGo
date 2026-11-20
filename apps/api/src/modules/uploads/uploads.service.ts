@@ -21,6 +21,9 @@ const URL_TTL_SECONDS = 300; // 5 minutes : assez pour un envoi, trop court pour
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 15 * 1024 * 1024;
 
+export type PrivateUploadFolder = 'kyc' | 'chat' | 'disputes' | 'delivery-proofs';
+export type PublicUploadFolder = 'products' | 'products-videos';
+
 interface LocalUploadedFile {
   buffer: Buffer;
   mimetype: string;
@@ -67,6 +70,31 @@ const RULES: Record<UploadPurpose, PurposeRule> = {
     maxBytes: MAX_IMAGE_SIZE_BYTES,
     types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
   },
+  // Preuves photo de litiges acheteur / vendeur : espace privé signé
+  DISPUTE_EVIDENCE: {
+    folder: 'disputes',
+    bucket: 'private',
+    maxBytes: MAX_IMAGE_SIZE_BYTES,
+    types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
+  },
+  // Preuves photo de remise colis par le livreur : espace privé signé
+  DELIVERY_PROOF: {
+    folder: 'delivery-proofs',
+    bucket: 'private',
+    maxBytes: MAX_IMAGE_SIZE_BYTES,
+    types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
+    roles: [RoleName.DELIVERY_AGENT, RoleName.ADMIN, RoleName.SUPER_ADMIN],
+  },
+};
+
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
 };
 
 @Injectable()
@@ -120,6 +148,7 @@ export class UploadsService {
   /**
    * Délivre une URL de dépôt à usage unique. Le fichier est envoyé directement du
    * navigateur au stockage : il ne transite jamais par ce serveur.
+   * En développement avec UPLOADS_DRIVER=local, tous les usages utilisent le dossier local sécurisé.
    */
   async presign(user: AuthenticatedUser, dto: PresignUploadDto) {
     const rule = RULES[dto.purpose];
@@ -142,7 +171,7 @@ export class UploadsService {
 
     // Le nom est entièrement choisi par le serveur : on ignore tout nom fourni par le client
     const key = `${rule.folder}/${user.id}/${randomUUID()}.${extension}`;
-    if (this.localStorageEnabled && (dto.purpose === 'KYC_DOCUMENT' || dto.purpose === 'CHAT_IMAGE')) {
+    if (this.localStorageEnabled) {
       return { mode: 'local' as const, key };
     }
 
@@ -179,12 +208,16 @@ export class UploadsService {
     key: string,
     file: LocalUploadedFile,
   ): Promise<string> {
-    if (!this.localStorageEnabled || (purpose !== 'KYC_DOCUMENT' && purpose !== 'CHAT_IMAGE')) {
-      throw new ServiceUnavailableException('Le stockage local est réservé au développement (KYC / Chat)');
+    if (!this.localStorageEnabled) {
+      throw new ServiceUnavailableException('Le stockage local est réservé au développement (UPLOADS_DRIVER=local)');
     }
     const rule = RULES[purpose];
+    if (rule.roles && !user.roles.some((r) => rule.roles!.includes(r.role as RoleName))) {
+      throw new ForbiddenException("Vous n'avez pas le droit d'envoyer ce type de fichier");
+    }
     if (file.size < 1 || file.size > rule.maxBytes || file.size !== file.buffer.length) {
-      throw new BadRequestException('La taille du fichier est invalide (maximum 5 Mo)');
+      const limitMb = Math.round(rule.maxBytes / (1024 * 1024));
+      throw new BadRequestException(`La taille du fichier est invalide (maximum ${limitMb} Mo)`);
     }
 
     const extension = rule.types[file.mimetype];
@@ -199,9 +232,9 @@ export class UploadsService {
 
     const fileName = key.split('/')[2];
     const directory =
-      purpose === 'CHAT_IMAGE'
-        ? resolve(this.localStoragePath(), 'chat', user.id)
-        : resolve(this.localStoragePath(), user.id);
+      purpose === 'KYC_DOCUMENT'
+        ? resolve(this.localStoragePath(), user.id)
+        : resolve(this.localStoragePath(), rule.folder, user.id);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(resolve(directory, fileName), file.buffer, {
       flag: 'wx',
@@ -211,8 +244,8 @@ export class UploadsService {
   }
 
   /**
-   * Un utilisateur ne peut rattacher à son dossier (KYC, produit, chat) qu'un fichier qu'il a
-   * lui-même envoyé : la clé commence par son propre identifiant.
+   * Un utilisateur ne peut rattacher à son dossier (KYC, produit, chat, litige, preuve)
+   * qu'un fichier qu'il a lui-même envoyé : la clé commence par son propre identifiant.
    */
   assertOwnedKey(user: AuthenticatedUser, purpose: UploadPurpose, key: string) {
     const prefix = `${RULES[purpose].folder}/${user.id}/`;
@@ -223,34 +256,52 @@ export class UploadsService {
 
   /** URL publique d'un média produit (espace public uniquement) */
   publicUrlFor(key: string): string {
+    if (this.localStorageEnabled) {
+      if (
+        key.includes('..') ||
+        !/^(products|products-videos)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|mp4|webm|mov)$/.test(key)
+      ) {
+        throw new BadRequestException('Clé média produit invalide');
+      }
+      return `/api/uploads/local/public/${key}`;
+    }
     const base = this.config.get<string>('S3_PUBLIC_BASE_URL');
     if (!base) throw new ServiceUnavailableException("Le stockage de fichiers n'est pas configuré");
     return `${base.replace(/\/+$/, '')}/${key}`;
   }
 
   /**
-   * Lecture d'un document privé (KYC ou image chat) : URL signée de courte durée,
-   * réservée aux appelants autorisés par le service métier.
+   * Lecture d'un document privé (KYC, image chat, preuve litige ou preuve livraison) :
+   * URL signée de courte durée, réservée aux appelants autorisés par le service métier.
    */
   async signedReadUrl(key: string): Promise<string> {
-    const isKyc = key.startsWith(`${RULES.KYC_DOCUMENT.folder}/`);
-    const isChat = key.startsWith(`${RULES.CHAT_IMAGE.folder}/`);
-    if ((!isKyc && !isChat) || key.includes('..')) {
+    if (!key || key.includes('..')) {
       throw new BadRequestException('Clé de fichier invalide');
     }
+
+    let folder: PrivateUploadFolder | null = null;
+    if (key.startsWith(`${RULES.KYC_DOCUMENT.folder}/`)) folder = 'kyc';
+    else if (key.startsWith(`${RULES.CHAT_IMAGE.folder}/`)) folder = 'chat';
+    else if (key.startsWith(`${RULES.DISPUTE_EVIDENCE.folder}/`)) folder = 'disputes';
+    else if (key.startsWith(`${RULES.DELIVERY_PROOF.folder}/`)) folder = 'delivery-proofs';
+
+    if (!folder) {
+      throw new BadRequestException('Clé de fichier invalide');
+    }
+
     if (this.localStorageEnabled) {
-      if (isKyc) {
-        const match = /^kyc\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|pdf))$/.exec(key);
-        if (!match) throw new BadRequestException('Clé de fichier invalide');
-        const expires = Math.floor(Date.now() / 1000) + URL_TTL_SECONDS;
-        const signature = this.localReadSignature(key, expires);
-        return `/api/uploads/local/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
-      }
-      const match = /^chat\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|webp))$/.exec(key);
+      const pattern =
+        folder === 'kyc'
+          ? /^kyc\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.(?:jpg|png|pdf))$/
+          : new RegExp(`^${folder}\\/([0-9a-f-]{36})\\/([0-9a-f-]{36}\\.(?:jpg|png|webp))$`);
+      const match = pattern.exec(key);
       if (!match) throw new BadRequestException('Clé de fichier invalide');
       const expires = Math.floor(Date.now() / 1000) + URL_TTL_SECONDS;
       const signature = this.localReadSignature(key, expires);
-      return `/api/uploads/local/chat/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
+      if (folder === 'kyc') {
+        return `/api/uploads/local/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
+      }
+      return `/api/uploads/local/${folder}/${match[1]}/${match[2]}?expires=${expires}&signature=${signature}`;
     }
 
     return getSignedUrl(
@@ -260,12 +311,52 @@ export class UploadsService {
     );
   }
 
+  async readLocalPublic(
+    folder: PublicUploadFolder,
+    userId: string,
+    fileName: string,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
+    if (!this.localStorageEnabled) {
+      throw new NotFoundException('Média introuvable');
+    }
+
+    const key = `${folder}/${userId}/${fileName}`;
+    const validPattern =
+      folder === 'products-videos'
+        ? /^products-videos\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(mp4|webm|mov)$/
+        : /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
+    if (!validPattern.test(key)) {
+      throw new NotFoundException('Média introuvable');
+    }
+
+    const root = this.localStoragePath();
+    const filePath = resolve(root, folder, userId, fileName);
+    const pathFromRoot = relative(root, filePath);
+    if (!pathFromRoot || pathFromRoot.startsWith(`..${sep}`) || isAbsolute(pathFromRoot)) {
+      throw new NotFoundException('Média introuvable');
+    }
+
+    let buffer: Buffer;
+    try {
+      buffer = await readFile(filePath);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new NotFoundException('Média introuvable');
+      }
+      throw error;
+    }
+
+    const extension = fileName.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const contentType = MIME_BY_EXT[extension] ?? 'application/octet-stream';
+    return { buffer, contentType };
+  }
+
   async readLocal(
     userId: string,
     fileName: string,
     expiresValue: string,
     signature: string,
-    folder: 'kyc' | 'chat' = 'kyc',
+    folder: PrivateUploadFolder = 'kyc',
   ): Promise<{ buffer: Buffer; contentType: string }> {
     if (!this.localStorageEnabled) {
       throw new NotFoundException('Document introuvable');
@@ -273,9 +364,9 @@ export class UploadsService {
 
     const key = `${folder}/${userId}/${fileName}`;
     const validPattern =
-      folder === 'chat'
-        ? /^chat\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp)$/
-        : /^kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/;
+      folder === 'kyc'
+        ? /^kyc\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|pdf)$/
+        : new RegExp(`^${folder}\\/[0-9a-f-]{36}\\/[0-9a-f-]{36}\\.(jpg|png|webp)$`);
     if (!validPattern.test(key)) {
       throw new NotFoundException('Document introuvable');
     }
@@ -293,7 +384,7 @@ export class UploadsService {
 
     const root = this.localStoragePath();
     const filePath =
-      folder === 'chat' ? resolve(root, 'chat', userId, fileName) : resolve(root, userId, fileName);
+      folder === 'kyc' ? resolve(root, userId, fileName) : resolve(root, folder, userId, fileName);
     const pathFromRoot = relative(root, filePath);
     if (!pathFromRoot || pathFromRoot.startsWith(`..${sep}`) || isAbsolute(pathFromRoot)) {
       throw new NotFoundException('Document introuvable');
@@ -309,15 +400,8 @@ export class UploadsService {
       throw error;
     }
 
-    const extension = fileName.split('.').pop();
-    const contentType =
-      extension === 'jpg'
-        ? 'image/jpeg'
-        : extension === 'png'
-        ? 'image/png'
-        : extension === 'webp'
-        ? 'image/webp'
-        : 'application/pdf';
+    const extension = fileName.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const contentType = MIME_BY_EXT[extension] ?? 'application/pdf';
     return { buffer, contentType };
   }
 

@@ -18,12 +18,14 @@ import {
   X,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
-import { api } from '../../lib/api';
+import { api, isRealApiMode } from '../../lib/api';
 import {
   acceptAttribute,
+  dataUrlToFile,
   readCompressedImageDataUrl,
   readFileAsDataUrl,
   readVideoDurationSeconds,
+  uploadFile,
   validateFile,
 } from '../../lib/upload';
 import type { Product, VendorStore } from '../../lib/types';
@@ -31,6 +33,15 @@ import type { Product, VendorStore } from '../../lib/types';
 interface EditableImage {
   url: string;
   altText: string;
+}
+
+function extractProductImageKey(url: string): string | null {
+  const localMatch = /^\/api\/uploads\/local\/public\/(products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:jpg|png|webp))$/i.exec(
+    url.trim(),
+  );
+  if (localMatch) return localMatch[1];
+  const s3Match = /(products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(?:jpg|png|webp))$/i.exec(url.trim());
+  return s3Match ? s3Match[1] : null;
 }
 
 export function StoreProductsPage() {
@@ -50,6 +61,7 @@ export function StoreProductsPage() {
   const [editImages, setEditImages] = useState<EditableImage[]>([]);
   const [editImageError, setEditImageError] = useState<string | null>(null);
   const [editVideoUrl, setEditVideoUrl] = useState<string | undefined>(undefined);
+  const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
   const [editVideoDurationSec, setEditVideoDurationSec] = useState<number | undefined>(undefined);
   const [removeEditVideo, setRemoveEditVideo] = useState(false);
   const [editVideoError, setEditVideoError] = useState<string | null>(null);
@@ -88,6 +100,7 @@ export function StoreProductsPage() {
     );
     setEditImageError(null);
     setEditVideoUrl(product.videoUrl ?? undefined);
+    setEditVideoFile(null);
     setEditVideoDurationSec(product.videoDurationSec ?? undefined);
     setRemoveEditVideo(false);
     setEditVideoError(null);
@@ -96,6 +109,7 @@ export function StoreProductsPage() {
 
   function closeEditModal() {
     setEditingProduct(null);
+    setEditVideoFile(null);
     setEditImageError(null);
     setEditVideoError(null);
     setEditSubmitError(null);
@@ -176,6 +190,7 @@ export function StoreProductsPage() {
       }
       const dataUrl = await readFileAsDataUrl(file);
       setEditVideoUrl(dataUrl);
+      setEditVideoFile(file);
       setEditVideoDurationSec(Math.min(10, Math.max(1, Math.round(duration))));
       setRemoveEditVideo(false);
     } catch (err: any) {
@@ -198,21 +213,54 @@ export function StoreProductsPage() {
 
     setSavingEdit(true);
     try {
-      const payload: Record<string, any> = {
-        title: editTitle.trim(),
-        description: editDescription.trim(),
-        basePriceUsd: Number(editPriceUsd) > 0 ? Number(editPriceUsd) : undefined,
-        images: editImages.map((img, i) => ({
-          url: img.url,
-          altText: img.altText.trim() || `${editTitle.trim()} — vue ${i + 1}`,
-        })),
-      };
+      let payload: Record<string, any>;
+      if (isRealApiMode) {
+        const resolvedKeys: string[] = [];
+        for (let i = 0; i < editImages.length; i += 1) {
+          const img = editImages[i];
+          if (img.url.startsWith('data:')) {
+            resolvedKeys.push(
+              await uploadFile(dataUrlToFile(img.url, `edit-${editingProduct.id}-${i + 1}`), 'PRODUCT_IMAGE'),
+            );
+          } else {
+            const existingKey = extractProductImageKey(img.url);
+            if (existingKey) resolvedKeys.push(existingKey);
+          }
+        }
+        payload = {
+          title: editTitle.trim(),
+          description: editDescription.trim(),
+          basePriceUsd: Number(editPriceUsd) > 0 ? Number(editPriceUsd) : undefined,
+        };
+        if (resolvedKeys.length === editImages.length) {
+          payload.imageKeys = resolvedKeys;
+          payload.imageAltTexts = editImages.map(
+            (img, i) => img.altText.trim() || `${editTitle.trim()} — vue ${i + 1}`,
+          );
+        }
+        if (removeEditVideo) {
+          payload.removeVideo = true;
+        } else if (editVideoFile) {
+          payload.videoKey = await uploadFile(editVideoFile, 'PRODUCT_VIDEO');
+          payload.videoDurationSec = editVideoDurationSec ?? 10;
+        }
+      } else {
+        payload = {
+          title: editTitle.trim(),
+          description: editDescription.trim(),
+          basePriceUsd: Number(editPriceUsd) > 0 ? Number(editPriceUsd) : undefined,
+          images: editImages.map((img, i) => ({
+            url: img.url,
+            altText: img.altText.trim() || `${editTitle.trim()} — vue ${i + 1}`,
+          })),
+        };
 
-      if (removeEditVideo) {
-        payload.removeVideo = true;
-      } else if (editVideoUrl) {
-        payload.videoUrl = editVideoUrl;
-        payload.videoDurationSec = editVideoDurationSec ?? 10;
+        if (removeEditVideo) {
+          payload.removeVideo = true;
+        } else if (editVideoUrl) {
+          payload.videoUrl = editVideoUrl;
+          payload.videoDurationSec = editVideoDurationSec ?? 10;
+        }
       }
 
       const { data } = await api.patch<Product>(
@@ -231,11 +279,13 @@ export function StoreProductsPage() {
                 basePriceUsd: data?.basePriceUsd ?? payload.basePriceUsd ?? item.basePriceUsd,
                 images:
                   data?.images ||
-                  payload.images.map((im: EditableImage, idx: number) => ({
-                    id: `img-${Date.now()}-${idx}`,
-                    url: im.url,
-                    altText: im.altText,
-                  })),
+                  (Array.isArray(payload.images)
+                    ? payload.images.map((im: EditableImage, idx: number) => ({
+                        id: `img-${Date.now()}-${idx}`,
+                        url: im.url,
+                        altText: im.altText,
+                      }))
+                    : item.images),
                 videoUrl: removeEditVideo ? undefined : data?.videoUrl ?? editVideoUrl,
                 videoDurationSec: removeEditVideo ? undefined : data?.videoDurationSec ?? editVideoDurationSec,
               }

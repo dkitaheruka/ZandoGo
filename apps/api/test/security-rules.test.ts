@@ -3,6 +3,7 @@ import {
   LoginAttemptTracker,
   hasValidFileMagicBytes,
   isSafeChatAttachmentUrl,
+  isSafeMediaReference,
   isSafePaymentRedirectUrl,
   parseAllowedCorsOrigins,
   shouldConfirmGatewayPayment,
@@ -168,9 +169,29 @@ describe('hasValidFileMagicBytes', () => {
   it('validates safe chat photo attachment URLs and blocks SVG/XSS payloads', () => {
     expect(isSafeChatAttachmentUrl('chat/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.jpg')).toBe(true);
     expect(isSafeChatAttachmentUrl('https://cdn.zandogo.cd/chat/photo.webp')).toBe(true);
+    expect(isSafeChatAttachmentUrl('https://cdn.zandogo.cd/chat/xss.svg')).toBe(false);
     expect(isSafeChatAttachmentUrl('data:image/jpeg;base64,/9j/4AAQSkZJRg==')).toBe(true);
     expect(isSafeChatAttachmentUrl('data:image/svg+xml;base64,PHN2Zz4=')).toBe(false);
     expect(isSafeChatAttachmentUrl('javascript:alert(1)')).toBe(false);
+  });
+
+  it('validates dispute evidence and delivery proof media references with prefix & XSS protections', () => {
+    const disputeKey = 'disputes/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.png';
+    const proofKey = 'delivery-proofs/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.jpg';
+
+    expect(isSafeMediaReference(disputeKey, ['disputes'])).toBe(true);
+    expect(isSafeMediaReference(proofKey, ['disputes'])).toBe(false);
+    expect(isSafeMediaReference(proofKey, ['delivery-proofs'])).toBe(true);
+    expect(
+      isSafeMediaReference(
+        '/api/uploads/local/disputes/11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222.jpg?expires=9999&sig=abc',
+        ['disputes'],
+      ),
+    ).toBe(true);
+    expect(isSafeMediaReference('data:image/png;base64,iVBORw0KGgo=', ['disputes'])).toBe(true);
+    expect(isSafeMediaReference('data:image/svg+xml;base64,PHN2Zz4=', ['disputes'])).toBe(false);
+    expect(isSafeMediaReference('https://evil.example/payload.svg', ['disputes'])).toBe(false);
+    expect(isSafeMediaReference('../etc/passwd', ['disputes'])).toBe(false);
   });
 });
 

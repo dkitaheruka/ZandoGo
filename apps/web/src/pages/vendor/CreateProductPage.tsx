@@ -20,13 +20,15 @@ import {
   Camera,
 } from 'lucide-react';
 import { VendorLayout } from '../../components/vendor/VendorLayout';
-import { api } from '../../lib/api';
+import { api, isRealApiMode } from '../../lib/api';
 import { getPreferredAiModel } from '../../lib/ai-preference';
 import {
   acceptAttribute,
+  dataUrlToFile,
   readCompressedImageDataUrl,
   readFileAsDataUrl,
   readVideoDurationSeconds,
+  uploadFile,
   validateFile,
 } from '../../lib/upload';
 import type {
@@ -106,7 +108,12 @@ export function CreateProductPage() {
 
   const [uploadedImages, setUploadedImages] = useState<{ name: string; dataUrl: string; label: string }[]>([]);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
-  const [uploadedVideo, setUploadedVideo] = useState<{ name: string; dataUrl: string; durationSec: number } | null>(null);
+  const [uploadedVideo, setUploadedVideo] = useState<{
+    name: string;
+    dataUrl: string;
+    durationSec: number;
+    file?: File;
+  } | null>(null);
   const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
   const [variants, setVariants] = useState<VariantDraft[]>([
@@ -337,6 +344,7 @@ export function CreateProductPage() {
         name: file.name,
         dataUrl,
         durationSec: Math.min(10, Math.max(1, Math.round(duration))),
+        file,
       });
     } catch (err: any) {
       setVideoUploadError(err?.message || 'Impossible de charger cette vidéo.');
@@ -454,32 +462,85 @@ export function CreateProductPage() {
         return;
       }
 
-      await api.post(`/vendors/stores/${storeId}/products`, {
-        title,
-        slug,
-        description,
-        categoryId,
-        productType,
-        pricingUnit,
-        audience,
-        basePriceUsd: parsedPrice,
-        stockQty: productType === 'PHYSICAL' ? Number(stockQty) : 9999,
-        lowStockThreshold: Number(lowStockThreshold),
-        images: uploadedImages.map((img, i) => ({
-          url: img.dataUrl,
-          altText: img.label.trim() || `${title.trim()} — vue ${i + 1}`,
-        })),
-        videoUrl: uploadedVideo?.dataUrl || undefined,
-        videoDurationSec: uploadedVideo?.durationSec || undefined,
-        variants: formattedVariants,
-        priceTiers: validTiers.length > 0 ? validTiers : undefined,
-        digitalFileName: productType === 'DIGITAL' ? digitalFileName : undefined,
-        digitalFileSize: productType === 'DIGITAL' ? digitalFileSize : undefined,
-        digitalFileDataUrl: productType === 'DIGITAL' && digitalFileDataUrl ? digitalFileDataUrl : undefined,
-        digitalFileUrl: productType === 'DIGITAL' && digitalFileUrl.trim() ? digitalFileUrl.trim() : undefined,
-        serviceDuration: productType === 'SERVICE' ? serviceDuration : undefined,
-        fulfillmentDetails: productType === 'SERVICE' ? fulfillmentDetails : undefined,
-      });
+      if (isRealApiMode) {
+        const imageKeys = await Promise.all(
+          uploadedImages.map((img, i) =>
+            uploadFile(dataUrlToFile(img.dataUrl, `${slug}-${i + 1}`), 'PRODUCT_IMAGE'),
+          ),
+        );
+        const imageAltTexts = uploadedImages.map(
+          (img, i) => img.label.trim() || `${title.trim()} — vue ${i + 1}`,
+        );
+        let videoKey: string | undefined;
+        if (uploadedVideo) {
+          const videoFile =
+            uploadedVideo.file ?? dataUrlToFile(uploadedVideo.dataUrl, `${slug}-video`);
+          videoKey = await uploadFile(videoFile, 'PRODUCT_VIDEO');
+        }
+        const apiVariants =
+          productType === 'PHYSICAL'
+            ? variants.map((v, idx) => ({
+                sku:
+                  v.sku.trim() ||
+                  `${slug.slice(0, 12).toUpperCase()}-${idx + 1}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+                attributes: {
+                  ...(v.size.trim() ? { size: v.size.trim() } : {}),
+                  ...(v.color.trim() ? { color: v.color.trim() } : {}),
+                  ...(v.colorHex ? { colorHex: v.colorHex } : {}),
+                },
+                priceOverride: Number(v.priceOverride || parsedPrice),
+                stockQty: Number(v.stockQty || stockQty || 0),
+              }))
+            : [
+                {
+                  sku: `${slug.slice(0, 14).toUpperCase()}-STD`,
+                  attributes: { type: productType },
+                  priceOverride: parsedPrice,
+                  stockQty: 9999,
+                },
+              ];
+
+        await api.post(`/vendors/stores/${storeId}/products`, {
+          title,
+          slug,
+          description,
+          productType,
+          categoryId,
+          basePriceUsd: parsedPrice,
+          imageKeys,
+          imageAltTexts,
+          videoKey,
+          videoDurationSec: videoKey ? uploadedVideo?.durationSec ?? 10 : undefined,
+          variants: apiVariants,
+        });
+      } else {
+        await api.post(`/vendors/stores/${storeId}/products`, {
+          title,
+          slug,
+          description,
+          categoryId,
+          productType,
+          pricingUnit,
+          audience,
+          basePriceUsd: parsedPrice,
+          stockQty: productType === 'PHYSICAL' ? Number(stockQty) : 9999,
+          lowStockThreshold: Number(lowStockThreshold),
+          images: uploadedImages.map((img, i) => ({
+            url: img.dataUrl,
+            altText: img.label.trim() || `${title.trim()} — vue ${i + 1}`,
+          })),
+          videoUrl: uploadedVideo?.dataUrl || undefined,
+          videoDurationSec: uploadedVideo?.durationSec || undefined,
+          variants: formattedVariants,
+          priceTiers: validTiers.length > 0 ? validTiers : undefined,
+          digitalFileName: productType === 'DIGITAL' ? digitalFileName : undefined,
+          digitalFileSize: productType === 'DIGITAL' ? digitalFileSize : undefined,
+          digitalFileDataUrl: productType === 'DIGITAL' && digitalFileDataUrl ? digitalFileDataUrl : undefined,
+          digitalFileUrl: productType === 'DIGITAL' && digitalFileUrl.trim() ? digitalFileUrl.trim() : undefined,
+          serviceDuration: productType === 'SERVICE' ? serviceDuration : undefined,
+          fulfillmentDetails: productType === 'SERVICE' ? fulfillmentDetails : undefined,
+        });
+      }
 
       navigate(`/vendor/${storeId}/products`);
     } catch (err: any) {

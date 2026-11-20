@@ -1,6 +1,7 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 const baseURL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
+export const isRealApiMode = Boolean(import.meta.env.VITE_API_URL);
 
 export const api = axios.create({
   baseURL,

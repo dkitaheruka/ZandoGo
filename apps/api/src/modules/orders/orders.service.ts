@@ -12,6 +12,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CheckoutDto } from './dto/checkout.dto';
 import { UpdateSubOrderStatusDto } from './dto/update-suborder-status.dto';
+import { buildOfficialInvoicePayload, OfficialInvoicePayload } from './invoice.helpers';
 
 // Sous-commande calculée avant écriture en base : un tableau non typé laissait TypeScript
 // deviner la forme, et plus rien ne garantissait que les montants calculés soient complets.
@@ -256,6 +257,126 @@ export class OrdersService {
       createdAt: order.createdAt,
       subOrders: order.subOrders.filter((so) => myStoreIds.has(so.storeId)),
     };
+  }
+
+  async getOrderInvoice(user: AuthenticatedUser, orderId: string): Promise<OfficialInvoicePayload> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: { select: { id: true, fullName: true, phone: true, email: true } },
+        deliveryAddress: true,
+        paymentTransactions: { orderBy: { createdAt: 'desc' }, take: 1 },
+        subOrders: {
+          include: {
+            store: PUBLIC_STORE_SELECT,
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: { select: { title: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Commande introuvable');
+
+    const isCustomer = order.customerId === user.id;
+    const isAdmin = user.roles.some(
+      (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+    );
+    if (!isCustomer && !isAdmin) {
+      throw new ForbiddenException('Seul l’acheteur ou un administrateur peut télécharger la facture complète');
+    }
+
+    const latestRate = await this.prisma.exchangeRate.findFirst({
+      where: { fromCurrency: 'USD', toCurrency: 'CDF' },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const pricingSetting = await this.prisma.platformSetting.findUnique({
+      where: { key: 'platform_pricing' },
+    });
+    const configuredFeePct = Number(
+      (pricingSetting?.value as { paymentTransactionFeePercent?: number } | null)
+        ?.paymentTransactionFeePercent ?? 3.5,
+    );
+
+    const latestPayment = order.paymentTransactions[0];
+    const itemsSubtotalUsd = Number(order.subtotal ?? 0);
+    const deliveryFeeUsd = Number(order.shippingFee ?? 0);
+    const baseTotal = itemsSubtotalUsd + deliveryFeeUsd;
+    const txAmount = latestPayment ? Number(latestPayment.amount) : undefined;
+    const txFeeAmount =
+      txAmount !== undefined && txAmount > baseTotal ? Number((txAmount - baseTotal).toFixed(2)) : undefined;
+
+    const items = order.subOrders.flatMap((so) =>
+      so.items.map((item) => {
+        const attrs =
+          item.variant.attributes && typeof item.variant.attributes === 'object'
+            ? (item.variant.attributes as Record<string, unknown>)
+            : null;
+        const variantParts = [attrs?.color, attrs?.size, attrs?.capacity]
+          .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+        return {
+          title: item.variant.product.title,
+          storeName: so.store.storeName,
+          variantLabel: variantParts.length > 0 ? variantParts.join(' · ') : item.variant.sku,
+          quantity: item.quantity,
+          unitPriceUsd: Number(item.unitPrice),
+          totalPriceUsd: Number(item.totalPrice),
+        };
+      }),
+    );
+
+    const isPaid =
+      latestPayment?.status === 'SUCCESS' ||
+      ['PAID', 'PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status);
+
+    return buildOfficialInvoicePayload({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderStatus: order.status,
+      currency: order.currency,
+      createdAt: order.createdAt,
+      paidAt: latestPayment?.confirmedAt ?? null,
+      subtotalUsd: itemsSubtotalUsd,
+      deliveryFeeUsd,
+      transactionFeePercent:
+        latestPayment?.methodCode === 'CASH_ON_DELIVERY' ? 0 : configuredFeePct,
+      transactionFeeAmountUsd: txFeeAmount,
+      chargedTotalUsd: txAmount,
+      exchangeRateUsdToCdf: latestPayment?.exchangeRateApplied
+        ? Number(latestPayment.exchangeRateApplied)
+        : latestRate
+        ? Number(latestRate.rate)
+        : 2850,
+      isPaid,
+      paymentMethodCode: latestPayment?.methodCode ?? null,
+      providerReference: latestPayment?.providerReference ?? null,
+      buyer: {
+        id: order.customer.id,
+        fullName: order.customer.fullName,
+        phone: order.customer.phone,
+        email: order.customer.email,
+      },
+      deliveryAddress: order.deliveryAddress
+        ? {
+            commune: order.deliveryAddress.commune,
+            quartier: order.deliveryAddress.quartier,
+            ville: order.deliveryAddress.ville,
+            referencePoint: order.deliveryAddress.referencePoint,
+          }
+        : null,
+      stores: order.subOrders.map((so) => ({
+        storeId: so.storeId,
+        storeName: so.store.storeName,
+        subtotalUsd: Number(so.subtotal),
+      })),
+      items,
+    });
   }
 
   /**
