@@ -1102,15 +1102,21 @@ function mockApiPlugin(): Plugin {
 
   function enrichProduct(p: any) {
     const matchedStore = stores.find((s) => s.id === p.store?.id);
-    const hasMonthlyAd = Boolean(matchedStore?.hasMonthlyAd);
-    const isCertified = Boolean(matchedStore?.isCertified);
+    const nowMs = Date.now();
+    const adNotExpired =
+      !matchedStore?.monthlyAdUntil || new Date(matchedStore.monthlyAdUntil).getTime() > nowMs;
+    const hasMonthlyAd = Boolean(matchedStore?.hasMonthlyAd && matchedStore?.status === 'ACTIVE' && adNotExpired);
+    const certNotExpired =
+      !matchedStore?.certifiedUntil || new Date(matchedStore.certifiedUntil).getTime() > nowMs;
+    const isCertified = Boolean(matchedStore?.isCertified && certNotExpired);
     return {
       ...p,
       isSponsored: hasMonthlyAd,
-      monthlyAdPlan: matchedStore?.monthlyAdPlan || 'NONE',
+      monthlyAdPlan: hasMonthlyAd ? matchedStore?.monthlyAdPlan || 'PRO_CAROUSEL_59' : 'NONE',
       adExpiresAt: matchedStore?.monthlyAdUntil || null,
       store: {
         ...p.store,
+        city: matchedStore?.city || p.store?.city || 'Goma (Nord-Kivu)',
         isCertified,
         verifiedSupplier: isCertified,
         hasMonthlyAd,
@@ -2155,6 +2161,7 @@ function mockApiPlugin(): Plugin {
         // --- PRODUCTS & REVIEWS ---
         if (path === '/products/sponsored' && method === 'GET') {
           const sponsored = products
+            .filter((p) => p.status !== 'DRAFT' && p.status !== 'ARCHIVED')
             .map(enrichProduct)
             .filter((p) => p.isSponsored)
             .sort((a, b) => (b.store?.isCertified ? 1 : 0) - (a.store?.isCertified ? 1 : 0));

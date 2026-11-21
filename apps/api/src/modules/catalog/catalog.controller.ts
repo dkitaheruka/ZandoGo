@@ -55,6 +55,11 @@ export class CatalogController {
     return this.catalog.listProducts(query);
   }
 
+  @Get('products/sponsored')
+  listSponsoredProducts() {
+    return this.catalog.listSponsoredProducts();
+  }
+
   @UseGuards(OptionalJwtAuthGuard)
   @Get('products/:id')
   getProduct(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser | null) {

@@ -320,8 +320,96 @@ export class CatalogService {
   // Consultation publique
   // -------------------------------------------------------------------
 
+  private serializePublicProduct(p: any, now: Date) {
+    const hasActiveAd =
+      Boolean(p.store?.hasMonthlyAd) &&
+      (!p.store?.monthlyAdUntil || new Date(p.store.monthlyAdUntil).getTime() > now.getTime());
+    const hasActiveBoost = Boolean(p.boostedUntil && new Date(p.boostedUntil).getTime() > now.getTime());
+    const hasActiveCampaign = Array.isArray(p.adCampaigns) && p.adCampaigns.length > 0;
+    const isSponsored = hasActiveAd || hasActiveBoost || hasActiveCampaign || Boolean(p.isFeatured);
+    const isCertified =
+      Boolean(p.store?.isCertified) &&
+      (!p.store?.certifiedUntil || new Date(p.store.certifiedUntil).getTime() > now.getTime());
+
+    const { adCampaigns: _ads, ...rest } = p;
+    return {
+      ...rest,
+      isSponsored,
+      monthlyAdPlan: p.store?.monthlyAdPlan ?? 'NONE',
+      adExpiresAt: p.store?.monthlyAdUntil ?? null,
+      store: {
+        ...p.store,
+        isCertified,
+        verifiedSupplier: isCertified,
+        hasMonthlyAd: hasActiveAd,
+      },
+    };
+  }
+
+  async listSponsoredProducts() {
+    const now = new Date();
+    const rows = await this.prisma.product.findMany({
+      where: {
+        status: ProductStatus.ACTIVE,
+        store: { status: StoreStatus.ACTIVE },
+        OR: [
+          {
+            store: {
+              hasMonthlyAd: true,
+              OR: [{ monthlyAdUntil: null }, { monthlyAdUntil: { gt: now } }],
+            },
+          },
+          { boostedUntil: { gt: now } },
+          { isFeatured: true },
+          {
+            adCampaigns: {
+              some: {
+                status: 'ACTIVE',
+                startAt: { lte: now },
+                endAt: { gte: now },
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        images: { orderBy: { position: 'asc' } },
+        variants: true,
+        category: true,
+        adCampaigns: {
+          where: { status: 'ACTIVE', startAt: { lte: now }, endAt: { gte: now } },
+          select: { id: true },
+        },
+        store: {
+          select: {
+            id: true,
+            storeName: true,
+            slug: true,
+            city: true,
+            isCertified: true,
+            certifiedUntil: true,
+            hasMonthlyAd: true,
+            monthlyAdPlan: true,
+            monthlyAdUntil: true,
+          },
+        },
+      },
+      orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
+      take: 16,
+    });
+
+    const mapped = rows.map((p) => this.serializePublicProduct(p, now));
+    mapped.sort((a, b) => {
+      const adDiff = (b.store?.hasMonthlyAd ? 1 : 0) - (a.store?.hasMonthlyAd ? 1 : 0);
+      if (adDiff !== 0) return adDiff;
+      return (b.store?.isCertified ? 1 : 0) - (a.store?.isCertified ? 1 : 0);
+    });
+    return mapped;
+  }
+
   async listProducts(params: { categoryId?: string; storeId?: string; search?: string }) {
-    return this.prisma.product.findMany({
+    const now = new Date();
+    const rows = await this.prisma.product.findMany({
       where: {
         status: ProductStatus.ACTIVE,
         store: { status: StoreStatus.ACTIVE },
@@ -329,10 +417,39 @@ export class CatalogService {
         storeId: params.storeId,
         title: params.search ? { contains: params.search, mode: 'insensitive' } : undefined,
       },
-      include: { images: { orderBy: { position: 'asc' } }, variants: true, store: { select: { storeName: true, slug: true } } },
+      include: {
+        images: { orderBy: { position: 'asc' } },
+        variants: true,
+        category: true,
+        adCampaigns: {
+          where: { status: 'ACTIVE', startAt: { lte: now }, endAt: { gte: now } },
+          select: { id: true },
+        },
+        store: {
+          select: {
+            id: true,
+            storeName: true,
+            slug: true,
+            city: true,
+            isCertified: true,
+            certifiedUntil: true,
+            hasMonthlyAd: true,
+            monthlyAdPlan: true,
+            monthlyAdUntil: true,
+          },
+        },
+      },
       orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
       take: 40,
     });
+
+    const mapped = rows.map((p) => this.serializePublicProduct(p, now));
+    mapped.sort((a, b) => {
+      const adDiff = (b.isSponsored ? 1 : 0) - (a.isSponsored ? 1 : 0);
+      if (adDiff !== 0) return adDiff;
+      return (b.store?.isCertified ? 1 : 0) - (a.store?.isCertified ? 1 : 0);
+    });
+    return mapped;
   }
 
   async getProduct(productId: string, requester?: AuthenticatedUser) {
