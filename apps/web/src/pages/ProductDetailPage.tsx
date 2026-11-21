@@ -322,7 +322,7 @@ export function ProductDetailPage() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-12 items-start">
+      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-8 items-start">
         {/* Left: Product Media Gallery + Escrow + Landed Cost Simulator */}
         <div className="space-y-4">
           {(() => {
@@ -1027,7 +1027,7 @@ export function ProductDetailPage() {
       </div>
 
       {/* Verified Reviews Section */}
-      <section id="reviews-section" className="mt-16 pt-10 border-t border-encre/10 grid lg:grid-cols-[1.2fr_0.9fr] gap-8">
+      <section id="reviews-section" className="mt-8 pt-6 border-t border-encre/10 grid lg:grid-cols-[1.2fr_0.9fr] gap-6">
         <div>
           <div className="flex items-center justify-between mb-4">
             <div>

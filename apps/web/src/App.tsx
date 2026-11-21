@@ -1,4 +1,5 @@
-import { Link, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AssistantWidget } from './components/AssistantWidget';
@@ -33,9 +34,25 @@ import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
 import { AiLogsPage } from './pages/admin/AiLogsPage';
 import { ProfilePage } from './pages/ProfilePage';
 
+function ScrollToTop() {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    document.querySelectorAll<HTMLElement>('main').forEach((el) => {
+      el.scrollTop = 0;
+    });
+  }, [pathname, search]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <Layout>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />

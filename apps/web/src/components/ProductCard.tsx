@@ -1,7 +1,6 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ShieldCheck,
   Package,
   FileText,
   Sparkles,
@@ -133,7 +132,7 @@ export function ProductCard({ product }: { product: Product }) {
       }`}
     >
       <Link to={`/products/${product.id}`} className="flex-1 flex flex-col">
-        <div className="relative aspect-[4/3] overflow-hidden bg-brume">
+        <div className="relative aspect-[5/4] overflow-hidden bg-brume">
           <img
             src={imgSrc}
             alt={currentImg?.altText || product.title}
@@ -150,18 +149,18 @@ export function ProductCard({ product }: { product: Product }) {
                 onClick={goPrevImage}
                 aria-label="Photo précédente"
                 title="Photo précédente"
-                className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+                className="absolute left-1.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={goNextImage}
                 aria-label="Photo suivante"
                 title="Photo suivante"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-nuit/80 hover:bg-nuit text-brume flex items-center justify-center shadow-sm transition opacity-95 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
 
               <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
@@ -205,35 +204,35 @@ export function ProductCard({ product }: { product: Product }) {
           )}
 
           {/* Type, Sponsored & Audience Badges */}
-          <div className="absolute top-2.5 left-2.5 flex flex-wrap items-center gap-1.5 max-w-[75%]">
+          <div className="absolute top-2 left-2 flex flex-wrap items-center gap-1 max-w-[75%]">
             {product.isSponsored && (
-              <span className="bg-safran text-nuit text-[10px] font-display font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs uppercase tracking-wide">
-                <Megaphone className="w-3 h-3 text-nuit" />
+              <span className="bg-safran text-nuit text-[9px] font-display font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs uppercase tracking-wide">
+                <Megaphone className="w-2.5 h-2.5 text-nuit" />
                 <span>Sponsorisé</span>
               </span>
             )}
-            <div className="bg-nuit/90 backdrop-blur-xs text-brume text-[10px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+            <div className="bg-nuit/90 backdrop-blur-xs text-brume text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
               {product.productType === 'DIGITAL' && (
                 <>
-                  <FileText className="w-3 h-3 text-safran" />
-                  <span>PDF Instantané</span>
+                  <FileText className="w-2.5 h-2.5 text-safran" />
+                  <span>PDF</span>
                 </>
               )}
               {product.productType === 'SERVICE' && (
                 <>
-                  <Sparkles className="w-3 h-3 text-safran" />
-                  <span>{isKm ? 'Tarif au km' : 'Prestation'}</span>
+                  <Sparkles className="w-2.5 h-2.5 text-safran" />
+                  <span>{isKm ? 'Tarif / km' : 'Service'}</span>
                 </>
               )}
               {product.productType === 'PHYSICAL' && (
                 <>
-                  <Package className={`w-3 h-3 ${isLowStock ? 'text-wax' : 'text-seve'}`} />
-                  <span className={isLowStock ? 'text-wax font-bold' : ''}>{isLowStock ? 'Stock faible' : 'Matériel'}</span>
+                  <Package className={`w-2.5 h-2.5 ${isLowStock ? 'text-wax' : 'text-seve'}`} />
+                  <span className={isLowStock ? 'text-wax font-bold' : ''}>{isLowStock ? 'Stock bas' : 'Produit'}</span>
                 </>
               )}
             </div>
             {audienceLabel && product.productType === 'PHYSICAL' && (
-              <span className="bg-white/95 text-nuit text-[10px] font-display font-bold px-2 py-0.5 rounded-full shadow-xs border border-encre/10">
+              <span className="bg-white/95 text-nuit text-[9px] font-display font-bold px-1.5 py-0.5 rounded-full shadow-xs border border-encre/10">
                 {audienceLabel}
               </span>
             )}
@@ -278,14 +277,18 @@ export function ProductCard({ product }: { product: Product }) {
           </div>
         </div>
 
-        <div className="p-4 flex flex-col justify-between flex-1">
+        <div className="p-2 flex flex-col flex-1 gap-1.5">
           <div>
-            <div className="flex items-center justify-between gap-1.5 text-xs text-encre/60">
+            <div className="flex items-center justify-between gap-1 text-[10px] text-encre/60">
               <div className="flex items-center gap-1 min-w-0">
                 <span className="truncate font-medium text-encre/80">{product.store.storeName}</span>
                 {product.store.isCertified && (
-                  <span title="Vendeur Certifié ZandoGo (abonnement vérifié)">
-                    <ShieldCheck className="w-3.5 h-3.5 text-seve shrink-0" />
+                  <span
+                    title="Vendeur Certifié ZandoGo"
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full bg-seve/10 text-seve border border-seve/25 text-[8.5px] font-display font-bold shrink-0"
+                  >
+                    <BadgeCheck className="w-2.5 h-2.5 text-seve" />
+                    <span>Certifié</span>
                   </span>
                 )}
                 {product.store.city && (
@@ -297,78 +300,80 @@ export function ProductCard({ product }: { product: Product }) {
               </div>
               {rating && (
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-display font-bold text-nuit shrink-0 tabular-nums">
-                  <Star className="w-3 h-3 text-safran fill-safran" />
+                  <Star className="w-2.5 h-2.5 text-safran fill-safran" />
                   {rating.toFixed(1)}
                 </span>
               )}
             </div>
 
-            {product.store.isCertified && (
-              <div className="mt-1.5">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-seve/10 text-seve border border-seve/30 text-[10px] font-display font-bold">
-                  <BadgeCheck className="w-3 h-3 text-seve" />
-                  <span>Vendeur Certifié</span>
-                </span>
-              </div>
-            )}
-
-            <h2 className="mt-1.5 line-clamp-2 min-h-10 font-bold text-encre text-xs leading-snug group-hover:text-seve transition-colors">
+            <h2 className="mt-0.5 line-clamp-2 font-bold text-encre text-xs leading-snug group-hover:text-seve transition-colors">
               {product.title}
             </h2>
 
             {product.store.isTransportAgency && product.store.transportDestinations && product.store.transportDestinations.length > 0 && (
-              <div className="mt-1.5 flex items-center gap-1 text-[10px] font-mono text-seve bg-seve/10 border border-seve/25 px-2 py-0.5 rounded-md truncate">
-                <Truck className="w-3 h-3 shrink-0" />
+              <div className="mt-1 flex items-center gap-1 text-[10px] font-mono text-seve bg-seve/10 border border-seve/25 px-1.5 py-0.5 rounded-md truncate">
+                <Truck className="w-2.5 h-2.5 shrink-0" />
                 <span className="truncate">
-                  Lignes : {product.store.transportDestinations.map((d) => d.destinationCity).slice(0, 3).join(', ')}
-                </span>
-              </div>
-            )}
-
-            {colorVariants.length > 0 && (
-              <div className="mt-2 flex items-center gap-1.5">
-                {colorVariants.slice(0, 4).map(([label, hex]) => (
-                  <span
-                    key={label}
-                    title={label}
-                    className="h-3 w-3 rounded-full border border-encre/20 shadow-2xs"
-                    style={{ backgroundColor: hex }}
-                  />
-                ))}
-                <span className="text-[10px] text-encre/50 font-medium">
-                  {product.variants.length > 1 ? `${product.variants.length} options` : colorVariants[0][0]}
+                  {product.store.transportDestinations.map((d) => d.destinationCity).slice(0, 2).join(', ')}
                 </span>
               </div>
             )}
           </div>
 
-          <div className="mt-3 pt-3 border-t border-encre/10 flex items-baseline justify-between gap-2">
-            <div>
-              <p className="font-display text-base font-extrabold tabular-nums text-nuit">
-                {formatPrimaryPrice(priceUsd)}
-                {unitSuffix && <span className="text-[11px] font-semibold text-seve">{unitSuffix}</span>}
-              </p>
-              {bestTierPrice ? (
-                <p className="text-[10px] font-display text-nuit font-bold tabular-nums bg-safran/20 px-1.5 py-0.5 rounded-md mt-0.5 inline-block border border-safran/40">
-                  Dès {formatPrimaryPrice(bestTierPrice)}{unitSuffix} {isKm ? 'long trajet' : 'si lot'}
-                </p>
+          <div className="pt-1.5 border-t border-encre/10 space-y-0.5">
+            {/* Colors + Price side by side */}
+            <div className="flex items-center justify-between gap-2">
+              {colorVariants.length > 0 ? (
+                <div className="flex items-center gap-1 min-w-0">
+                  {colorVariants.slice(0, 4).map(([label, hex]) => (
+                    <span
+                      key={label}
+                      title={label}
+                      className="h-2.5 w-2.5 rounded-full border border-encre/20 shadow-2xs shrink-0"
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                  <span className="text-[10px] text-encre/55 font-medium truncate">
+                    {product.variants.length > 1 ? `${product.variants.length} opt.` : colorVariants[0][0]}
+                  </span>
+                </div>
               ) : (
-                <p className="text-[10px] font-mono text-encre/50 tabular-nums">
+                <span className="text-[10px] font-mono text-encre/50 tabular-nums truncate">
                   {formatSecondaryPrice(priceUsd)}{unitSuffix}
-                </p>
-              )}
-            </div>
-
-            <div className="text-right text-[11px] text-encre/60 font-sans shrink-0">
-              {product.productType === 'PHYSICAL' && (
-                <span className={isLowStock ? 'text-wax font-bold bg-wax/10 px-1.5 py-0.5 rounded border border-wax/25' : 'text-encre/70'}>
-                  {product.stockQty !== undefined ? `${product.stockQty} en stock` : 'En rayon'}
                 </span>
               )}
-              {product.productType === 'DIGITAL' && <span className="text-seve font-medium">0$ livraison</span>}
-              {product.productType === 'SERVICE' && (
-                <span className="text-seve font-medium">{isKm ? 'Calcul km' : 'Prestation'}</span>
+
+              <p className="font-display text-sm font-extrabold tabular-nums text-nuit shrink-0">
+                {formatPrimaryPrice(priceUsd)}
+                {unitSuffix && <span className="text-[10px] font-semibold text-seve">{unitSuffix}</span>}
+              </p>
+            </div>
+
+            {/* Bulk tier or secondary currency + stock */}
+            <div className="flex items-center justify-between gap-1.5 text-[10px] text-encre/60">
+              {bestTierPrice ? (
+                <span className="text-[9px] font-display text-nuit font-bold tabular-nums bg-safran/20 px-1.5 py-0.5 rounded border border-safran/40 truncate">
+                  Dès {formatPrimaryPrice(bestTierPrice)}{unitSuffix} {isKm ? 'long trajet' : 'si lot'}
+                </span>
+              ) : colorVariants.length > 0 ? (
+                <span className="font-mono text-encre/50 tabular-nums truncate">
+                  {formatSecondaryPrice(priceUsd)}{unitSuffix}
+                </span>
+              ) : (
+                <span />
               )}
+
+              <div className="text-right font-sans shrink-0">
+                {product.productType === 'PHYSICAL' && (
+                  <span className={isLowStock ? 'text-wax font-bold bg-wax/10 px-1 py-0.5 rounded border border-wax/25' : 'text-encre/70'}>
+                    {product.stockQty !== undefined ? `${product.stockQty} stock` : 'Dispo'}
+                  </span>
+                )}
+                {product.productType === 'DIGITAL' && <span className="text-seve font-medium">0$ livr.</span>}
+                {product.productType === 'SERVICE' && (
+                  <span className="text-seve font-medium">{isKm ? 'Au km' : 'Service'}</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -376,7 +381,7 @@ export function ProductCard({ product }: { product: Product }) {
             type="button"
             disabled={isOutOfStock || cartBusy}
             onClick={handleQuickAddToCart}
-            className={`mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-card text-xs font-display font-bold transition shadow-2xs ${
+            className={`mt-auto w-full inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-card text-[11px] font-display font-bold transition shadow-2xs ${
               isOutOfStock
                 ? 'bg-encre/10 text-encre/40 cursor-not-allowed'
                 : addedFeedback
@@ -386,12 +391,12 @@ export function ProductCard({ product }: { product: Product }) {
           >
             {addedFeedback ? (
               <>
-                <Check className="w-3.5 h-3.5 text-safran" />
+                <Check className="w-3 h-3 text-safran" />
                 <span>Ajouté ✓</span>
               </>
             ) : (
               <>
-                <ShoppingCart className="w-3.5 h-3.5 text-safran" />
+                <ShoppingCart className="w-3 h-3 text-safran" />
                 <span>{cartBusy ? 'Ajout…' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}</span>
               </>
             )}

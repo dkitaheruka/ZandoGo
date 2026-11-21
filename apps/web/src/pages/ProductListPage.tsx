@@ -234,8 +234,8 @@ export function ProductListPage() {
     });
 
   return (
-    <section className="mx-auto max-w-7xl px-6 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-6 border-b border-encre/10 pb-8">
+    <section className="mx-auto max-w-7xl px-6 py-6">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-encre/10 pb-5">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-seve uppercase tracking-wider">
             <span className="px-3 py-0.5 rounded-full bg-seve/10 border border-seve/25 text-seve flex items-center gap-1.5 font-bold text-[10px]">
@@ -322,7 +322,7 @@ export function ProductListPage() {
       )}
 
       {/* Type Tabs + Secondary Filters */}
-      <div className="mt-6 space-y-4">
+      <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-1.5 p-1 bg-encre/5 rounded-card overflow-x-auto text-xs">
             <button
@@ -504,20 +504,20 @@ export function ProductListPage() {
       )}
 
       {loading ? (
-        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {[1, 2, 3, 4, 5, 6].map((k) => (
-            <div key={k} className="h-72 rounded-card bg-encre/5 animate-pulse" />
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((k) => (
+            <div key={k} className="h-56 rounded-card bg-encre/5 animate-pulse" />
           ))}
         </div>
       ) : filteredProducts.length > 0 ? (
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
       ) : (
         !error && (
-          <div className="py-20 text-center rounded-card border border-dashed border-encre/20 bg-white p-8 mt-8">
+          <div className="py-12 text-center rounded-card border border-dashed border-encre/20 bg-white p-6 mt-5">
             <Package className="w-12 h-12 text-encre/30 mx-auto mb-3" />
             <h3 className="text-base font-display font-semibold text-nuit">Aucune offre trouvée</h3>
             <p className="mt-1 text-xs text-encre/60">Modifiez vos critères de recherche ou réinitialisez les filtres.</p>

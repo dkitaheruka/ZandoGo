@@ -409,8 +409,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <CompareDrawer />
 
       {/* Footer */}
-      <footer className="border-t border-encre/10 bg-nuit text-brume/80 mt-20">
-        <div className="mx-auto max-w-7xl px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-xs">
+      <footer className="border-t border-white/15 bg-nuit text-brume/80 mt-0">
+        <div className="mx-auto max-w-7xl px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-xs">
           <div>
             <div className="flex items-center gap-2 mb-3">
               <div className="h-6 w-6 rounded-card bg-seve text-brume font-bold flex items-center justify-center font-display text-xs">
