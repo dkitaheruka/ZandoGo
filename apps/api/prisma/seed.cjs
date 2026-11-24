@@ -1,8 +1,12 @@
 /* eslint-disable no-console */
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 const bcrypt = require('bcrypt');
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/zandogo?schema=public',
+});
+const prisma = new PrismaClient({ adapter });
 
 const DEFAULT_CATEGORIES = [
   { name: 'Électronique & High-Tech', slug: 'electronique-high-tech', icon: 'smartphone' },

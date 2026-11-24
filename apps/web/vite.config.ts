@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { GoogleGenAI, Type } from '@google/genai';
 
@@ -5911,6 +5912,7 @@ self.addEventListener('activate', (event) => {
 
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     react(),
     mockApiPlugin(),
     devManifestPlugin(),

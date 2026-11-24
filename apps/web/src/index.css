@@ -1,6 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-nuit: #172320;
+  --color-brume: #F6F4EE;
+  --color-encre: #202A27;
+  --color-seve: #26735B;
+  --color-safran: #F2B84B;
+  --color-wax: #B84C43;
+  --radius-card: 1.25rem;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-sans: "IBM Plex Sans", sans-serif;
+}
 
 :root {
   font-synthesis: none;

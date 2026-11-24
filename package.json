@@ -11,8 +11,8 @@
     "lint": "npm run typecheck --workspace=@ecommerce/web"
   },
   "dependencies": {
-    "@google/genai": "^3.4.0",
-    "lucide-react": "^1.72.0"
+    "@google/genai": "^3.6.1",
+    "lucide-react": "^1.79.0"
   },
   "devDependencies": {
     "vite-plugin-pwa": "^2.0.0",

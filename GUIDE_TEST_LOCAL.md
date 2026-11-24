@@ -7,7 +7,7 @@ Ce guide présente les **deux méthodes** pour lancer et tester l’application 
 ---
 
 ## Prérequis communs
-- **Node.js** version **20+** (avec `npm`)
+- **Node.js** version **22 LTS** (ou **20.19+**, avec `npm`)
 - Un terminal (PowerShell, CMD, Bash ou Terminal macOS/Linux)
 - *(Option 2 uniquement)* **PostgreSQL** installé en local **ou** **Docker Desktop**
 
