@@ -61,7 +61,7 @@ export function AssistantWidget() {
   const roleContext = useMemo<'CLIENT' | 'VENDOR' | 'ADMIN'>(() => {
     if (location.pathname.startsWith('/admin')) return 'ADMIN';
     if (location.pathname.startsWith('/vendor')) return 'VENDOR';
-    const isAdmin = user?.roles.some((r) => r.role === 'ADMIN' || r.role === 'SUPER_ADMIN');
+    const isAdmin = Boolean(user?.roles?.some((r) => r.role === 'ADMIN' || r.role === 'SUPER_ADMIN'));
     if (isAdmin && location.pathname === '/') return 'CLIENT';
     return 'CLIENT';
   }, [location.pathname, user]);

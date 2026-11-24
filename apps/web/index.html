@@ -26,7 +26,67 @@
     <title>ZandoGo — Place de Marché B2B & B2C · Toute la RDC & Environs</title>
   </head>
   <body class="bg-brume font-sans text-encre antialiased">
-    <div id="root"></div>
+    <div id="root">
+      <div id="zg-boot-loader" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#F6F4EE;color:#172320;font-family:system-ui,-apple-system,sans-serif;">
+        <div style="max-width:460px;width:100%;background:#ffffff;border:1px solid rgba(23,35,32,0.12);border-radius:16px;padding:24px;box-shadow:0 10px 30px rgba(23,35,32,0.06);text-align:center;">
+          <div style="width:40px;height:40px;margin:0 auto 12px;border-radius:12px;background:#172320;color:#F2B84B;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:16px;">ZG</div>
+          <p id="zg-boot-title" style="margin:0;font-weight:700;font-size:15px;">Chargement de ZandoGo…</p>
+          <p id="zg-boot-msg" style="margin:8px 0 0;font-size:12px;color:rgba(32,42,39,0.68);line-height:1.5;">Initialisation de l’interface en cours.</p>
+          <div id="zg-boot-actions" style="display:none;margin-top:16px;">
+            <button type="button" onclick="window.__zgClearCacheAndReload()" style="cursor:pointer;border:0;border-radius:10px;background:#26735B;color:#F6F4EE;font-weight:700;font-size:12px;padding:10px 16px;">Vider le cache local &amp; recharger</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div style="padding:24px;text-align:center;font-family:system-ui,sans-serif;color:#172320;">
+        Activez JavaScript dans votre navigateur pour utiliser ZandoGo.
+      </div>
+    </noscript>
+    <script>
+      window.__zgClearCacheAndReload = async function () {
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+        try {
+          if ('serviceWorker' in navigator) {
+            var regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(function (r) { return r.unregister(); }));
+          }
+          if ('caches' in window) {
+            var keys = await caches.keys();
+            await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+          }
+        } catch (e) {}
+        location.reload();
+      };
+      (function () {
+        function showBootError(detail) {
+          if (window.__ZANDOGO_MOUNTED__) return;
+          var title = document.getElementById('zg-boot-title');
+          var msg = document.getElementById('zg-boot-msg');
+          var actions = document.getElementById('zg-boot-actions');
+          if (title) title.textContent = 'Erreur de chargement de ZandoGo';
+          if (msg) {
+            msg.style.color = '#B84C43';
+            msg.textContent = detail || 'Le script de démarrage n’a pas pu se charger. Ouvrez la console navigateur (F12) ou videz le cache.';
+          }
+          if (actions) actions.style.display = 'block';
+        }
+        window.addEventListener('error', function (ev) {
+          var txt = (ev && (ev.message || (ev.target && ev.target.src))) || '';
+          showBootError(txt ? 'Détail : ' + txt : '');
+        }, true);
+        window.addEventListener('unhandledrejection', function (ev) {
+          var reason = ev && ev.reason;
+          var txt = (reason && (reason.message || String(reason))) || '';
+          showBootError(txt ? 'Détail : ' + txt : '');
+        });
+        setTimeout(function () {
+          if (!window.__ZANDOGO_MOUNTED__) {
+            showBootError('Le chargement prend plus de temps que prévu. Vérifiez votre version de Node.js (>= 20.19 ou 22), réinstallez les paquets (npm install) ou videz le cache.');
+          }
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

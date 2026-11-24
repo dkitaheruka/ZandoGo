@@ -23,6 +23,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function loadCurrentUser() {
   const { data } = await api.get<User>('/users/me');
+  if (!data || typeof data !== 'object' || !Array.isArray(data.roles)) {
+    throw new Error('Réponse utilisateur invalide.');
+  }
   return data;
 }
 

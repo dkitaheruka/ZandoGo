@@ -9,7 +9,12 @@ export function NotificationsBell() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.get<AppNotification[]>('/notifications/mine').then(({ data }) => setNotifications(data));
+    api
+      .get<AppNotification[]>('/notifications/mine')
+      .then(({ data }) => {
+        if (Array.isArray(data)) setNotifications(data);
+      })
+      .catch(() => {});
 
     const socket = getSocket('/notifications');
     function onNew(notification: AppNotification) {

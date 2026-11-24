@@ -82,8 +82,8 @@ export function Layout({ children }: { children: ReactNode }) {
     }
   }
 
-  const isAdmin = user?.roles.some((r) => r.role === 'ADMIN' || r.role === 'SUPER_ADMIN');
-  const isVendor = user?.roles.some((r) => r.role === 'VENDOR_OWNER' || r.role === 'VENDOR_STAFF');
+  const isAdmin = Boolean(user?.roles?.some((r) => r.role === 'ADMIN' || r.role === 'SUPER_ADMIN'));
+  const isVendor = Boolean(user?.roles?.some((r) => r.role === 'VENDOR_OWNER' || r.role === 'VENDOR_STAFF'));
 
   return (
     <div className="min-h-screen flex flex-col bg-brume text-encre antialiased font-sans">

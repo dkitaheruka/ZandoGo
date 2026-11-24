@@ -33,10 +33,28 @@ const StoreContext = createContext<StoreContextValue | undefined>(undefined);
 const WISHLIST_KEY = 'zandogo_wishlist_ids';
 const CURRENCY_KEY = 'zandogo_currency';
 
+function safeGetStorage(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStorage(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore storage access restrictions
+  }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [currency, setCurrencyState] = useState<Currency>(() => {
-    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENCY_KEY) : null;
+    const saved = safeGetStorage(CURRENCY_KEY);
     return saved === 'CDF' ? 'CDF' : 'USD';
   });
   const [exchangeRate, setExchangeRate] = useState<number>(2850);
@@ -45,8 +63,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [wishlistIds, setWishlistIds] = useState<string[]>(() => {
     try {
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WISHLIST_KEY) : null;
-      return raw ? JSON.parse(raw) : [];
+      const raw = safeGetStorage(WISHLIST_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
@@ -90,13 +109,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (user?.preferredCurrency && (user.preferredCurrency === 'USD' || user.preferredCurrency === 'CDF')) {
       setCurrencyState(user.preferredCurrency);
-      window.localStorage.setItem(CURRENCY_KEY, user.preferredCurrency);
+      safeSetStorage(CURRENCY_KEY, user.preferredCurrency);
     }
   }, [user?.preferredCurrency]);
 
   function setCurrency(next: Currency) {
     setCurrencyState(next);
-    window.localStorage.setItem(CURRENCY_KEY, next);
+    safeSetStorage(CURRENCY_KEY, next);
     if (user) {
       api.patch('/users/me/currency', { currency: next }).catch(() => {});
     }
@@ -121,7 +140,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   function toggleWishlist(productId: string) {
     setWishlistIds((prev) => {
       const next = prev.includes(productId) ? prev.filter((id) => id !== productId) : [productId, ...prev];
-      window.localStorage.setItem(WISHLIST_KEY, JSON.stringify(next));
+      safeSetStorage(WISHLIST_KEY, JSON.stringify(next));
       return next;
     });
   }

@@ -116,6 +116,35 @@ Vous pouvez également créer de nouveaux comptes clients ou vendeurs directemen
 
 ---
 
+## Dépannage Linux (page blanche à l’ouverture du lien `npm run dev`)
+
+Si le lien affiché par `npm run dev` s’ouvre dans le navigateur sans rien afficher :
+
+1. **Vérifier la version de Node.js** (très fréquent sur Ubuntu/Debian via `apt`) :
+   ```bash
+   node -v
+   ```
+   Il faut **Node 20.19+** ou **Node 22 LTS**. Si vous êtes en Node 18 ou inférieur, installez Node 22 :
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+   source ~/.bashrc
+   nvm install 22 && nvm use 22
+   ```
+2. **Ouvrir la bonne URL dans le navigateur** :
+   - Utilisez **`http://localhost:3000`** ou **`http://127.0.0.1:3000`** (évitez `http://0.0.0.0:3000` si le navigateur le bloque ou redirige mal).
+3. **Réinstaller proprement après une mise à jour de dépendances** :
+   ```bash
+   rm -rf node_modules apps/*/node_modules package-lock.json
+   npm install
+   npm run dev
+   ```
+4. **Vider l’ancien cache Service Worker sur `localhost:3000`** :
+   - Ouvrez **DevTools (`F12`)** → onglet **Console** (vérifiez s’il y a un message rouge) puis **Application → Service Workers → Unregister** et rechargez avec `Ctrl + Shift + R`.
+5. **Si vous aviez créé `apps/web/.env.local` (Option 2)** :
+   - Assurez-vous que l’API NestJS tourne bien sur le port `3001` (`VITE_API_URL=http://localhost:3001/api`), ou supprimez `apps/web/.env.local` pour utiliser l’Option 1 autonome.
+
+---
+
 ## Commandes de vérification technique (optionnel)
 ```bash
 npm run lint
