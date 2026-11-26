@@ -239,8 +239,26 @@ model User {
   exchangeRatesSet   ExchangeRate[]
   reviews            Review[]
   assistantSessions  AssistantSession[]
+  verificationCodes  AuthVerificationCode[]
+  priceNegotiations  PriceNegotiation[]
 
   @@map("users")
+}
+
+model AuthVerificationCode {
+  id         String    @id @default(uuid())
+  userId     String
+  purpose    String // VERIFY_ACCOUNT | RESET_PASSWORD
+  codeHash   String
+  channel    String    @default("SMS")
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@map("auth_verification_codes")
 }
 
 model UserRole {
@@ -318,10 +336,11 @@ model VendorStore {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  owner       User          @relation("StoreOwner", fields: [ownerId], references: [id])
-  products    Product[]
-  subOrders   OrderSubOrder[]
-  deliveryAgents DeliveryAgent[]
+  owner             User               @relation("StoreOwner", fields: [ownerId], references: [id])
+  products          Product[]
+  subOrders         OrderSubOrder[]
+  deliveryAgents    DeliveryAgent[]
+  priceNegotiations PriceNegotiation[]
 
   @@map("vendor_stores")
 }
@@ -350,20 +369,32 @@ model Product {
   description   String?
   basePriceUsd  Decimal       @db.Decimal(12, 2)
   basePriceCdf  Decimal       @db.Decimal(16, 2)
-  status           ProductStatus @default(DRAFT)
-  isFeatured       Boolean       @default(false)
-  boostedUntil     DateTime?
-  videoUrl         String?
-  videoDurationSec Int?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  productType        String        @default("PHYSICAL")
+  pricingUnit        String        @default("UNIT")
+  audience           String        @default("BOTH")
+  minOrderQty        Int           @default(1)
+  lowStockThreshold  Int           @default(5)
+  priceTiers         Json?
+  digitalFileUrl     String?
+  digitalFileName    String?
+  digitalFileSize    String?
+  serviceDuration    String?
+  fulfillmentDetails String?
+  status             ProductStatus @default(DRAFT)
+  isFeatured         Boolean       @default(false)
+  boostedUntil       DateTime?
+  videoUrl           String?
+  videoDurationSec   Int?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
-  store    VendorStore       @relation(fields: [storeId], references: [id])
-  category Category          @relation(fields: [categoryId], references: [id])
-  variants ProductVariant[]
-  images   ProductImage[]
-  reviews  Review[]
-  adCampaigns AdCampaign[]
+  store             VendorStore        @relation(fields: [storeId], references: [id])
+  category          Category           @relation(fields: [categoryId], references: [id])
+  variants          ProductVariant[]
+  images            ProductImage[]
+  reviews           Review[]
+  adCampaigns       AdCampaign[]
+  priceNegotiations PriceNegotiation[]
 
   @@map("products")
 }
@@ -396,19 +427,45 @@ model ProductImage {
 }
 
 model Review {
-  id           String   @id @default(uuid())
-  productId    String
-  customerId   String
-  orderItemId  String   @unique
-  rating       Int
-  comment      String?
-  createdAt    DateTime @default(now())
+  id               String   @id @default(uuid())
+  productId        String
+  customerId       String
+  orderItemId      String?  @unique
+  rating           Int
+  comment          String?
+  verifiedPurchase Boolean  @default(false)
+  createdAt        DateTime @default(now())
 
-  product   Product   @relation(fields: [productId], references: [id])
-  customer  User      @relation(fields: [customerId], references: [id])
-  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+  product   Product    @relation(fields: [productId], references: [id])
+  customer  User       @relation(fields: [customerId], references: [id])
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id])
 
   @@map("reviews")
+}
+
+model PriceNegotiation {
+  id                      String   @id @default(uuid())
+  productId               String
+  storeId                 String
+  buyerId                 String
+  requestedQty            Int      @default(1)
+  requestedPriceUsd       Decimal  @db.Decimal(12, 2)
+  agreedPriceUsd          Decimal? @db.Decimal(12, 2)
+  transportMode           String?
+  requestedDeliveryFeeUsd Decimal? @db.Decimal(10, 2)
+  destinationCity         String?
+  notes                   String?
+  status                  String   @default("PENDING_VENDOR_REVIEW")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store   VendorStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  buyer   User        @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@index([buyerId, status])
+  @@map("price_negotiations")
 }
 
 // ----------------------------------------------------------------------------
@@ -450,10 +507,16 @@ model Order {
   subtotal           Decimal     @db.Decimal(14, 2)
   shippingFee        Decimal     @db.Decimal(12, 2) @default(0)
   platformFee        Decimal     @db.Decimal(12, 2) @default(0)
-  total              Decimal     @db.Decimal(14, 2)
-  deliveryAddressId  String?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  total                 Decimal            @db.Decimal(14, 2)
+  deliveryAddressId     String?
+  deliveryOptionCode    String?
+  paymentMethodCode     PaymentMethodCode?
+  paymentRef            String?
+  transactionFeePercent Decimal?           @db.Decimal(5, 2)
+  chargedTotal          Decimal?           @db.Decimal(14, 2)
+  paidAt                DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   customer         User                @relation(fields: [customerId], references: [id])
   deliveryAddress  Address?            @relation(fields: [deliveryAddressId], references: [id])
@@ -575,6 +638,7 @@ model PayoutRequest {
   walletId     String
   amount       Decimal      @db.Decimal(14, 2)
   method       String
+  destination  String?
   status       PayoutStatus @default(REQUESTED)
   processedBy  String?
   processedAt  DateTime?
@@ -646,13 +710,17 @@ model Delivery {
   dropoffLat    Float
   dropoffLng    Float
   status        DeliveryStatus @default(AWAITING_ASSIGNMENT)
-  estimatedFee  Decimal        @db.Decimal(10, 2)
-  finalFee      Decimal?       @db.Decimal(10, 2)
-  distanceKm    Float?
-  createdAt     DateTime       @default(now())
-  assignedAt    DateTime?
-  pickedUpAt    DateTime?
-  deliveredAt   DateTime?
+  estimatedFee         Decimal        @db.Decimal(10, 2)
+  finalFee             Decimal?       @db.Decimal(10, 2)
+  negotiatedFeeUsd     Decimal?       @db.Decimal(10, 2)
+  feeNegotiationStatus String         @default("NONE")
+  clientGoogleMapsUrl  String?
+  deliveryOptionCode   String?
+  distanceKm           Float?
+  createdAt            DateTime       @default(now())
+  assignedAt           DateTime?
+  pickedUpAt           DateTime?
+  deliveredAt          DateTime?
 
   subOrder      OrderSubOrder           @relation(fields: [subOrderId], references: [id])
   agent         DeliveryAgent?          @relation(fields: [agentId], references: [id])
@@ -801,9 +869,10 @@ model AdInvoice {
 // ----------------------------------------------------------------------------
 
 model Conversation {
-  id      String           @id @default(uuid())
-  type    ConversationType
-  orderId String?
+  id       String           @id @default(uuid())
+  type     ConversationType
+  orderId  String?
+  metadata Json?
 
   messages     Message[]
   participants ConversationParticipant[]
@@ -829,6 +898,7 @@ model Message {
   sourceLanguage String?   @default("fr")
   translations   Json?
   attachmentUrl  String?
+  metadata       Json?
   sentAt         DateTime  @default(now())
   readAt         DateTime?
 

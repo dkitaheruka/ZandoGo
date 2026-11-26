@@ -83,9 +83,18 @@ export class PaymentsService {
       await this.prisma.$transaction([
         this.prisma.paymentTransaction.update({
           where: { id: transaction.id },
-          data: { status: 'PENDING' },
+          data: { status: 'PENDING', providerReference: `COD-${order.orderNumber}` },
         }),
-        this.prisma.order.update({ where: { id: order.id }, data: { status: 'PROCESSING' } }),
+        this.prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'PROCESSING',
+            paymentMethodCode: 'CASH_ON_DELIVERY',
+            paymentRef: `COD-${order.orderNumber}`,
+            transactionFeePercent: 0,
+            chargedTotal: baseTotal,
+          },
+        }),
         this.prisma.orderSubOrder.updateMany({
           where: { orderId: order.id },
           data: { status: 'PROCESSING' },
@@ -190,16 +199,24 @@ export class PaymentsService {
         },
       });
 
+      const isSandboxLocal = !this.maishapay.isProduction && !this.maishapay.isLiveConfigured;
+      if (isSandboxLocal) {
+        await this.markPaymentSuccess(transaction.id, { sandboxAutoConfirm: true, raw: mpRes.raw });
+      }
+
       return {
         method: dto.methodCode,
         operator: dto.methodCode,
+        paymentOperator: dto.methodCode,
         operatorLabel,
+        status: isSandboxLocal ? 'SUCCESS' : 'PENDING',
         transactionId: transaction.id,
         paymentRef: mpRes.transactionId,
-        paymentStatus: mpRes.paymentStatus,
+        paymentStatus: isSandboxLocal ? 'SUCCESS' : mpRes.paymentStatus,
         ussdCode: mpRes.ussdCode,
         expiresAt: mpRes.expiresAt,
-        paymentUrl: mpRes.paymentPageUrl,
+        paymentUrl: isSandboxLocal ? undefined : mpRes.paymentPageUrl,
+        smsRecipient: dto.phoneNumber,
         baseTotal,
         transactionFeePercent,
         transactionFeeAmount,
@@ -259,14 +276,22 @@ export class PaymentsService {
         },
       });
 
+      const isSandboxLocal = !this.maishapay.isProduction && !this.maishapay.isLiveConfigured;
+      if (isSandboxLocal) {
+        await this.markPaymentSuccess(transaction.id, { sandboxAutoConfirm: true, raw: cardRes.raw });
+      }
+
       return {
         method: 'CARD_STRIPE',
         operator: 'CARD_STRIPE',
+        paymentOperator: 'CARD_STRIPE',
         operatorLabel,
+        status: isSandboxLocal ? 'SUCCESS' : 'PENDING',
         transactionId: transaction.id,
         paymentRef: cardRes.transactionId,
-        paymentStatus: cardRes.paymentStatus,
-        paymentUrl: cardRes.paymentPageUrl,
+        paymentStatus: isSandboxLocal ? 'SUCCESS' : cardRes.paymentStatus,
+        paymentUrl: isSandboxLocal ? undefined : cardRes.paymentPageUrl,
+        smsRecipient: dto.phoneNumber,
         baseTotal,
         transactionFeePercent,
         transactionFeeAmount,
@@ -586,23 +611,80 @@ export class PaymentsService {
     const confirmedAt = new Date();
     const pricing = await this.finance.getPlatformPricing().catch(() => null);
     const immediatePayout = Boolean(pricing?.allowImmediateVendorWithdrawal);
+    const feePercent =
+      transaction.methodCode === 'CASH_ON_DELIVERY'
+        ? 0
+        : Number(pricing?.paymentTransactionFeePercent ?? 3.5);
+    const paymentRef =
+      transaction.providerReference || `ZG-REF-${transaction.id.slice(-8).toUpperCase()}`;
+
+    const orderWithItems = await this.prisma.order.findUnique({
+      where: { id: transaction.orderId },
+      include: {
+        subOrders: {
+          include: {
+            items: { include: { variant: { include: { product: { select: { productType: true } } } } } },
+          },
+        },
+      },
+    });
+
+    const digitalSubOrderIds: string[] = [];
+    const physicalSubOrderIds: string[] = [];
+    for (const so of orderWithItems?.subOrders || []) {
+      const onlyDigital =
+        so.items.length > 0 && so.items.every((it) => it.variant.product.productType === 'DIGITAL');
+      if (onlyDigital) digitalSubOrderIds.push(so.id);
+      else physicalSubOrderIds.push(so.id);
+    }
+    const allDigital =
+      (orderWithItems?.subOrders.length ?? 0) > 0 && physicalSubOrderIds.length === 0;
 
     await this.prisma.$transaction([
       this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
-        data: { status: 'SUCCESS', confirmedAt, rawProviderPayload: rawPayload as any },
+        data: {
+          status: 'SUCCESS',
+          providerReference: paymentRef,
+          confirmedAt,
+          rawProviderPayload: rawPayload as any,
+        },
       }),
-      this.prisma.order.update({ where: { id: transaction.orderId }, data: { status: 'PAID' } }),
-      this.prisma.orderSubOrder.updateMany({
-        where: { orderId: transaction.orderId },
-        data: { status: 'PROCESSING' },
+      this.prisma.order.update({
+        where: { id: transaction.orderId },
+        data: {
+          status: allDigital ? 'DELIVERED' : 'PAID',
+          paidAt: confirmedAt,
+          paymentMethodCode: transaction.methodCode,
+          paymentRef,
+          transactionFeePercent: feePercent,
+          chargedTotal: transaction.amount,
+        },
       }),
+      ...(physicalSubOrderIds.length > 0
+        ? [
+            this.prisma.orderSubOrder.updateMany({
+              where: { id: { in: physicalSubOrderIds } },
+              data: { status: 'PROCESSING' },
+            }),
+          ]
+        : []),
+      ...(digitalSubOrderIds.length > 0
+        ? [
+            this.prisma.orderSubOrder.updateMany({
+              where: { id: { in: digitalSubOrderIds } },
+              data: { status: 'DELIVERED' },
+            }),
+          ]
+        : []),
       this.prisma.orderStatusHistory.create({
         data: {
           orderId: transaction.orderId,
           fromStatus: 'PENDING_PAYMENT',
-          toStatus: 'PAID',
-          note: immediatePayout
+          toStatus: allDigital ? 'DELIVERED' : 'PAID',
+          note: allDigital
+            ? `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — accès numérique instantané débloqué`
+            : immediatePayout
             ? `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — versement direct vendeur (délai 48h désactivé)`
             : `Paiement confirmé via ${OPERATOR_LABELS[transaction.methodCode] || transaction.methodCode} — délai 48h démarré`,
         },

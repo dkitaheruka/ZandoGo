@@ -40,6 +40,45 @@ export class DeliveryService {
     private readonly uploads: UploadsService,
   ) {}
 
+  async getDeliveryOptions() {
+    const latestRate = await this.prisma.exchangeRate.findFirst({
+      where: { fromCurrency: 'USD', toCurrency: 'CDF' },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const rate = latestRate ? Number(latestRate.rate) : 2850;
+    return [
+      {
+        id: 'EXPRESS_MOTO',
+        code: 'EXPRESS_MOTO',
+        name: 'ZandoGo Express Moto (Goma & Nord-Kivu)',
+        estimatedTime: '45 min – 2h en ville',
+        description:
+          'Coursier moto vérifié avec suivi GPS en direct, tarif négociable et remise par code OTP.',
+        feeUsd: 3.5,
+        feeCdf: Math.round(3.5 * rate),
+      },
+      {
+        id: 'PARTNER_LOGISTICS',
+        code: 'PARTNER_LOGISTICS',
+        name: 'Colis Interurbain Sécurisé',
+        estimatedTime: '24h – 48h (Kinshasa, Bukavu, Lubumbashi)',
+        description:
+          'Expédition nationale avec bordereau officiel et protection séquestre 48h à réception.',
+        feeUsd: 8.0,
+        feeCdf: Math.round(8.0 * rate),
+      },
+      {
+        id: 'CLICK_AND_COLLECT',
+        code: 'CLICK_AND_COLLECT',
+        name: 'Retrait en Boutique (Click & Collect)',
+        estimatedTime: 'Prêt sous 2h',
+        description: 'Récupérez votre commande directement au comptoir du vendeur sans frais de transport.',
+        feeUsd: 0,
+        feeCdf: 0,
+      },
+    ];
+  }
+
   // -------------------------------------------------------------------
   // Candidature et gestion du profil livreur
   // -------------------------------------------------------------------
@@ -201,8 +240,11 @@ export class DeliveryService {
       include: { store: true, order: { include: { deliveryAddress: true } } },
     });
     if (!subOrder) throw new NotFoundException('Sous-commande introuvable');
-    if (subOrder.store.ownerId !== user.id) {
-      throw new ForbiddenException("Vous n'êtes pas propriétaire de cette boutique");
+    const isStaff = user.roles.some(
+      (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === subOrder.storeId,
+    );
+    if (subOrder.store.ownerId !== user.id && !isStaff) {
+      throw new ForbiddenException("Vous n'êtes pas membre autorisé de cette boutique");
     }
     if (!subOrder.order.deliveryAddress?.latitude || !subOrder.order.deliveryAddress?.longitude) {
       throw new BadRequestException("L'adresse de livraison du client n'a pas de coordonnées GPS");
@@ -294,6 +336,77 @@ export class DeliveryService {
     return delivery;
   }
 
+  async negotiateDeliveryFee(
+    user: AuthenticatedUser,
+    deliveryId: string,
+    dto: { action: 'ACCEPT' | 'COUNTER' | 'PROPOSE'; feeUsd: number; googleMapsUrl?: string },
+  ) {
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      include: {
+        agent: true,
+        subOrder: { include: { store: true, order: true } },
+      },
+    });
+    if (!delivery) throw new NotFoundException('Course introuvable');
+
+    const isDriver = delivery.agent?.userId === user.id;
+    const isCustomer = delivery.subOrder.order.customerId === user.id;
+    const isVendor =
+      delivery.subOrder.store.ownerId === user.id ||
+      user.roles.some(
+        (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === delivery.subOrder.storeId,
+      );
+    const isAdmin = user.roles.some(
+      (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+    );
+
+    if (!isDriver && !isCustomer && !isVendor && !isAdmin) {
+      throw new ForbiddenException("Vous n'êtes pas autorisé à négocier cette course");
+    }
+
+    const nextFee = Math.max(0, Number(dto.feeUsd || 0));
+    const nextStatus =
+      dto.action === 'ACCEPT'
+        ? 'AGREED'
+        : isDriver
+        ? 'COUNTERED'
+        : 'PENDING_DRIVER';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.delivery.update({
+        where: { id: deliveryId },
+        data: {
+          negotiatedFeeUsd: nextFee,
+          feeNegotiationStatus: nextStatus,
+          ...(dto.action === 'ACCEPT' ? { estimatedFee: nextFee } : {}),
+          ...(dto.googleMapsUrl ? { clientGoogleMapsUrl: dto.googleMapsUrl } : {}),
+        },
+      });
+
+      if (dto.action === 'ACCEPT' && delivery.subOrder.order.status === 'PENDING_PAYMENT') {
+        const order = delivery.subOrder.order;
+        const newTotal = Number((Number(order.subtotal) + nextFee).toFixed(2));
+        await tx.order.update({
+          where: { id: order.id },
+          data: { shippingFee: nextFee, total: newTotal },
+        });
+      }
+
+      return row;
+    });
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: `delivery.fee_${dto.action.toLowerCase()}`,
+      entityType: 'Delivery',
+      entityId: deliveryId,
+      afterState: { feeUsd: nextFee, feeNegotiationStatus: nextStatus },
+    });
+
+    return updated;
+  }
+
   async updateStatus(user: AuthenticatedUser, deliveryId: string, dto: UpdateDeliveryStatusDto) {
     const delivery = await this.assertAssignedAgent(user, deliveryId);
 
@@ -364,8 +477,13 @@ export class DeliveryService {
     if (!order) throw new NotFoundException('Commande introuvable');
 
     const isCustomer = order.customerId === user.id;
-    const isVendor = order.subOrders.some((so) =>
-      user.roles.some((r) => r.role === RoleName.VENDOR_OWNER && r.scopeId === so.storeId),
+    const isVendor = order.subOrders.some(
+      (so) =>
+        user.roles.some(
+          (r) =>
+            (r.role === RoleName.VENDOR_OWNER || r.role === RoleName.VENDOR_STAFF) &&
+            r.scopeId === so.storeId,
+        ),
     );
     const isAdmin = user.roles.some(
       (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
@@ -374,12 +492,11 @@ export class DeliveryService {
       throw new ForbiddenException('Accès non autorisé à cette commande');
     }
 
-    // Priorité admin > client > vendeur (comme OrdersService.getOrder). Un vendeur
-    // seul ne voit que les livraisons de SES sous-commandes : les autres contiennent
-    // le livreur, le trajet et le domicile du client d'autres boutiques.
     const seesEverything = isAdmin || isCustomer;
     const myStoreIds = new Set(
-      user.roles.filter((r) => r.role === RoleName.VENDOR_OWNER && r.scopeId).map((r) => r.scopeId),
+      user.roles
+        .filter((r) => (r.role === RoleName.VENDOR_OWNER || r.role === RoleName.VENDOR_STAFF) && r.scopeId)
+        .map((r) => r.scopeId),
     );
     const visibleSubOrders = seesEverything
       ? order.subOrders

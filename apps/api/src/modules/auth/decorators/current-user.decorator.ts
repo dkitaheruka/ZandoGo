@@ -5,6 +5,10 @@ export interface AuthenticatedUser {
   id: string;
   email?: string | null;
   phone?: string | null;
+  fullName?: string;
+  status?: string;
+  preferredCurrency?: string;
+  preferredLanguage?: string;
   roles: { role: RoleName; scopeId: string | null }[];
 }
 

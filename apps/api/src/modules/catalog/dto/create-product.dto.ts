@@ -22,7 +22,7 @@ class VariantInputDto {
   sku: string;
 
   @IsOptional()
-  attributes?: Record<string, string>; // ex: { couleur: "rouge", taille: "XL" }
+  attributes?: Record<string, string>; // ex: { color: "rouge", size: "XL" }
 
   @IsOptional()
   @IsNumber()
@@ -32,6 +32,21 @@ class VariantInputDto {
   @IsNumber()
   @Min(0)
   stockQty: number;
+}
+
+export class PriceTierInputDto {
+  @IsInt()
+  @Min(1)
+  minQty: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxQty?: number | null;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  unitPriceUsd: number;
 }
 
 export class CreateProductDto {
@@ -51,6 +66,61 @@ export class CreateProductDto {
   @IsIn(['PHYSICAL', 'DIGITAL', 'SERVICE'])
   productType?: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
 
+  @IsOptional()
+  @IsIn(['UNIT', 'KM', 'FIXED'])
+  pricingUnit?: 'UNIT' | 'KM' | 'FIXED';
+
+  @IsOptional()
+  @IsIn(['B2C', 'B2B', 'BOTH'])
+  audience?: 'B2C' | 'B2B' | 'BOTH';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minOrderQty?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  lowStockThreshold?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(8)
+  @ValidateNested({ each: true })
+  @Type(() => PriceTierInputDto)
+  priceTiers?: PriceTierInputDto[];
+
+  @IsOptional()
+  @Matches(/^digital-books\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/, {
+    message: 'Clé PDF invalide : envoyez le document via /uploads/presign (DIGITAL_DOCUMENT)',
+  })
+  digitalFileKey?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  digitalFileName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  digitalFileSize?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  serviceDuration?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  fulfillmentDetails?: string;
+
+  @IsOptional()
+  @IsIn(['DRAFT', 'ACTIVE'])
+  status?: 'DRAFT' | 'ACTIVE';
+
   @IsString()
   categoryId: string;
 
@@ -64,11 +134,6 @@ export class CreateProductDto {
   @Min(0)
   basePriceCdf?: number;
 
-  /**
-   * Clés renvoyées par POST /uploads/presign (purpose PRODUCT_IMAGE) : les fichiers sont déjà
-   * dans le bucket public. Format strict : rejette une URL, un chemin ou une traversée de
-   * dossier. La première image sert de vignette dans le catalogue.
-   */
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(3, { message: '3 images maximum par produit' })

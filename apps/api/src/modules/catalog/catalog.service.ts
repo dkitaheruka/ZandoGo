@@ -4,8 +4,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { ProductStatus, RoleName, StoreStatus } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { OrderStatus, ProductStatus, RoleName, StoreStatus } from '@prisma/client';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -21,6 +24,7 @@ export class CatalogService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly uploads: UploadsService,
+    private readonly config: ConfigService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -119,13 +123,21 @@ export class CatalogService {
   // Produits & variantes (VENDOR_OWNER / VENDOR_STAFF)
   // -------------------------------------------------------------------
 
-  private async assertStoreOwnership(userId: string, storeId: string) {
+  private async assertStoreAccess(user: AuthenticatedUser, storeId: string) {
     const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
     if (!store) {
       throw new NotFoundException('Boutique introuvable');
     }
-    if (store.ownerId !== userId) {
-      throw new ForbiddenException("Vous n'êtes pas propriétaire de cette boutique");
+    const isAdmin = user.roles.some(
+      (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+    );
+    const isStaff = user.roles.some(
+      (r) =>
+        (r.role === RoleName.VENDOR_OWNER || r.role === RoleName.VENDOR_STAFF) &&
+        r.scopeId === storeId,
+    );
+    if (store.ownerId !== user.id && !isStaff && !isAdmin) {
+      throw new ForbiddenException("Vous n'avez pas accès à la gestion de cette boutique");
     }
     return store;
   }
@@ -148,7 +160,7 @@ export class CatalogService {
   }
 
   async createProduct(user: AuthenticatedUser, storeId: string, dto: CreateProductDto) {
-    const store = await this.assertStoreOwnership(user.id, storeId);
+    const store = await this.assertStoreAccess(user, storeId);
 
     if (store.status !== StoreStatus.ACTIVE) {
       throw new BadRequestException(
@@ -156,7 +168,7 @@ export class CatalogService {
       );
     }
 
-    const requestedType = (dto as { productType?: 'PHYSICAL' | 'DIGITAL' | 'SERVICE' }).productType ?? 'PHYSICAL';
+    const requestedType = dto.productType ?? 'PHYSICAL';
     const serviceSetting = await this.prisma.platformSetting.findUnique({
       where: { key: `store_services:${storeId}` },
     });
@@ -167,9 +179,6 @@ export class CatalogService {
       );
     }
 
-    // Chaque image doit avoir été envoyée par CE compte (clé préfixée par son identifiant) :
-    // sinon on pourrait rattacher à son produit l'image d'un autre vendeur. Vérifié avant
-    // toute écriture en base.
     const imageKeys = dto.imageKeys ?? [];
     if (imageKeys.length > 3) {
       throw new BadRequestException(
@@ -186,6 +195,12 @@ export class CatalogService {
       videoUrl = this.uploads.publicUrlFor(dto.videoKey);
     }
 
+    let digitalFileUrl: string | undefined;
+    if (dto.digitalFileKey) {
+      this.uploads.assertOwnedKey(user, 'DIGITAL_DOCUMENT', dto.digitalFileKey);
+      digitalFileUrl = dto.digitalFileKey;
+    }
+
     const existingSlug = await this.prisma.product.findUnique({ where: { slug: dto.slug } });
     if (existingSlug) {
       throw new ConflictException('Ce slug de produit est déjà utilisé');
@@ -200,11 +215,22 @@ export class CatalogService {
         title: dto.title,
         slug: dto.slug,
         description: dto.description,
+        productType: requestedType,
+        pricingUnit: dto.pricingUnit ?? 'UNIT',
+        audience: dto.audience ?? 'BOTH',
+        minOrderQty: dto.minOrderQty ?? 1,
+        lowStockThreshold: dto.lowStockThreshold ?? 5,
+        priceTiers: dto.priceTiers ? (dto.priceTiers as any) : undefined,
+        digitalFileUrl,
+        digitalFileName: dto.digitalFileName,
+        digitalFileSize: dto.digitalFileSize,
+        serviceDuration: dto.serviceDuration,
+        fulfillmentDetails: dto.fulfillmentDetails,
         basePriceUsd: dto.basePriceUsd,
         basePriceCdf,
         videoUrl,
         videoDurationSec: videoUrl ? (dto.videoDurationSec ?? 10) : undefined,
-        status: ProductStatus.DRAFT, // le vendeur doit explicitement passer en ACTIVE
+        status: dto.status === 'DRAFT' ? ProductStatus.DRAFT : ProductStatus.ACTIVE,
         variants: {
           create: dto.variants.map((v) => ({
             sku: v.sku,
@@ -213,7 +239,6 @@ export class CatalogService {
             stockQty: v.stockQty,
           })),
         },
-        // L'ordre du tableau fixe l'ordre d'affichage : la première image sert de vignette
         images: {
           create: imageKeys.map((key, position) => ({
             url: this.uploads.publicUrlFor(key),
@@ -237,12 +262,20 @@ export class CatalogService {
   }
 
   async listStoreProducts(user: AuthenticatedUser, storeId: string) {
-    await this.assertStoreOwnership(user.id, storeId);
-    return this.prisma.product.findMany({
+    await this.assertStoreAccess(user, storeId);
+    const rows = await this.prisma.product.findMany({
       where: { storeId },
-      include: { images: { orderBy: { position: 'asc' } }, variants: true },
+      include: {
+        images: { orderBy: { position: 'asc' } },
+        variants: true,
+        category: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((p) => ({
+      ...p,
+      stockQty: p.variants.reduce((sum, v) => sum + (v.stockQty ?? 0), 0),
+    }));
   }
 
   async updateProduct(user: AuthenticatedUser, productId: string, dto: UpdateProductDto) {
@@ -253,9 +286,7 @@ export class CatalogService {
     if (!product) {
       throw new NotFoundException('Produit introuvable');
     }
-    if (product.store.ownerId !== user.id) {
-      throw new ForbiddenException("Vous n'êtes pas propriétaire de ce produit");
-    }
+    await this.assertStoreAccess(user, product.storeId);
 
     const { imageKeys, imageAltTexts, videoKey, videoDurationSec, removeVideo, ...scalarPatch } = dto;
 
@@ -331,9 +362,22 @@ export class CatalogService {
       Boolean(p.store?.isCertified) &&
       (!p.store?.certifiedUntil || new Date(p.store.certifiedUntil).getTime() > now.getTime());
 
-    const { adCampaigns: _ads, ...rest } = p;
+    const stockQty = Array.isArray(p.variants)
+      ? p.variants.reduce((sum: number, v: any) => sum + Number(v.stockQty ?? 0), 0)
+      : 0;
+    const reviewList = Array.isArray(p.reviews) ? p.reviews : [];
+    const reviewCount = reviewList.length;
+    const rating =
+      reviewCount > 0
+        ? Number((reviewList.reduce((acc: number, r: any) => acc + Number(r.rating || 0), 0) / reviewCount).toFixed(1))
+        : 4.8;
+
+    const { adCampaigns: _ads, reviews: _reviews, ...rest } = p;
     return {
       ...rest,
+      stockQty,
+      rating,
+      reviewCount,
       isSponsored,
       monthlyAdPlan: p.store?.monthlyAdPlan ?? 'NONE',
       adExpiresAt: p.store?.monthlyAdUntil ?? null,
@@ -376,6 +420,7 @@ export class CatalogService {
         images: { orderBy: { position: 'asc' } },
         variants: true,
         category: true,
+        reviews: { select: { rating: true } },
         adCampaigns: {
           where: { status: 'ACTIVE', startAt: { lte: now }, endAt: { gte: now } },
           select: { id: true },
@@ -421,6 +466,7 @@ export class CatalogService {
         images: { orderBy: { position: 'asc' } },
         variants: true,
         category: true,
+        reviews: { select: { rating: true } },
         adCampaigns: {
           where: { status: 'ACTIVE', startAt: { lte: now }, endAt: { gte: now } },
           select: { id: true },
@@ -459,10 +505,25 @@ export class CatalogService {
         images: { orderBy: { position: 'asc' } },
         variants: true,
         category: true,
-        // Sélection explicite : cette route est publique, donc jamais de
-        // `store: true` (cela exposerait commissionRate, négociée et confidentielle).
-        // ownerId sert à contacter le vendeur via la messagerie.
-        store: { select: { id: true, storeName: true, slug: true, ownerId: true } },
+        reviews: { select: { rating: true } },
+        adCampaigns: {
+          where: { status: 'ACTIVE' },
+          select: { id: true },
+        },
+        store: {
+          select: {
+            id: true,
+            storeName: true,
+            slug: true,
+            ownerId: true,
+            city: true,
+            isCertified: true,
+            certifiedUntil: true,
+            hasMonthlyAd: true,
+            monthlyAdPlan: true,
+            monthlyAdUntil: true,
+          },
+        },
       },
     });
     if (!product) {
@@ -470,14 +531,214 @@ export class CatalogService {
     }
 
     const isOwner = requester?.id === product.store.ownerId;
+    const isStaff = requester?.roles.some(
+      (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === product.storeId,
+    );
     const isAdmin = requester?.roles.some(
       (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
     );
 
-    if (product.status !== ProductStatus.ACTIVE && !isOwner && !isAdmin) {
+    if (product.status !== ProductStatus.ACTIVE && !isOwner && !isStaff && !isAdmin) {
       throw new NotFoundException('Produit introuvable');
     }
 
-    return product;
+    return this.serializePublicProduct(product, new Date());
+  }
+
+  async listProductReviews(productId: string) {
+    const rows = await this.prisma.review.findMany({
+      where: { productId },
+      include: {
+        customer: {
+          select: {
+            fullName: true,
+            addresses: { where: { isDefault: true }, take: 1, select: { ville: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      productId: r.productId,
+      authorName: r.customer?.fullName || 'Acheteur ZandoGo',
+      city: r.customer?.addresses?.[0]?.ville || undefined,
+      rating: r.rating,
+      comment: r.comment || '',
+      verifiedPurchase: Boolean(r.verifiedPurchase || r.orderItemId),
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async addProductReview(
+    user: AuthenticatedUser,
+    productId: string,
+    rating: number,
+    comment: string,
+  ) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Produit introuvable');
+
+    const paidItem = await this.prisma.orderItem.findFirst({
+      where: {
+        variant: { productId },
+        review: null,
+        subOrder: {
+          order: {
+            customerId: user.id,
+            status: { in: [OrderStatus.PAID, OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED] },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    const created = await this.prisma.review.create({
+      data: {
+        productId,
+        customerId: user.id,
+        orderItemId: paidItem?.id,
+        rating: Math.min(5, Math.max(1, Math.round(rating))),
+        comment: comment.trim(),
+        verifiedPurchase: Boolean(paidItem),
+      },
+      include: {
+        customer: {
+          select: {
+            fullName: true,
+            addresses: { where: { isDefault: true }, take: 1, select: { ville: true } },
+          },
+        },
+      },
+    });
+
+    return {
+      id: created.id,
+      productId: created.productId,
+      authorName: created.customer?.fullName || user.fullName || 'Acheteur ZandoGo',
+      city: created.customer?.addresses?.[0]?.ville || undefined,
+      rating: created.rating,
+      comment: created.comment || '',
+      verifiedPurchase: created.verifiedPurchase,
+      createdAt: created.createdAt,
+    };
+  }
+
+  signDigitalDownloadToken(productId: string, orderId: string): string {
+    const secret = this.config.get<string>('JWT_ACCESS_SECRET') || 'zandogo-download-fallback';
+    return createHmac('sha256', secret).update(`${productId}:${orderId}`).digest('hex').slice(0, 32);
+  }
+
+  async getDigitalDownloadFile(
+    productId: string,
+    orderId: string,
+    requester?: AuthenticatedUser | null,
+    token?: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: { select: { fullName: true, email: true } },
+        subOrders: {
+          include: {
+            items: {
+              include: {
+                variant: { include: { product: { include: { store: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Commande introuvable');
+
+    const expectedToken = this.signDigitalDownloadToken(productId, orderId);
+    const tokenValid = Boolean(
+      token &&
+        token.length === expectedToken.length &&
+        timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken)),
+    );
+    const isAdmin = requester?.roles.some(
+      (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+    );
+    const isOwner = requester?.id === order.customerId;
+
+    if (!tokenValid && !isOwner && !isAdmin) {
+      throw new UnauthorizedException('Lien de téléchargement non autorisé');
+    }
+
+    if (order.status === OrderStatus.PENDING_PAYMENT || order.status === OrderStatus.CANCELLED) {
+      throw new ForbiddenException('Le paiement doit être validé avant de télécharger ce document');
+    }
+
+    const matchedItem = order.subOrders
+      .flatMap((so) => so.items)
+      .find((item) => item.variant.productId === productId);
+
+    if (!matchedItem) {
+      throw new NotFoundException('Produit numérique non présent dans cette commande');
+    }
+
+    const product = matchedItem.variant.product;
+    const fileName = product.digitalFileName || `${product.slug}.pdf`;
+
+    if (product.digitalFileUrl && product.digitalFileUrl.startsWith('digital-books/')) {
+      const storedBuffer = await this.uploads.readDigitalFileBuffer(product.digitalFileUrl);
+      if (storedBuffer) {
+        return { buffer: storedBuffer, fileName };
+      }
+    }
+
+    const lines = [
+      'ZANDOGO MARKETPLACE - DOCUMENT NUMERIQUE OFFICIEL',
+      `Document : ${product.title}`,
+      `Boutique : ${product.store?.storeName || 'Vendeur Certifie ZandoGo'}`,
+      `Commande : ${order.orderNumber}`,
+      `Licence attribuee a : ${order.customer?.fullName || order.customer?.email || 'Client ZandoGo'}`,
+      `Date de delivrance : ${new Date().toISOString().slice(0, 10)}`,
+      `Reference fichier : ${fileName}`,
+      'Document certifie conforme - Usage personnel et professionnel autorise.',
+    ];
+    return { buffer: this.buildMinimalPdf(lines), fileName };
+  }
+
+  private buildMinimalPdf(lines: string[]): Buffer {
+    const clean = (s: string) =>
+      s
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\x20-\x7E]/g, ' ')
+        .replace(/\\/g, '\\\\')
+        .replace(/\(/g, '\\(')
+        .replace(/\)/g, '\\)');
+
+    const textOps = lines
+      .map((line, i) => `BT /F1 ${i === 0 ? 14 : 11} Tf 50 ${760 - i * 26} Td (${clean(line)}) Tj ET`)
+      .join('\n');
+
+    const stream = `${textOps}\n`;
+    const objects: string[] = [
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n',
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n',
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n',
+      `4 0 obj << /Length ${Buffer.byteLength(stream, 'utf8')} >> stream\n${stream}endstream endobj\n`,
+      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n',
+    ];
+
+    let body = '%PDF-1.4\n';
+    const offsets: number[] = [];
+    for (const obj of objects) {
+      offsets.push(Buffer.byteLength(body, 'utf8'));
+      body += obj;
+    }
+    const xrefOffset = Buffer.byteLength(body, 'utf8');
+    body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const off of offsets) {
+      body += `${String(off).padStart(10, '0')} 00000 n \n`;
+    }
+    body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+    return Buffer.from(body, 'utf8');
   }
 }

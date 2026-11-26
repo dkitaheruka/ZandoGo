@@ -14,7 +14,10 @@ import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto, ResetPasswordDto, VerifyOtpDto } from './dto/password-otp.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decorator';
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -42,9 +45,14 @@ export class AuthController {
     @Ip() ip: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.authService.register(dto, ip);
+    const { accessToken, refreshToken, verificationPending, devOtpPreview } =
+      await this.authService.register(dto, ip);
     res.cookie('refresh_token', refreshToken, REFRESH_COOKIE_OPTIONS);
-    return { accessToken };
+    return {
+      accessToken,
+      verificationPending,
+      ...(devOtpPreview ? { devOtpPreview } : {}),
+    };
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } }) // 10 tentatives / min / IP
@@ -77,5 +85,39 @@ export class AuthController {
   async logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
     return { success: true };
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() dto: ForgotPasswordDto, @Ip() ip: string) {
+    return this.authService.forgotPassword(dto, ip);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto, @Ip() ip: string) {
+    return this.authService.resetPassword(dto, ip);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  async verifyOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyOtpDto,
+    @Ip() ip: string,
+  ) {
+    return this.authService.verifyAccountOtp(user.id, dto.code, ip);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  async resendOtp(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.resendAccountOtp(user.id);
   }
 }

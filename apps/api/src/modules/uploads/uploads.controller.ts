@@ -26,7 +26,7 @@ class LocalUploadDto {
   purpose: UploadPurpose;
 
   @Matches(
-    /^(kyc|chat|products|products-videos|disputes|delivery-proofs)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf|mp4|webm|mov)$/,
+    /^(kyc|chat|products|products-videos|digital-books|disputes|delivery-proofs)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|pdf|mp4|webm|mov)$/,
   )
   key: string;
 }

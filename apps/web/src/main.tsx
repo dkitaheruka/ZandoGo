@@ -5,6 +5,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './lib/auth-context';
+import { PresenceProvider } from './lib/presence-context';
 import { StoreProvider } from './lib/store-context';
 import './index.css';
 
@@ -39,9 +40,11 @@ if (rootEl) {
       <ErrorBoundary>
         <BrowserRouter>
           <AuthProvider>
-            <StoreProvider>
-              <App />
-            </StoreProvider>
+            <PresenceProvider>
+              <StoreProvider>
+                <App />
+              </StoreProvider>
+            </PresenceProvider>
           </AuthProvider>
         </BrowserRouter>
       </ErrorBoundary>

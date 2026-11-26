@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -54,6 +54,23 @@ class ActivateStoreServiceDto {
   @IsString()
   @MaxLength(32)
   customerPhone?: string;
+}
+
+class UpdateStoreOrderStatusDto {
+  @IsIn(['PROCESSING', 'SHIPPED'])
+  status: 'PROCESSING' | 'SHIPPED';
+}
+
+class UpdateStockDto {
+  @IsInt()
+  @Min(0)
+  stockQty: number;
+}
+
+class AddStoreStaffDto {
+  @IsString()
+  @MaxLength(160)
+  identifier: string;
 }
 
 @Controller('vendors/stores')
@@ -193,7 +210,7 @@ export class VendorsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF, RoleName.ADMIN, RoleName.SUPER_ADMIN)
   @Patch(':storeId/products/:productId')
   updateProduct(
     @CurrentUser() user: AuthenticatedUser,
@@ -201,5 +218,68 @@ export class VendorsController {
     @Body() dto: UpdateProductDto,
   ) {
     return this.catalog.updateProduct(user, productId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Patch(':storeId/products/:productId/stock')
+  updateProductStock(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Param('productId') productId: string,
+    @Body() dto: UpdateStockDto,
+  ) {
+    return this.vendors.updateProductStock(user, storeId, productId, dto.stockQty);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Get(':storeId/orders')
+  listStoreOrders(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+  ) {
+    return this.vendors.listStoreOrders(user, storeId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Patch(':storeId/orders/:subOrderId/status')
+  updateStoreOrderStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Param('subOrderId') subOrderId: string,
+    @Body() dto: UpdateStoreOrderStatusDto,
+  ) {
+    return this.vendors.updateStoreOrderStatus(user, storeId, subOrderId, dto.status);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Get(':storeId/staff')
+  listStoreStaff(@CurrentUser() user: AuthenticatedUser, @Param('storeId') storeId: string) {
+    return this.vendors.listStoreStaff(user, storeId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Post(':storeId/staff')
+  addStoreStaff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Body() dto: AddStoreStaffDto,
+  ) {
+    return this.vendors.addStoreStaff(user, storeId, dto.identifier);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleName.VENDOR_OWNER, RoleName.ADMIN, RoleName.SUPER_ADMIN)
+  @Delete(':storeId/staff/:memberUserId')
+  removeStoreStaff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Param('memberUserId') memberUserId: string,
+  ) {
+    return this.vendors.removeStoreStaff(user, storeId, memberUserId);
   }
 }

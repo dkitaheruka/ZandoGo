@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsIn } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,10 +18,30 @@ class SetAvailabilityDto {
   status: 'AVAILABLE' | 'OFFLINE';
 }
 
+class NegotiateDeliveryFeeDto {
+  @IsIn(['ACCEPT', 'COUNTER', 'PROPOSE'])
+  action: 'ACCEPT' | 'COUNTER' | 'PROPOSE';
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  feeUsd: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  googleMapsUrl?: string;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('delivery')
 export class DeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
+
+  @Get('options')
+  getDeliveryOptions() {
+    return this.deliveryService.getDeliveryOptions();
+  }
 
   // ---- Profil livreur ----
 
@@ -29,7 +50,6 @@ export class DeliveryController {
     return this.deliveryService.applyAsAgent(user, dto);
   }
 
-  /** Profil du candidat/livreur connecté : 404 tant qu'il n'a pas candidaté */
   @Get('agents/me')
   getMyProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.deliveryService.getMyProfile(user);
@@ -80,6 +100,17 @@ export class DeliveryController {
   @Post('deliveries')
   createDelivery(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDeliveryDto) {
     return this.deliveryService.createDelivery(user, dto);
+  }
+
+  // ---- Négociation de tarif ----
+
+  @Post('deliveries/:id/negotiate')
+  negotiateFee(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: NegotiateDeliveryFeeDto,
+  ) {
+    return this.deliveryService.negotiateDeliveryFee(user, id, dto);
   }
 
   // ---- Actions du livreur ----

@@ -29,7 +29,7 @@ const GOMA_COORDS: Record<string, { lat: number; lng: number }> = {
 };
 
 export function ProfilePage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { currency, setCurrency, wishlistIds, formatPrimaryPrice } = useStore();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -44,6 +44,9 @@ export function ProfilePage() {
   const [editCommune, setEditCommune] = useState('');
   const [editQuartier, setEditQuartier] = useState('');
   const [editRefPoint, setEditRefPoint] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpPreview, setOtpPreview] = useState<string | null>(null);
+  const [otpBusy, setOtpBusy] = useState(false);
 
   function loadAddresses() {
     api
@@ -146,10 +149,16 @@ export function ProfilePage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-display text-2xl font-bold">{user?.fullName || 'Client ZandoGo'}</h1>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-seve/20 text-seve text-[10px] font-bold border border-seve/30">
-                <ShieldCheck className="w-3 h-3" />
-                Compte Vérifié
-              </span>
+              {user?.status === 'PENDING_VERIFICATION' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-safran/25 text-safran text-[10px] font-bold border border-safran/40">
+                  Vérification requise
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-seve/20 text-seve text-[10px] font-bold border border-seve/30">
+                  <ShieldCheck className="w-3 h-3" />
+                  Compte Vérifié
+                </span>
+              )}
             </div>
             <p className="text-xs text-brume/70 font-mono mt-1">
               {user?.email || '—'} · {user?.phone || '—'}
@@ -181,6 +190,58 @@ export function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {user?.status === 'PENDING_VERIFICATION' && (
+        <div className="rounded-card bg-safran/15 border border-safran/40 p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
+          <div>
+            <p className="font-display font-bold text-nuit">Activez votre compte par code OTP</p>
+            <p className="text-encre/70 mt-0.5">
+              Vérifiez votre numéro/e-mail pour confirmer votre identité sur ZandoGo.
+              {otpPreview && <span className="ml-2 font-mono font-bold text-nuit">Code local : {otpPreview}</span>}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              maxLength={6}
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value)}
+              placeholder="Code OTP"
+              className="w-28 rounded-card border border-encre/20 bg-white px-3 py-1.5 font-mono text-nuit outline-none focus:border-seve"
+            />
+            <button
+              type="button"
+              disabled={otpBusy || otpCode.trim().length < 4}
+              onClick={async () => {
+                setOtpBusy(true);
+                try {
+                  await api.post('/auth/verify-otp', { code: otpCode.trim() });
+                  await refreshUser();
+                  setNotice('Votre compte est maintenant vérifié ✓');
+                } catch {
+                  setNotice('Code OTP invalide ou expiré.');
+                } finally {
+                  setOtpBusy(false);
+                }
+              }}
+              className="px-3.5 py-1.5 rounded-card bg-seve text-brume font-display font-bold hover:bg-seve/90 disabled:opacity-50"
+            >
+              Valider
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const { data } = await api.post<{ message?: string; devOtpPreview?: string }>('/auth/resend-otp');
+                if (data?.devOtpPreview) setOtpPreview(data.devOtpPreview);
+                setNotice(data?.message || 'Code OTP renvoyé.');
+              }}
+              className="px-3 py-1.5 rounded-card border border-encre/20 bg-white font-semibold text-nuit hover:border-seve"
+            >
+              Renvoyer un code
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Role Portals */}
       <div className="grid sm:grid-cols-3 gap-4">

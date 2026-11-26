@@ -4,6 +4,7 @@ export type UploadPurpose =
   | 'KYC_DOCUMENT'
   | 'PRODUCT_IMAGE'
   | 'PRODUCT_VIDEO'
+  | 'DIGITAL_DOCUMENT'
   | 'CHAT_IMAGE'
   | 'DISPUTE_EVIDENCE'
   | 'DELIVERY_PROOF';
@@ -29,6 +30,12 @@ const ACCEPTED: Record<
     label: 'MP4, WebM ou MOV',
     maxBytes: 15 * 1024 * 1024,
     maxLabel: '15 Mo',
+  },
+  DIGITAL_DOCUMENT: {
+    types: ['application/pdf'],
+    label: 'PDF uniquement',
+    maxBytes: 25 * 1024 * 1024,
+    maxLabel: '25 Mo',
   },
   CHAT_IMAGE: {
     types: ['image/jpeg', 'image/png', 'image/webp'],

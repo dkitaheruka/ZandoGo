@@ -21,7 +21,7 @@ const URL_TTL_SECONDS = 300; // 5 minutes : assez pour un envoi, trop court pour
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 15 * 1024 * 1024;
 
-export type PrivateUploadFolder = 'kyc' | 'chat' | 'disputes' | 'delivery-proofs';
+export type PrivateUploadFolder = 'kyc' | 'chat' | 'disputes' | 'delivery-proofs' | 'digital-books';
 export type PublicUploadFolder = 'products' | 'products-videos';
 
 interface LocalUploadedFile {
@@ -76,6 +76,14 @@ const RULES: Record<UploadPurpose, PurposeRule> = {
     bucket: 'private',
     maxBytes: MAX_IMAGE_SIZE_BYTES,
     types: { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' },
+  },
+  // Livres & documents numériques PDF vendus sur la plateforme : espace privé (livrés après paiement)
+  DIGITAL_DOCUMENT: {
+    folder: 'digital-books',
+    bucket: 'private',
+    maxBytes: MAX_VIDEO_SIZE_BYTES,
+    types: { 'application/pdf': 'pdf' },
+    roles: [RoleName.VENDOR_OWNER, RoleName.VENDOR_STAFF, RoleName.ADMIN, RoleName.SUPER_ADMIN],
   },
   // Preuves photo de remise colis par le livreur : espace privé signé
   DELIVERY_PROOF: {
@@ -403,6 +411,36 @@ export class UploadsService {
     const extension = fileName.split('.').pop()?.toLowerCase() ?? 'jpg';
     const contentType = MIME_BY_EXT[extension] ?? 'application/pdf';
     return { buffer, contentType };
+  }
+
+  async readDigitalFileBuffer(key: string): Promise<Buffer | null> {
+    if (!key || key.includes('..')) return null;
+    if (!/^digital-books\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/.test(key)) return null;
+
+    if (this.localStorageEnabled) {
+      const [, userId, fileName] = key.split('/');
+      const root = this.localStoragePath();
+      const filePath = resolve(root, 'digital-books', userId, fileName);
+      try {
+        return await readFile(filePath);
+      } catch {
+        return null;
+      }
+    }
+
+    try {
+      const res = await this.getClient().send(
+        new GetObjectCommand({ Bucket: this.bucketFor('private'), Key: key }),
+      );
+      if (!res.Body) return null;
+      const chunks: Buffer[] = [];
+      for await (const chunk of res.Body as any) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    } catch {
+      return null;
+    }
   }
 
   private localReadSignature(key: string, expires: number): string {

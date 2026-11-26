@@ -29,15 +29,21 @@ export class AdsService {
    * n'activer la monétisation publicitaire que lorsque vous serez prêt
    * commercialement, sans refonte technique.
    */
-  private assertAdsEnabled() {
-    const enabled = this.config.get<string>('ADS_ENABLED') === 'true';
-    if (!enabled) {
+  private async assertAdsEnabled() {
+    const setting = await this.prisma.platformSetting.findUnique({ where: { key: 'ads_enabled' } });
+    if (setting && setting.value === false) {
+      throw new BadRequestException("La régie publicitaire est désactivée par l'administration");
+    }
+    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    const envEnabled = this.config.get<string>('ADS_ENABLED') === 'true';
+    const settingEnabled = setting?.value === true;
+    if (isProd && !envEnabled && !settingEnabled) {
       throw new BadRequestException("La régie publicitaire n'est pas encore activée sur la plateforme");
     }
   }
 
   async createCampaign(user: AuthenticatedUser, dto: CreateCampaignDto) {
-    this.assertAdsEnabled();
+    await this.assertAdsEnabled();
 
     if (dto.productId) {
       const product = await this.prisma.product.findUnique({
@@ -80,10 +86,18 @@ export class AdsService {
   }
 
   async getMyCampaigns(user: AuthenticatedUser) {
-    return this.prisma.adCampaign.findMany({
+    const rows = await this.prisma.adCampaign.findMany({
       where: { advertiserId: user.id },
+      include: {
+        _count: { select: { impressions: true, clicks: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(({ _count, ...rest }) => ({
+      ...rest,
+      impressions: _count?.impressions ?? 0,
+      clicks: _count?.clicks ?? 0,
+    }));
   }
 
   /**
@@ -94,7 +108,7 @@ export class AdsService {
    * boostedUntil, déjà utilisés par le tri du module catalog).
    */
   async payCampaign(user: AuthenticatedUser, campaignId: string, dto: PayCampaignDto) {
-    this.assertAdsEnabled();
+    await this.assertAdsEnabled();
 
     const campaign = await this.prisma.adCampaign.findUnique({ where: { id: campaignId } });
     if (!campaign) throw new NotFoundException('Campagne introuvable');
@@ -121,7 +135,7 @@ export class AdsService {
         });
         return { method: 'card_stripe', clientSecret: intent.client_secret, paymentRef: intent.id, campaignId };
       }
-      const cardFallback = await this.maishapay.initiatePayment({
+        const cardFallback = await this.maishapay.initiatePayment({
         orderId: `ad-${campaignId}`,
         amount: Number(campaign.budgetAmount),
         currency: campaign.currency as 'USD' | 'CDF',
@@ -130,10 +144,14 @@ export class AdsService {
         customerEmail: user.email || undefined,
         description: `Campagne publicitaire ${campaign.type}`,
       });
+      if (!this.maishapay.isProduction && !this.maishapay.isLiveConfigured) {
+        await this.activateCampaign(campaignId, cardFallback.providerReference);
+      }
       return {
         method: 'card_stripe',
         paymentRef: cardFallback.providerReference,
         paymentUrl: cardFallback.paymentPageUrl,
+        status: !this.maishapay.isProduction && !this.maishapay.isLiveConfigured ? 'ACTIVE' : 'PENDING_PAYMENT',
         campaignId,
       };
     }
@@ -152,11 +170,16 @@ export class AdsService {
       description: `Campagne publicitaire ${campaign.type}`,
     });
 
+    if (!this.maishapay.isProduction && !this.maishapay.isLiveConfigured) {
+      await this.activateCampaign(campaignId, result.providerReference);
+    }
+
     return {
       method: dto.methodCode,
       paymentRef: result.providerReference,
       ussdCode: result.ussdCode,
       paymentUrl: result.paymentPageUrl,
+      status: !this.maishapay.isProduction && !this.maishapay.isLiveConfigured ? 'ACTIVE' : 'PENDING_PAYMENT',
       campaignId,
     };
   }

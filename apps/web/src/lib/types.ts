@@ -6,6 +6,7 @@ export interface User {
   fullName: string;
   email?: string | null;
   phone?: string | null;
+  status?: string;
   preferredCurrency?: Currency;
   preferredLanguage?: string;
   roles: { role: UserRole; scopeId?: string | null }[];
@@ -400,6 +401,9 @@ export interface Conversation {
     proposedBy?: 'CUSTOMER' | 'DRIVER';
     distanceKm?: number;
   };
+  otherUserId?: string;
+  otherUserOnline?: boolean;
+  otherUserLastSeenAt?: string | null;
   negotiationOffer?: NegotiationOffer;
   messages: ChatMessage[];
 }
@@ -568,5 +572,92 @@ export interface OfficialInvoice {
     verifiedPurchase: boolean;
   };
 }
+
+export interface AdminPayoutRow {
+  id: string;
+  walletId: string;
+  storeId?: string;
+  storeName: string;
+  ownerName: string;
+  ownerEmail?: string;
+  amount: number;
+  currency: Currency;
+  method: string;
+  destination?: string;
+  status: 'REQUESTED' | 'APPROVED' | 'PAID' | 'REJECTED';
+  processedBy?: string;
+  processedAt?: string;
+  createdAt: string;
+}
+
+export interface StoreStaffMember {
+  userId: string;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  role: 'VENDOR_STAFF' | 'VENDOR_OWNER';
+  assignedAt: string;
+}
+
+export interface AdCampaignItem {
+  id: string;
+  type: 'SPONSORED_PRODUCT' | 'STORE_BANNER' | 'CATEGORY_TOP';
+  targetId?: string | null;
+  budgetAmount: number | string;
+  currency: Currency;
+  startAt: string;
+  endAt: string;
+  status: 'DRAFT' | 'PENDING_PAYMENT' | 'ACTIVE' | 'PAUSED' | 'ENDED' | 'CANCELLED';
+  impressions: number;
+  clicks: number;
+  createdAt: string;
+}
+
+export interface PresenceStatus {
+  isOnline: boolean;
+  lastSeenAt: string | null;
+}
+
+export interface ConnectedUserPresence {
+  userId: string;
+  fullName: string;
+  email?: string | null;
+  roles: string[];
+  primaryRole: string;
+  currentPath: string;
+  channel: 'WEBSOCKET' | 'HTTP';
+  connectedSince: string;
+  lastSeenAt: string;
+}
+
+export interface VisitorPresence {
+  visitorId: string;
+  currentPath: string;
+  userAgentSummary: string;
+  startedAt: string;
+  lastSeenAt: string;
+  pageViews: number;
+}
+
+export interface AdminPresenceSnapshot {
+  generatedAt: string;
+  summary: {
+    totalActive: number;
+    authenticatedCount: number;
+    visitorsCount: number;
+    vendorsOnlineCount: number;
+    driversOnlineCount: number;
+    customersOnlineCount: number;
+  };
+  connectedUsers: ConnectedUserPresence[];
+  visitors: VisitorPresence[];
+  recentlyOffline: {
+    userId: string;
+    fullName: string;
+    primaryRole: string;
+    lastSeenAt: string;
+  }[];
+}
+
 
 

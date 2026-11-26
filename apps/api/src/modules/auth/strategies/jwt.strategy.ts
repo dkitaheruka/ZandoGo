@@ -40,6 +40,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       id: user.id,
       email: user.email,
       phone: user.phone,
+      fullName: user.fullName,
+      status: user.status,
+      preferredCurrency: user.preferredCurrency,
+      preferredLanguage: user.preferredLanguage,
       roles: user.roles.map(({ role, scopeId }) => ({ role, scopeId })),
     };
   }

@@ -2,12 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, getAccessToken, onAccessTokenChanged, setAccessToken } from './api';
 import type { User } from './types';
 
+interface RegisterResult {
+  verificationPending?: boolean;
+  devOtpPreview?: string;
+}
+
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   refreshUser: () => Promise<void>;
   login: (identifier: { email: string } | { phone: string }, password: string) => Promise<void>;
-  register: (data: RegisterPayload) => Promise<void>;
+  register: (data: RegisterPayload) => Promise<RegisterResult>;
   logout: () => Promise<void>;
 }
 
@@ -88,9 +93,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (payload: RegisterPayload) => {
-      const { data } = await api.post<{ accessToken: string }>('/auth/register', payload);
+    async (payload: RegisterPayload): Promise<RegisterResult> => {
+      const { data } = await api.post<{
+        accessToken: string;
+        verificationPending?: boolean;
+        devOtpPreview?: string;
+      }>('/auth/register', payload);
       await establishSession(data.accessToken);
+      return {
+        verificationPending: data.verificationPending,
+        devOtpPreview: data.devOtpPreview,
+      };
     },
     [establishSession],
   );

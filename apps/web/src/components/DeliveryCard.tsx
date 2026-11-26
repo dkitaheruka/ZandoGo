@@ -1,5 +1,5 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
-import { Camera, ImagePlus, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent } from 'react';
+import { Camera, Eraser, ImagePlus, PenTool, X } from 'lucide-react';
 import { api, isRealApiMode } from '../lib/api';
 import { acceptAttribute, dataUrlToFile, readCompressedImageDataUrl, uploadFile, validateFile } from '../lib/upload';
 import type { DeliveryJob } from '../lib/types';
@@ -47,6 +47,65 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
   const [otp, setOtp] = useState('');
   const [counterFee, setCounterFee] = useState(String(job.negotiatedFeeUsd ?? job.estimatedFee));
   const [confirmFail, setConfirmFail] = useState(false);
+  const sigCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const hasSignedRef = useRef(false);
+
+  function getCanvasCoords(e: PointerEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }
+
+  function handleSigPointerDown(e: PointerEvent<HTMLCanvasElement>) {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(e.pointerId);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const { x, y } = getCanvasCoords(e, canvas);
+    ctx.strokeStyle = '#172320';
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    isDrawingRef.current = true;
+    hasSignedRef.current = true;
+  }
+
+  function handleSigPointerMove(e: PointerEvent<HTMLCanvasElement>) {
+    if (!isDrawingRef.current) return;
+    const canvas = sigCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const { x, y } = getCanvasCoords(e, canvas);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+
+  function handleSigPointerUp() {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    const canvas = sigCanvasRef.current;
+    if (canvas && hasSignedRef.current) {
+      setFileUrl(canvas.toDataURL('image/png'));
+    }
+  }
+
+  function clearSignaturePad() {
+    const canvas = sigCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    hasSignedRef.current = false;
+    setFileUrl('');
+  }
 
   async function handleProofPhotoSelect(e: ChangeEvent<HTMLInputElement>) {
     setProofPhotoError(null);
@@ -325,7 +384,12 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
           <p className="text-sm font-medium text-nuit">Preuve de livraison (obligatoire)</p>
           <select
             value={proofType}
-            onChange={(e) => setProofType(e.target.value as ProofType)}
+            onChange={(e) => {
+              const next = e.target.value as ProofType;
+              setProofType(next);
+              setFileUrl('');
+              hasSignedRef.current = false;
+            }}
             className="w-full rounded-card border border-encre/20 px-3 py-2 text-sm bg-brume/40"
           >
             <option value="OTP_CODE">Code OTP communiqué par le client</option>
@@ -350,6 +414,42 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
                   Pré-remplir le code de démonstration ({job.otpCode})
                 </button>
               )}
+            </div>
+          ) : proofType === 'SIGNATURE' ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="inline-flex items-center gap-1.5 font-medium text-nuit">
+                  <PenTool className="w-3.5 h-3.5 text-seve" />
+                  Faites signer le client au doigt ou à la souris ci-dessous
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSignaturePad}
+                  className="inline-flex items-center gap-1 text-wax hover:underline font-medium"
+                >
+                  <Eraser className="w-3 h-3" />
+                  Effacer
+                </button>
+              </div>
+              <div className="rounded-card border border-dashed border-encre/25 bg-brume/40 overflow-hidden">
+                <canvas
+                  ref={sigCanvasRef}
+                  width={480}
+                  height={160}
+                  onPointerDown={handleSigPointerDown}
+                  onPointerMove={handleSigPointerMove}
+                  onPointerUp={handleSigPointerUp}
+                  onPointerCancel={handleSigPointerUp}
+                  className="w-full h-36 bg-white touch-none cursor-crosshair block"
+                />
+              </div>
+              <input
+                type="url"
+                value={fileUrl}
+                onChange={(e) => setFileUrl(e.target.value)}
+                placeholder="Ou collez un lien vers une signature numérisée"
+                className="w-full rounded-card border border-encre/20 px-3 py-2 text-xs"
+              />
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -397,7 +497,7 @@ export function DeliveryCard({ job, onChanged }: { job: DeliveryJob; onChanged: 
                 type="url"
                 value={fileUrl}
                 onChange={(e) => setFileUrl(e.target.value)}
-                placeholder="Ou collez un lien vers la photo / signature"
+                placeholder="Ou collez un lien vers la photo"
                 className="w-full rounded-card border border-encre/20 px-3 py-2 text-xs"
               />
               <button

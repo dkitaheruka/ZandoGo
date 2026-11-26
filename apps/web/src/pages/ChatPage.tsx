@@ -33,7 +33,9 @@ import {
   setPreferredAiLanguage,
 } from '../lib/ai-preference';
 import { useAuth } from '../lib/auth-context';
+import { useUserPresence } from '../lib/presence-context';
 import { useStore } from '../lib/store-context';
+import { OnlineBadge } from '../components/OnlineBadge';
 import type { ChatMessage, Conversation, NegotiationOffer } from '../lib/types';
 
 interface EnrichedConversation extends Conversation {
@@ -402,7 +404,15 @@ export function ChatPage() {
     }
   }
 
+  const getUserPresence = useUserPresence(conversations.map((c) => c.otherUserId));
+
   const activeConv = conversations.find((c) => c.id === activeId);
+  const activeInterlocutorPresence = activeConv?.otherUserId
+    ? getUserPresence(activeConv.otherUserId)
+    : undefined;
+  const activeIsOnline = activeInterlocutorPresence?.isOnline ?? activeConv?.otherUserOnline ?? false;
+  const activeLastSeenAt =
+    activeInterlocutorPresence?.lastSeenAt ?? activeConv?.otherUserLastSeenAt ?? null;
   const activeNegotiation =
     negotiations.find((n) => n.id === activeConv?.negotiationId) ||
     negotiations.find(
@@ -483,11 +493,19 @@ export function ChatPage() {
                       <span className={`font-display font-bold text-xs truncate ${active ? 'text-brume' : 'text-nuit'}`}>
                         {c.storeName || 'Boutique Partenaire'}
                       </span>
-                      <span className={`text-[10px] font-mono shrink-0 ${active ? 'text-safran' : 'text-encre/40'}`}>
-                        {lastMsg
-                          ? new Date(lastMsg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-                          : ''}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <OnlineBadge
+                          compact
+                          dark={active}
+                          isOnline={getUserPresence(c.otherUserId)?.isOnline ?? c.otherUserOnline}
+                          lastSeenAt={getUserPresence(c.otherUserId)?.lastSeenAt ?? c.otherUserLastSeenAt}
+                        />
+                        <span className={`text-[10px] font-mono ${active ? 'text-safran' : 'text-encre/40'}`}>
+                          {lastMsg
+                            ? new Date(lastMsg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                            : ''}
+                        </span>
+                      </div>
                     </div>
                     <p className={`text-xs line-clamp-2 leading-relaxed ${active ? 'text-brume/75' : 'text-encre/60'}`}>
                       {lastMsg
@@ -533,14 +551,19 @@ export function ChatPage() {
                 <p className="font-display font-bold text-xs text-nuit">
                   {activeConv?.storeName || 'Boutique Partenaire'}
                 </p>
-                <p className="text-[10px] text-seve font-sans flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-seve" />
+                <div className="flex items-center gap-2 text-[10px] text-encre/65 font-sans mt-0.5">
+                  <OnlineBadge
+                    compact
+                    isOnline={activeIsOnline}
+                    lastSeenAt={activeLastSeenAt}
+                  />
+                  <span>·</span>
                   <span>
                     {activeConv?.type === 'CUSTOMER_DELIVERY'
                       ? `Coursier certifié · ${activeConv.distanceKm ? `${activeConv.distanceKm} km` : 'GPS prêt'}`
-                      : 'Vendeur Vérifié RDC · En ligne'}
+                      : 'Vendeur Vérifié RDC'}
                   </span>
-                </p>
+                </div>
               </div>
             </div>
 

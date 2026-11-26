@@ -33,6 +33,13 @@ import { VendorAnalyticsPage } from './pages/vendor/VendorAnalyticsPage';
 import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
 import { AiLogsPage } from './pages/admin/AiLogsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { LegalPages } from './pages/LegalPages';
+import { VendorTeamPage } from './pages/vendor/VendorTeamPage';
+import { VendorAdsPage } from './pages/vendor/VendorAdsPage';
+import { AdminPayoutsPage } from './pages/admin/AdminPayoutsPage';
+import { AdminSmsPage } from './pages/admin/AdminSmsPage';
+import { AdminPresencePage } from './pages/admin/AdminPresencePage';
 
 function ScrollToTop() {
   const { pathname, search } = useLocation();
@@ -57,6 +64,11 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/cgu" element={<LegalPages section="cgu" />} />
+        <Route path="/privacy" element={<LegalPages section="privacy" />} />
+        <Route path="/escrow-policy" element={<LegalPages section="escrow" />} />
+        <Route path="/support" element={<LegalPages section="support" />} />
         <Route path="/products" element={<ProductListPage />} />
         <Route path="/products/:id" element={<ProductDetailPage />} />
         <Route path="/cart" element={<RequireAuth><CartPage /></RequireAuth>} />
@@ -105,6 +117,22 @@ export default function App() {
           element={
             <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF']}>
               <VendorAnalyticsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendor/:storeId/team"
+          element={
+            <RequireAuth requireRole={['VENDOR_OWNER', 'ADMIN', 'SUPER_ADMIN']}>
+              <VendorTeamPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendor/:storeId/ads"
+          element={
+            <RequireAuth requireRole={['VENDOR_OWNER', 'VENDOR_STAFF', 'ADMIN', 'SUPER_ADMIN']}>
+              <VendorAdsPage />
             </RequireAuth>
           }
         />
@@ -177,6 +205,30 @@ export default function App() {
           element={
             <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
               <AiLogsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/payouts"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminPayoutsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/sms"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminSmsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/presence"
+          element={
+            <RequireAuth requireRole={['ADMIN', 'SUPER_ADMIN']}>
+              <AdminPresencePage />
             </RequireAuth>
           }
         />

@@ -205,13 +205,51 @@ export class VendorsService {
   }
 
   async getMyStores(user: AuthenticatedUser) {
-    const stores = await this.prisma.vendorStore.findMany({ where: { ownerId: user.id } });
+    const staffScopeIds = user.roles
+      .filter((r) => (r.role === RoleName.VENDOR_STAFF || r.role === RoleName.VENDOR_OWNER) && r.scopeId)
+      .map((r) => r.scopeId as string);
+
+    const stores = await this.prisma.vendorStore.findMany({
+      where: {
+        OR: [
+          { ownerId: user.id },
+          ...(staffScopeIds.length > 0 ? [{ id: { in: staffScopeIds } }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
     return Promise.all(
       stores.map(async (s) => {
         const svc = await this.getStoreServiceConfig(s.id);
-        return { ...s, ...svc };
+        return {
+          ...s,
+          ...svc,
+          userStoreRole: s.ownerId === user.id ? 'OWNER' : 'STAFF',
+        };
       }),
     );
+  }
+
+  private async assertStoreAccess(user: AuthenticatedUser, storeId: string, requireOwner = false) {
+    const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    const isAdmin = user.roles.some(
+      (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+    );
+    const isOwner = store.ownerId === user.id;
+    const isStaff = user.roles.some(
+      (r) =>
+        (r.role === RoleName.VENDOR_STAFF || r.role === RoleName.VENDOR_OWNER) &&
+        r.scopeId === storeId,
+    );
+    if (requireOwner) {
+      if (!isOwner && !isAdmin) {
+        throw new ForbiddenException('Action réservée au propriétaire de la boutique');
+      }
+    } else if (!isOwner && !isStaff && !isAdmin) {
+      throw new ForbiddenException("Vous n'avez pas accès à cette boutique");
+    }
+    return store;
   }
 
   /** Liste complète des boutiques pour la console admin (avec config services, solde USD et nombre de commandes) */
@@ -260,22 +298,29 @@ export class VendorsService {
     }
 
     const isOwner = requester?.id === store.ownerId;
+    const isStaff = requester?.roles.some(
+      (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === storeId,
+    );
     const isAdmin = requester?.roles.some(
       (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
     );
 
-    if (store.status !== StoreStatus.ACTIVE && !isOwner && !isAdmin) {
+    if (store.status !== StoreStatus.ACTIVE && !isOwner && !isStaff && !isAdmin) {
       throw new NotFoundException('Boutique introuvable');
     }
 
     const svc = await this.getStoreServiceConfig(storeId);
-    if (!isOwner && !isAdmin) {
+    if (!isOwner && !isStaff && !isAdmin) {
       const { commissionRate: _hiddenRate, payoutBlockReason: _hiddenReason, ...publicStore } =
         store;
       return { ...publicStore, ...svc };
     }
 
-    return { ...store, ...svc };
+    return {
+      ...store,
+      ...svc,
+      userStoreRole: isOwner ? 'OWNER' : isStaff ? 'STAFF' : undefined,
+    };
   }
 
   async activateStoreService(
@@ -672,5 +717,267 @@ export class VendorsService {
     });
 
     return updated;
+  }
+
+  async listStoreOrders(user: AuthenticatedUser, storeId: string) {
+    await this.assertStoreAccess(user, storeId, false);
+    const subOrders = await this.prisma.orderSubOrder.findMany({
+      where: { storeId },
+      include: {
+        order: {
+          include: {
+            customer: { select: { fullName: true, email: true } },
+            deliveryAddress: true,
+            paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { confirmedAt: 'desc' }, take: 1 },
+          },
+        },
+        items: {
+          include: {
+            variant: { include: { product: { select: { title: true, productType: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return subOrders.map((so) => {
+      const ord = so.order;
+      const paidTx = ord.paymentTransactions[0];
+      const isPaid =
+        Boolean(paidTx) ||
+        ['PAID', 'PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(ord.status);
+      const paidAt = ord.paidAt ?? paidTx?.confirmedAt ?? null;
+      const escrowReleaseAt = paidAt
+        ? new Date(new Date(paidAt).getTime() + 48 * 3600 * 1000).toISOString()
+        : undefined;
+      const hasDigitalItems = so.items.some((it) => it.variant.product.productType === 'DIGITAL');
+      const allDigital =
+        so.items.length > 0 && so.items.every((it) => it.variant.product.productType === 'DIGITAL');
+
+      return {
+        id: so.id,
+        orderId: ord.id,
+        orderNumber: ord.orderNumber,
+        orderStatus: ord.status,
+        status: so.status,
+        buyerName: ord.customer?.fullName || ord.customer?.email || 'Client ZandoGo',
+        destinationCity:
+          ord.deliveryAddress?.ville || ord.deliveryAddress?.commune || 'Livraison Numérique / Goma',
+        isPaid,
+        paidAt: paidAt ? new Date(paidAt).toISOString() : undefined,
+        escrowStatus: so.status === 'DELIVERED' ? 'RELEASED_TO_VENDOR' : isPaid ? 'HELD' : undefined,
+        escrowReleaseAt,
+        total: Number(so.subtotal),
+        currency: ord.currency,
+        createdAt: so.createdAt.toISOString(),
+        deliveryOption: {
+          name:
+            ord.deliveryOptionCode === 'PARTNER_LOGISTICS'
+              ? 'Transporteur Partenaire Interurbain'
+              : ord.deliveryOptionCode === 'CLICK_AND_COLLECT'
+              ? 'Retrait direct en boutique'
+              : allDigital
+              ? 'Téléchargement numérique instantané'
+              : 'Coursier Express Moto',
+        },
+        hasDigitalItems,
+        autoFulfilled: allDigital && isPaid,
+        items: so.items.map((it) => ({
+          id: it.id,
+          quantity: it.quantity,
+          productTitle: it.variant.product.title,
+          unitPrice: Number(it.unitPrice),
+          productType: it.variant.product.productType,
+        })),
+      };
+    });
+  }
+
+  async updateStoreOrderStatus(
+    user: AuthenticatedUser,
+    storeId: string,
+    subOrderId: string,
+    status: 'PROCESSING' | 'SHIPPED',
+  ) {
+    await this.assertStoreAccess(user, storeId, false);
+    const subOrder = await this.prisma.orderSubOrder.findUnique({
+      where: { id: subOrderId },
+      include: { store: true, order: true },
+    });
+    if (!subOrder || subOrder.storeId !== storeId) {
+      throw new NotFoundException('Sous-commande introuvable dans cette boutique');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const so = await tx.orderSubOrder.update({
+        where: { id: subOrderId },
+        data: { status },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: subOrder.orderId,
+          fromStatus: subOrder.order.status,
+          toStatus: status === 'SHIPPED' ? 'SHIPPED' : 'PROCESSING',
+          changedByUserId: user.id,
+          note: `Boutique ${subOrder.store.storeName} : ${status}`,
+        },
+      });
+
+      if (subOrder.order.status === 'PAID' || subOrder.order.status === 'PROCESSING') {
+        await tx.order.update({
+          where: { id: subOrder.orderId },
+          data: { status: status === 'SHIPPED' ? 'SHIPPED' : 'PROCESSING' },
+        });
+      }
+
+      return so;
+    });
+
+    return updated;
+  }
+
+  async updateProductStock(
+    user: AuthenticatedUser,
+    storeId: string,
+    productId: string,
+    stockQty: number,
+  ) {
+    await this.assertStoreAccess(user, storeId, false);
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { variants: true },
+    });
+    if (!product || product.storeId !== storeId) {
+      throw new NotFoundException('Produit introuvable dans cette boutique');
+    }
+
+    const cleanStock = Math.max(0, Math.round(stockQty));
+    await this.prisma.$transaction(async (tx) => {
+      if (product.variants.length > 0) {
+        await tx.productVariant.update({
+          where: { id: product.variants[0].id },
+          data: { stockQty: cleanStock },
+        });
+        for (const extra of product.variants.slice(1)) {
+          await tx.productVariant.update({
+            where: { id: extra.id },
+            data: { stockQty: cleanStock },
+          });
+        }
+      }
+      await tx.product.update({
+        where: { id: productId },
+        data: {
+          status:
+            cleanStock <= 0 && product.productType === 'PHYSICAL'
+              ? 'OUT_OF_STOCK'
+              : product.status === 'OUT_OF_STOCK' && cleanStock > 0
+              ? 'ACTIVE'
+              : product.status,
+        },
+      });
+    });
+
+    return { productId, stockQty: cleanStock };
+  }
+
+  async listStoreStaff(user: AuthenticatedUser, storeId: string) {
+    await this.assertStoreAccess(user, storeId, true);
+    const roles = await this.prisma.userRole.findMany({
+      where: { role: RoleName.VENDOR_STAFF, scopeId: storeId },
+      include: {
+        user: { select: { id: true, fullName: true, email: true, phone: true, status: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return roles.map((r) => ({
+      roleId: r.id,
+      userId: r.userId,
+      role: r.role,
+      fullName: r.user.fullName,
+      email: r.user.email,
+      phone: r.user.phone,
+      status: r.user.status,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async addStoreStaff(user: AuthenticatedUser, storeId: string, identifier: string) {
+    const store = await this.assertStoreAccess(user, storeId, true);
+    const clean = identifier.trim();
+    if (!clean) throw new BadRequestException('Email ou numéro de téléphone requis');
+
+    const member = await this.prisma.user.findFirst({
+      where: clean.includes('@')
+        ? { email: { equals: clean.toLowerCase(), mode: 'insensitive' } }
+        : { phone: clean },
+      select: { id: true, fullName: true, email: true, phone: true, status: true },
+    });
+
+    if (!member) {
+      throw new NotFoundException(
+        "Aucun compte ZandoGo trouvé avec cet e-mail ou ce numéro. Demandez à votre collaborateur de créer un compte d'abord.",
+      );
+    }
+    if (member.id === store.ownerId) {
+      throw new BadRequestException('Le propriétaire dispose déjà de tous les droits sur la boutique');
+    }
+
+    const existing = await this.prisma.userRole.findFirst({
+      where: { userId: member.id, role: RoleName.VENDOR_STAFF, scopeId: storeId },
+    });
+    if (existing) {
+      throw new ConflictException('Ce collaborateur fait déjà partie de votre équipe');
+    }
+
+    const created = await this.prisma.userRole.create({
+      data: { userId: member.id, role: RoleName.VENDOR_STAFF, scopeId: storeId },
+    });
+
+    await this.notifications
+      .notifyUser({
+        userId: member.id,
+        type: 'vendor_store.staff_added',
+        title: `Accès collaborateur accordé · ${store.storeName}`,
+        body: `Vous avez été ajouté(e) comme gestionnaire de la boutique « ${store.storeName} » (produits, stocks et expéditions).`,
+        data: { storeId },
+      })
+      .catch(() => {});
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'vendor_store.add_staff',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { memberUserId: member.id, email: member.email },
+    });
+
+    return {
+      roleId: created.id,
+      userId: member.id,
+      role: created.role,
+      fullName: member.fullName,
+      email: member.email,
+      phone: member.phone,
+      status: member.status,
+      createdAt: created.createdAt,
+    };
+  }
+
+  async removeStoreStaff(user: AuthenticatedUser, storeId: string, memberUserId: string) {
+    await this.assertStoreAccess(user, storeId, true);
+    await this.prisma.userRole.deleteMany({
+      where: { userId: memberUserId, role: RoleName.VENDOR_STAFF, scopeId: storeId },
+    });
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'vendor_store.remove_staff',
+      entityType: 'VendorStore',
+      entityId: storeId,
+      afterState: { memberUserId },
+    });
+    return { removed: true, memberUserId };
   }
 }

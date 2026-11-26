@@ -24,7 +24,9 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
+import { useUserPresence } from '../lib/presence-context';
 import { useStore } from '../lib/store-context';
+import { OnlineBadge } from '../components/OnlineBadge';
 import { PaymentOperatorStrip } from '../components/PaymentOperatorLogos';
 import type { Product, ProductReview } from '../lib/types';
 
@@ -113,6 +115,9 @@ export function ProductDetailPage() {
       .then(({ data }) => setReviews(data || []))
       .catch(() => {});
   }, [id]);
+
+  const getUserPresence = useUserPresence([product?.store?.ownerId]);
+  const ownerPresence = product?.store?.ownerId ? getUserPresence(product.store.ownerId) : undefined;
 
   if (!product) {
     return <div className="mx-auto max-w-7xl px-6 py-20 text-encre/50 font-mono text-xs">Chargement de l’offre…</div>;
@@ -567,6 +572,11 @@ export function ProductDetailPage() {
                 </span>
               )}
               <span className="text-encre/50">· {product.store.city || 'Goma (Nord-Kivu)'}</span>
+              <OnlineBadge
+                compact
+                isOnline={ownerPresence?.isOnline}
+                lastSeenAt={ownerPresence?.lastSeenAt}
+              />
             </div>
 
             <button

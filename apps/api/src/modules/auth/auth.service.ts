@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -8,12 +9,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { LoginAttemptTracker } from '../../common/security-rules';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-otp.dto';
 
 const SALT_ROUNDS = 12;
 
@@ -82,6 +85,8 @@ export class AuthService {
       include: { roles: true },
     });
 
+    const otpCode = await this.createVerificationCode(user.id, 'VERIFY_ACCOUNT', phone ? 'SMS' : 'EMAIL');
+
     await this.audit.log({
       actorUserId: user.id,
       action: 'user.register',
@@ -91,7 +96,12 @@ export class AuthService {
       ipAddress: ip,
     });
 
-    return this.issueTokens(user.id);
+    const tokens = await this.issueTokens(user.id);
+    return {
+      ...tokens,
+      verificationPending: true,
+      ...(this.isDevPreviewAllowed() ? { devOtpPreview: otpCode } : {}),
+    };
   }
 
   async login(dto: LoginDto, ip?: string) {
@@ -174,6 +184,195 @@ export class AuthService {
       throw new UnauthorizedException('Session invalide');
     }
     return this.issueTokens(user.id);
+  }
+
+  private isDevPreviewAllowed(): boolean {
+    return this.config.get<string>('NODE_ENV') !== 'production';
+  }
+
+  private async findUserByIdentifier(dto: { identifier?: string; email?: string; phone?: string }) {
+    const raw = (dto.identifier || dto.email || dto.phone || '').trim();
+    if (!raw) return null;
+    const isEmail = raw.includes('@');
+    return this.prisma.user.findFirst({
+      where: isEmail
+        ? { email: { equals: raw.toLowerCase(), mode: 'insensitive' } }
+        : { OR: [{ phone: raw }, { email: { equals: raw.toLowerCase(), mode: 'insensitive' } }] },
+    });
+  }
+
+  private async createVerificationCode(
+    userId: string,
+    purpose: 'VERIFY_ACCOUNT' | 'RESET_PASSWORD',
+    channel: string,
+  ): Promise<string> {
+    const code = String(crypto.randomInt(100000, 999999));
+    const codeHash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await this.prisma.authVerificationCode.updateMany({
+      where: { userId, purpose, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+
+    await this.prisma.authVerificationCode.create({
+      data: {
+        userId,
+        purpose,
+        codeHash,
+        channel,
+        expiresAt,
+      },
+    });
+
+    return code;
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto, ip?: string) {
+    const user = await this.findUserByIdentifier(dto);
+    if (!user) {
+      return {
+        sent: true,
+        message: 'Si un compte correspond à cet identifiant, un code de réinitialisation a été envoyé.',
+      };
+    }
+
+    const code = await this.createVerificationCode(
+      user.id,
+      'RESET_PASSWORD',
+      user.phone ? 'SMS' : 'EMAIL',
+    );
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'user.password_reset_requested',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: ip,
+    });
+
+    return {
+      sent: true,
+      message: 'Un code de réinitialisation à 6 chiffres valable 15 minutes a été généré.',
+      ...(this.isDevPreviewAllowed() ? { devOtpPreview: code } : {}),
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto, ip?: string) {
+    const user = await this.findUserByIdentifier(dto);
+    if (!user) {
+      throw new BadRequestException('Code de réinitialisation invalide ou expiré');
+    }
+
+    const record = await this.prisma.authVerificationCode.findFirst({
+      where: {
+        userId: user.id,
+        purpose: 'RESET_PASSWORD',
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record || !(await bcrypt.compare(dto.code.trim(), record.codeHash))) {
+      throw new BadRequestException('Code de réinitialisation invalide ou expiré');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await this.prisma.$transaction([
+      this.prisma.authVerificationCode.update({
+        where: { id: record.id },
+        data: { consumedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          ...(user.status === 'PENDING_VERIFICATION' ? { status: 'ACTIVE' } : {}),
+        },
+      }),
+    ]);
+
+    this.loginTracker.recordSuccess(user.email || user.phone || user.id);
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'user.password_reset_completed',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: ip,
+    });
+
+    return {
+      success: true,
+      message: 'Mot de passe mis à jour avec succès. Vous pouvez vous connecter.',
+    };
+  }
+
+  async verifyAccountOtp(userId: string, code: string, ip?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Utilisateur introuvable');
+    if (user.status === 'ACTIVE') {
+      return { verified: true, status: 'ACTIVE', message: 'Compte déjà vérifié.' };
+    }
+
+    const record = await this.prisma.authVerificationCode.findFirst({
+      where: {
+        userId,
+        purpose: 'VERIFY_ACCOUNT',
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record || !(await bcrypt.compare(code.trim(), record.codeHash))) {
+      throw new BadRequestException('Code OTP invalide ou expiré');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.authVerificationCode.update({
+        where: { id: record.id },
+        data: { consumedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { status: 'ACTIVE' },
+      }),
+    ]);
+
+    await this.audit.log({
+      actorUserId: userId,
+      action: 'user.otp_verified',
+      entityType: 'User',
+      entityId: userId,
+      ipAddress: ip,
+    });
+
+    return {
+      verified: true,
+      status: 'ACTIVE',
+      message: 'Votre compte est désormais vérifié et actif.',
+    };
+  }
+
+  async resendAccountOtp(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Utilisateur introuvable');
+    if (user.status === 'ACTIVE') {
+      return { sent: false, status: 'ACTIVE', message: 'Compte déjà vérifié.' };
+    }
+
+    const code = await this.createVerificationCode(
+      user.id,
+      'VERIFY_ACCOUNT',
+      user.phone ? 'SMS' : 'EMAIL',
+    );
+
+    return {
+      sent: true,
+      message: 'Un nouveau code OTP à 6 chiffres vient d’être généré (valable 15 minutes).',
+      ...(this.isDevPreviewAllowed() ? { devOtpPreview: code } : {}),
+    };
   }
 
   private async issueTokens(userId: string) {

@@ -11,19 +11,24 @@ import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsGateway } from './notifications.gateway';
+import { PresenceController } from './presence.controller';
+import { PresenceGateway } from './presence.gateway';
+import { PresenceService } from './presence.service';
 import { TrackingGateway } from './tracking.gateway';
 
 @Module({
   imports: [AuditModule, AuthModule, AssistantModule, UploadsModule],
-  controllers: [AfricasTalkingSmsController, ChatController, NotificationsController],
+  controllers: [AfricasTalkingSmsController, ChatController, NotificationsController, PresenceController],
   providers: [
     AfricasTalkingSmsService,
     ChatGateway,
     ChatService,
     NotificationsGateway,
+    PresenceGateway,
+    PresenceService,
     TrackingGateway,
     WsJwtGuard,
   ],
-  exports: [AfricasTalkingSmsService, ChatService, NotificationsGateway, TrackingGateway],
+  exports: [AfricasTalkingSmsService, ChatService, NotificationsGateway, PresenceGateway, PresenceService, TrackingGateway],
 })
 export class RealtimeModule {}

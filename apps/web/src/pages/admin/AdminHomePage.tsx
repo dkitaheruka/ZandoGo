@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Scale, Truck, SlidersHorizontal } from 'lucide-react';
+import { AlertTriangle, Scale, Truck, SlidersHorizontal, Radio } from 'lucide-react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { api } from '../../lib/api';
 import { useStore } from '../../lib/store-context';
-import type { Order, PlatformPricing, Product, VendorStore } from '../../lib/types';
+import type { AdminPresenceSnapshot, Order, PlatformPricing, Product, VendorStore } from '../../lib/types';
 
 export function AdminHomePage() {
   const { exchangeRate } = useStore();
@@ -12,6 +12,7 @@ export function AdminHomePage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [pricing, setPricing] = useState<PlatformPricing | null>(null);
+  const [presenceSummary, setPresenceSummary] = useState<AdminPresenceSnapshot['summary'] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,11 +21,13 @@ export function AdminHomePage() {
       api.get<Order[]>('/orders').catch(() => ({ data: [] })),
       api.get<Product[]>('/products').catch(() => ({ data: [] })),
       api.get<PlatformPricing>('/platform/pricing').catch(() => ({ data: null })),
-    ]).then(([storesRes, ordersRes, prodsRes, pricingRes]) => {
+      api.get<AdminPresenceSnapshot>('/presence/admin/live').catch(() => ({ data: null })),
+    ]).then(([storesRes, ordersRes, prodsRes, pricingRes, presenceRes]) => {
       setStores(storesRes.data || []);
       setOrders(ordersRes.data || []);
       setProducts(prodsRes.data || []);
       if (pricingRes.data) setPricing(pricingRes.data);
+      if (presenceRes.data?.summary) setPresenceSummary(presenceRes.data.summary);
       setLoading(false);
     });
   }, []);
@@ -63,6 +66,16 @@ export function AdminHomePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/admin/presence"
+              className="px-3.5 py-2 rounded-card bg-emerald-500/15 hover:bg-emerald-500/25 text-xs font-semibold text-emerald-300 border border-emerald-400/30 transition-colors font-display inline-flex items-center gap-1.5"
+            >
+              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>
+                En direct : {presenceSummary?.authenticatedCount ?? 0} connecté(s) ·{' '}
+                {presenceSummary?.visitorsCount ?? 0} visiteur(s)
+              </span>
+            </Link>
             <Link
               to="/admin/pricing"
               className="px-3.5 py-2 rounded-card bg-safran/20 hover:bg-safran/30 text-xs font-semibold text-safran border border-safran/40 transition-colors font-display inline-flex items-center gap-1.5"

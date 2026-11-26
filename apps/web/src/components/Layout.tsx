@@ -429,13 +429,29 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <div>
             <h4 className="font-display font-semibold text-brume uppercase tracking-wider text-[11px] mb-3">
-              Protection & Confiance
+              Protection &amp; Confiance
             </h4>
             <ul className="space-y-2 text-brume/65">
-              <li>Paiement sous séquestre ZandoGo</li>
-              <li>Fournisseurs vérifiés RCCM</li>
-              <li>Négociation de prix directe</li>
-              <li>Litiges & Arbitrage sous 48h</li>
+              <li>
+                <Link to="/escrow-policy" className="hover:text-safran transition-colors">
+                  Paiement sous séquestre ZandoGo
+                </Link>
+              </li>
+              <li>
+                <Link to="/cgu" className="hover:text-safran transition-colors">
+                  Conditions générales &amp; fournisseurs RCCM
+                </Link>
+              </li>
+              <li>
+                <Link to="/privacy" className="hover:text-safran transition-colors">
+                  Confidentialité &amp; vérification KYC
+                </Link>
+              </li>
+              <li>
+                <Link to="/support" className="hover:text-safran transition-colors">
+                  Support &amp; Arbitrage litiges 48h
+                </Link>
+              </li>
             </ul>
           </div>
 

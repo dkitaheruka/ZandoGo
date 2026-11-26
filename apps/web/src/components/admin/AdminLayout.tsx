@@ -13,19 +13,25 @@ import {
   ChevronRight,
   BarChart3,
   Bot,
+  Banknote,
+  MessageSquareCode,
+  Radio,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import { PWAInstallButton } from '../PWAInstallButton';
 
 const ADMIN_NAV = [
   { to: '/admin', label: 'Vue d’ensemble & KPIs', icon: LayoutDashboard },
+  { to: '/admin/presence', label: 'Connectés & Visiteurs', icon: Radio },
   { to: '/admin/analytics', label: 'Analyses & Diagrammes', icon: BarChart3 },
   { to: '/admin/stores', label: 'Boutiques & Entreprises', icon: Store },
   { to: '/admin/kyc', label: 'Vérifications KYC', icon: ShieldCheck },
   { to: '/admin/disputes', label: 'Litiges & Séquestres', icon: Scale },
+  { to: '/admin/payouts', label: 'Retraits & Décaissements', icon: Banknote },
   { to: '/admin/agents', label: 'Transporteurs & Coursiers', icon: Truck },
   { to: '/admin/pricing', label: 'Tarifs & Commissions', icon: SlidersHorizontal },
   { to: '/admin/exchange-rate', label: 'Taux de change USD/CDF', icon: ArrowLeftRight },
+  { to: '/admin/sms', label: 'Passerelle SMS RDC', icon: MessageSquareCode },
   { to: '/admin/ai-logs', label: 'Journal Messages IA', icon: Bot },
 ];
 

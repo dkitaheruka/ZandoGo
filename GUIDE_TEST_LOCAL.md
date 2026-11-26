@@ -91,28 +91,31 @@ npm run prisma:seed --workspace=@ecommerce/api
   ```
   *(Le site est accessible sur `http://localhost:3000`)*
 
-### 5. Compte Super Admin créé par le seed
-- **Email** : `admin@zandogo.cd`
-- **Mot de passe initial** : `ZandoGoAdmin2026!`
+### 5. Comptes de test créés par le seed (`prisma:seed`)
+- **Super Admin** : `admin@zandogo.cd` · mot de passe : `ZandoGoAdmin2026!`
+- **Vendeur Pro (Boutique Virunga Wax)** : `vendeur@zandogo.cd` · mot de passe : `ZandoGoUser2026!`
+- **Acheteur / Client** : `acheteur@zandogo.cd` · mot de passe : `ZandoGoUser2026!`
+- **Livreur / Coursier** : `livreur@zandogo.cd` · mot de passe : `ZandoGoUser2026!`
 
-Vous pouvez également créer de nouveaux comptes clients ou vendeurs directement depuis `/register`.
+Vous pouvez également créer de nouveaux comptes depuis `/register` (vérification OTP intégrée) ou réinitialiser un mot de passe via `/forgot-password` (aperçu du code OTP affiché en mode développement local).
 
 ---
 
 ## Liste de contrôle pour vos tests locaux
 
-1. **Page d’accueil** :
-   - Panneau principal en vert clair et léger.
-   - Carrousel droit alimenté dynamiquement par la vitrine produits.
-   - Section *« Offres mises en avant sur ZandoGo »* affichant 4 cartes à la fois avec défilement automatique/manuel lorsqu’il y a plus de 4 offres éligibles.
-2. **Cartes produits & Catalogue** :
-   - Images agrandies (`5:4`), espace interne resserré, pastilles de couleurs affichées juste à côté du prix.
-   - 5 produits par ligne sur grand écran dans le catalogue.
-3. **Navigation** :
-   - Chaque clic de redirection (accueil, catalogue, panier, fiche produit, espace vendeur, admin) ouvre la nouvelle page tout en haut.
-4. **Commandes, Factures & Règle de litige 48h** :
-   - Téléchargement de la facture détaillée après achat.
-   - Bouton *Litige* masqué/bloqué après **48h** si le client et le vendeur sont dans la **même ville**, mais conservé ouvert si les villes sont différentes.
+1. **Authentification, OTP & Profil** :
+   - Inscription avec activation OTP (`/register`) et activation depuis `/profile` si en attente.
+   - Mot de passe oublié & réinitialisation par code OTP (`/forgot-password`).
+2. **Catalogue, Médias & Produits Numériques** :
+   - Création d’offre physique, numérique (upload PDF privé) ou service (`/vendor/:storeId/products/new`).
+   - Publication / activation (`ACTIVE`) et ajustement des stocks (`/vendor/:storeId/products`).
+3. **Négociations, Checkout & Livraison** :
+   - Négociation produit directe B2B/B2C, choix du mode de livraison (`Express Moto`, `Transporteur`, `Retrait`), partage GPS et négociation du tarif de course dans le chat.
+   - Paiement sandbox automatique (Mobile Money / Carte) ou Cash à la livraison, téléchargement PDF signé après paiement et facture officielle.
+   - Signature tactile du client (`<canvas>`) ou preuve photo / OTP côté livreur (`/delivery`).
+4. **Gestion Équipe, Publicités & Administration** :
+   - Ajout/retrait d’un collaborateur `VENDOR_STAFF` (`/vendor/:storeId/team`) et campagnes sponsorisées ROI (`/vendor/:storeId/ads`).
+   - Arbitrage litiges 48h (`/admin/disputes`), validation/rejet des retraits vendeurs (`/admin/payouts`), console SMS RDC (`/admin/sms`) et pages légales (`/cgu`, `/privacy`, `/escrow-policy`, `/support`).
 
 ---
 

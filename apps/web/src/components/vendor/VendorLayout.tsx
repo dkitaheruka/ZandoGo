@@ -15,6 +15,8 @@ import {
   Lock,
   Check,
   BarChart3,
+  Users,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
@@ -74,6 +76,10 @@ export function VendorLayout({
       navigate(`/vendor/${targetId}/orders`);
     } else if (location.pathname.includes('/analytics')) {
       navigate(`/vendor/${targetId}/analytics`);
+    } else if (location.pathname.includes('/team')) {
+      navigate(`/vendor/${targetId}/team`);
+    } else if (location.pathname.includes('/ads')) {
+      navigate(`/vendor/${targetId}/ads`);
     } else {
       navigate(`/vendor/${targetId}/products`);
     }
@@ -111,6 +117,18 @@ export function VendorLayout({
       href: `/vendor/${storeId}/products/new`,
       icon: PlusCircle,
       active: location.pathname.includes('/products/new'),
+    },
+    {
+      label: 'Publicités & Boosts',
+      href: `/vendor/${storeId}/ads`,
+      icon: Megaphone,
+      active: location.pathname.includes('/ads'),
+    },
+    {
+      label: 'Équipe & Collaborateurs',
+      href: `/vendor/${storeId}/team`,
+      icon: Users,
+      active: location.pathname.includes('/team'),
     },
     {
       label: 'Analyses & Diagrammes',

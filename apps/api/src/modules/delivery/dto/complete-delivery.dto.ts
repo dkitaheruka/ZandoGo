@@ -7,7 +7,7 @@ export class CompleteDeliveryDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(4096)
+  @MaxLength(7_000_000)
   fileUrl?: string;
 
   @IsOptional()

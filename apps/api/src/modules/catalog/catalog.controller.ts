@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -25,6 +25,17 @@ class ProductQuery {
   @IsString()
   @MaxLength(120)
   search?: string;
+}
+
+class CreateReviewDto {
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating: number;
+
+  @IsString()
+  @MaxLength(1500)
+  comment: string;
 }
 
 @Controller()
@@ -58,6 +69,21 @@ export class CatalogController {
   @Get('products/sponsored')
   listSponsoredProducts() {
     return this.catalog.listSponsoredProducts();
+  }
+
+  @Get('products/:id/reviews')
+  listReviews(@Param('id') id: string) {
+    return this.catalog.listProductReviews(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('products/:id/reviews')
+  createReview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateReviewDto,
+  ) {
+    return this.catalog.addProductReview(user, id, dto.rating, dto.comment);
   }
 
   @UseGuards(OptionalJwtAuthGuard)

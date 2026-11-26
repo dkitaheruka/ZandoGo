@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ChatGateway } from './chat.gateway';
@@ -45,6 +46,36 @@ class TranslateChatMessageBodyDto {
   preferredModel?: string;
 }
 
+class ShareLocationDto {
+  @Type(() => Number)
+  @IsNumber()
+  lat: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  lng: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  label?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  googleMapsUrl?: string;
+}
+
+class DeliveryOfferDto {
+  @IsIn(['PROPOSE', 'ACCEPT', 'COUNTER'])
+  action: 'PROPOSE' | 'ACCEPT' | 'COUNTER';
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  feeUsd: number;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('chat')
 export class ChatController {
@@ -82,6 +113,28 @@ export class ChatController {
     });
     this.gateway.emitMessage(id, msg);
     return msg;
+  }
+
+  @Post('conversations/:id/location')
+  async shareLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: ShareLocationDto,
+  ) {
+    const result = await this.chat.shareLocation(user, id, body);
+    this.gateway.emitMessage(id, result.message);
+    return result;
+  }
+
+  @Post('conversations/:id/delivery-offer')
+  async deliveryOffer(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: DeliveryOfferDto,
+  ) {
+    const result = await this.chat.sendDeliveryOffer(user, id, body);
+    this.gateway.emitMessage(id, result.message);
+    return result;
   }
 
   @Post('messages/:messageId/translate')

@@ -328,7 +328,7 @@ export function StoreProductsPage() {
   }
 
   async function toggleStatus(product: Product) {
-    const nextStatus = product.status === 'PUBLISHED' || product.status === 'ACTIVE' ? 'DRAFT' : 'PUBLISHED';
+    const nextStatus = product.status === 'PUBLISHED' || product.status === 'ACTIVE' ? 'DRAFT' : 'ACTIVE';
     setBusyId(product.id);
     setError(null);
     try {

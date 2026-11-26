@@ -20,6 +20,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
+import { NegotiationsModule } from './modules/negotiations/negotiations.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AssistantModule } from './modules/assistant/assistant.module';
     UploadsModule,
     AnalyticsModule,
     AssistantModule,
+    NegotiationsModule,
   ],
   providers: [
     {

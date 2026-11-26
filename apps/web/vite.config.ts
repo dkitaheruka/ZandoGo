@@ -613,6 +613,7 @@ function mockApiPlugin(): Plugin {
     fullName: 'David Kitenge',
     email: 'david.kitenge@example.cd',
     phone: '+243820001122',
+    status: 'ACTIVE',
     preferredCurrency: 'USD',
     roles: [
       { role: 'CUSTOMER' },
@@ -1321,6 +1322,7 @@ function mockApiPlugin(): Plugin {
     {
       id: 'conv-4',
       type: 'CUSTOMER_DELIVERY',
+      otherUserId: 'usr-driver-1',
       orderId: 'ord-1004',
       orderNumber: 'ZGO-2026-1004',
       storeId: 'store-logistics',
@@ -1383,6 +1385,7 @@ function mockApiPlugin(): Plugin {
     {
       id: 'conv-1',
       type: 'CUSTOMER_VENDOR',
+      otherUserId: 'usr-vendor-1',
       storeId: 'store-1',
       storeName: 'Boutique Virunga Wax',
       city: 'Goma (Les Volcans)',
@@ -1413,6 +1416,7 @@ function mockApiPlugin(): Plugin {
     {
       id: 'conv-2',
       type: 'CUSTOMER_VENDOR',
+      otherUserId: 'usr-vendor-2',
       storeId: 'store-2',
       storeName: 'Kivu Digital & Tech',
       city: 'Bukavu',
@@ -1435,6 +1439,7 @@ function mockApiPlugin(): Plugin {
     {
       id: 'conv-3',
       type: 'CUSTOMER_DELIVERY',
+      otherUserId: 'usr-driver-1',
       orderId: 'ord-1001',
       orderNumber: 'ZGO-2026-1001',
       storeId: 'store-logistics',
@@ -1461,16 +1466,247 @@ function mockApiPlugin(): Plugin {
   const payouts: any[] = [
     {
       id: 'pay-out-1',
+      walletId: 'wallet-store-1',
+      storeId: 'store-1',
+      storeName: 'Boutique Virunga Wax',
+      ownerName: 'David Kitenge',
+      ownerEmail: 'david.kitenge@example.cd',
       amountUsd: 420.0,
+      currency: 'USD',
       method: 'M-Pesa Vodacom (+243 820 001 122)',
       destination: '+243820001122',
       status: 'PAID',
+      processedAt: '2026-03-03T10:30:00Z',
       createdAt: '2026-03-03T10:15:00Z',
+    },
+    {
+      id: 'pay-out-2',
+      walletId: 'wallet-store-1',
+      storeId: 'store-1',
+      storeName: 'Boutique Virunga Wax',
+      ownerName: 'David Kitenge',
+      ownerEmail: 'david.kitenge@example.cd',
+      amountUsd: 85.0,
+      currency: 'USD',
+      method: 'Airtel Money',
+      destination: '+243990112233',
+      status: 'REQUESTED',
+      createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+    },
+  ];
+
+  const storeStaffMap: Record<string, any[]> = {
+    'store-1': [
+      {
+        userId: 'usr-staff-1',
+        fullName: 'Chantal Kavira',
+        email: 'chantal.kavira@zandogo.cd',
+        phone: '+243810223344',
+        role: 'VENDOR_STAFF',
+        status: 'ACTIVE',
+        createdAt: '2026-03-10T09:00:00Z',
+      },
+    ],
+  };
+
+  const adCampaigns: any[] = [
+    {
+      id: 'ad-1',
+      advertiserId: 'usr-1',
+      productId: 'prod-1',
+      type: 'SPONSORED_PRODUCT',
+      costModel: 'CPC',
+      budgetAmount: 25,
+      currency: 'USD',
+      startAt: new Date(Date.now() - 2 * 86400_000).toISOString(),
+      endAt: new Date(Date.now() + 5 * 86400_000).toISOString(),
+      status: 'ACTIVE',
+      impressions: 1240,
+      clicks: 68,
+      createdAt: new Date(Date.now() - 2 * 86400_000).toISOString(),
     },
   ];
 
   const smsOptOuts = new Set<string>();
   const smsCallbackLogs: any[] = [];
+  const smsInboxMessages: any[] = [
+    {
+      id: 'sms-in-1',
+      phoneNumber: '+243810998877',
+      text: 'Bonjour ZandoGo, mon colis CMD-2026-001 est bien arrivé à Himbi.',
+      createdAt: new Date(Date.now() - 7200_000).toISOString(),
+    },
+  ];
+
+  // --- REAL SERVER-SIDE IN-MEMORY PRESENCE TRACKER (LOCAL MODE) ---
+  const PRESENCE_TTL_MS = 65_000;
+  const RECENT_OFFLINE_TTL_MS = 15 * 60_000;
+  const presenceUsers = new Map<
+    string,
+    {
+      userId: string;
+      fullName: string;
+      email: string | null;
+      roles: string[];
+      primaryRole: string;
+      visitorIds: Set<string>;
+      currentPath: string;
+      channel: 'HTTP';
+      connectedSince: string;
+      lastSeenAt: number;
+    }
+  >();
+  const presenceVisitors = new Map<
+    string,
+    {
+      visitorId: string;
+      currentPath: string;
+      userAgentSummary: string;
+      startedAt: string;
+      lastSeenAt: number;
+      pageViews: number;
+    }
+  >();
+  const presenceLastSeen = new Map<string, number>();
+  const presenceRecentlyOffline = new Map<
+    string,
+    { userId: string; fullName: string; primaryRole: string; lastSeenAt: number }
+  >();
+
+  const resolveMockPrimaryRole = (roles: string[]): string => {
+    if (roles.includes('SUPER_ADMIN')) return 'SUPER_ADMIN';
+    if (roles.includes('ADMIN')) return 'ADMIN';
+    if (roles.includes('DELIVERY_AGENT')) return 'DELIVERY_AGENT';
+    if (roles.includes('VENDOR_OWNER')) return 'VENDOR_OWNER';
+    if (roles.includes('VENDOR_STAFF')) return 'VENDOR_STAFF';
+    return roles[0] || 'CUSTOMER';
+  };
+
+  const sanitizeMockPath = (raw?: string): string => {
+    if (!raw || typeof raw !== 'string') return '/';
+    const cleaned = raw.trim().slice(0, 200);
+    return cleaned.startsWith('/') ? cleaned : '/';
+  };
+
+  const summarizeMockUa = (ua?: string): string => {
+    if (!ua) return 'Navigateur Web';
+    const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
+    const browser = ua.includes('Edg/')
+      ? 'Edge'
+      : ua.includes('Chrome/')
+        ? 'Chrome'
+        : ua.includes('Firefox/')
+          ? 'Firefox'
+          : ua.includes('Safari/')
+            ? 'Safari'
+            : 'Navigateur';
+    const os = ua.includes('Android')
+      ? 'Android'
+      : ua.includes('iPhone') || ua.includes('iPad')
+        ? 'iOS'
+        : ua.includes('Linux')
+          ? 'Linux'
+          : ua.includes('Windows')
+            ? 'Windows'
+            : ua.includes('Mac OS')
+              ? 'macOS'
+              : 'Web';
+    return `${browser} · ${os}${isMobile ? ' (Mobile)' : ''}`;
+  };
+
+  const prunePresence = () => {
+    const now = Date.now();
+    for (const [userId, session] of presenceUsers.entries()) {
+      if (now - session.lastSeenAt > PRESENCE_TTL_MS) {
+        presenceUsers.delete(userId);
+        presenceLastSeen.set(userId, session.lastSeenAt);
+        presenceRecentlyOffline.set(userId, {
+          userId,
+          fullName: session.fullName,
+          primaryRole: session.primaryRole,
+          lastSeenAt: session.lastSeenAt,
+        });
+      }
+    }
+    for (const [visitorId, v] of presenceVisitors.entries()) {
+      if (now - v.lastSeenAt > PRESENCE_TTL_MS) {
+        presenceVisitors.delete(visitorId);
+      }
+    }
+    for (const [userId, rec] of presenceRecentlyOffline.entries()) {
+      if (now - rec.lastSeenAt > RECENT_OFFLINE_TTL_MS) {
+        presenceRecentlyOffline.delete(userId);
+      }
+    }
+  };
+
+  const getMockUserPresence = (userId: string) => {
+    prunePresence();
+    const active = presenceUsers.get(userId);
+    if (active) {
+      return { isOnline: true, lastSeenAt: new Date(active.lastSeenAt).toISOString() };
+    }
+    const last = presenceLastSeen.get(userId);
+    return {
+      isOnline: false,
+      lastSeenAt: last ? new Date(last).toISOString() : null,
+    };
+  };
+
+  const getMockAdminPresenceSnapshot = () => {
+    prunePresence();
+    const connectedUsers = Array.from(presenceUsers.values())
+      .map((u) => ({
+        userId: u.userId,
+        fullName: u.fullName,
+        email: u.email,
+        roles: u.roles,
+        primaryRole: u.primaryRole,
+        currentPath: u.currentPath,
+        channel: u.channel,
+        connectedSince: u.connectedSince,
+        lastSeenAt: new Date(u.lastSeenAt).toISOString(),
+      }))
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+    const visitors = Array.from(presenceVisitors.values())
+      .map((v) => ({
+        visitorId: v.visitorId,
+        currentPath: v.currentPath,
+        userAgentSummary: v.userAgentSummary,
+        startedAt: v.startedAt,
+        lastSeenAt: new Date(v.lastSeenAt).toISOString(),
+        pageViews: v.pageViews,
+      }))
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+    const recentlyOffline = Array.from(presenceRecentlyOffline.values())
+      .filter((r) => !presenceUsers.has(r.userId))
+      .map((r) => ({
+        userId: r.userId,
+        fullName: r.fullName,
+        primaryRole: r.primaryRole,
+        lastSeenAt: new Date(r.lastSeenAt).toISOString(),
+      }))
+      .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        totalActive: connectedUsers.length + visitors.length,
+        authenticatedCount: connectedUsers.length,
+        visitorsCount: visitors.length,
+        vendorsOnlineCount: connectedUsers.filter(
+          (u) => u.roles.includes('VENDOR_OWNER') || u.roles.includes('VENDOR_STAFF'),
+        ).length,
+        driversOnlineCount: connectedUsers.filter((u) => u.roles.includes('DELIVERY_AGENT')).length,
+        customersOnlineCount: connectedUsers.filter((u) => u.roles.includes('CUSTOMER')).length,
+      },
+      connectedUsers,
+      visitors,
+      recentlyOffline,
+    };
+  };
 
   return {
     name: 'mock-api-server',
@@ -2032,7 +2268,27 @@ function mockApiPlugin(): Plugin {
           return json({ accessToken: 'mock-jwt-token-12345' });
         }
         if (path === '/auth/register' && method === 'POST') {
-          return json({ accessToken: 'mock-jwt-token-12345' });
+          return json({
+            accessToken: 'mock-jwt-token-12345',
+            verificationPending: true,
+            devOtpPreview: '482910',
+          });
+        }
+        if (path === '/auth/forgot-password' && method === 'POST') {
+          return json({
+            message: 'Si un compte correspond à cet identifiant, un code OTP a été envoyé.',
+            devOtpPreview: '482910',
+          });
+        }
+        if (path === '/auth/reset-password' && method === 'POST') {
+          return json({ reset: true, message: 'Mot de passe réinitialisé avec succès.' });
+        }
+        if (path === '/auth/verify-otp' && method === 'POST') {
+          currentUser.status = 'ACTIVE';
+          return json({ verified: true, status: 'ACTIVE' });
+        }
+        if (path === '/auth/resend-otp' && method === 'POST') {
+          return json({ sent: true, devOtpPreview: '482910' });
         }
         if (path === '/auth/logout' && method === 'POST') {
           return json({ success: true });
@@ -3633,6 +3889,46 @@ function mockApiPlugin(): Plugin {
           });
           return json({ storeId: st.id, unlockedAmount: Number(unlockedAmount.toFixed(2)) });
         }
+        if (path === '/wallets/admin/payouts' && method === 'GET') {
+          return json(
+            payouts.map((p) => {
+              const st = stores.find((s) => s.id === (p.storeId || 'store-1')) || stores[0];
+              return {
+                id: p.id,
+                walletId: p.walletId || `wallet-${st?.id || 'store-1'}`,
+                storeId: st?.id || 'store-1',
+                storeName: p.storeName || st?.storeName || 'Boutique ZandoGo',
+                ownerName: p.ownerName || currentUser.fullName,
+                ownerEmail: p.ownerEmail || currentUser.email,
+                amount: Number(p.amountUsd ?? p.amount ?? 0),
+                currency: p.currency || 'USD',
+                method: p.method || 'Mobile Money',
+                destination: p.destination || '+243820001122',
+                status: p.status || 'REQUESTED',
+                processedAt: p.processedAt,
+                createdAt: p.createdAt,
+              };
+            }),
+          );
+        }
+        const adminPayoutStatusMatch = path.match(/^\/wallets\/admin\/payouts\/([^/]+)\/status$/);
+        if (adminPayoutStatusMatch && method === 'PATCH') {
+          readBody().then((body) => {
+            const p = payouts.find((item) => item.id === adminPayoutStatusMatch[1]);
+            if (!p) return json({ statusCode: 404, message: 'Demande introuvable.' }, 404);
+            const nextStatus = body.status || 'PAID';
+            if (nextStatus === 'REJECTED' && p.status !== 'REJECTED') {
+              const st = stores.find((s) => s.id === (p.storeId || 'store-1'));
+              if (st && typeof st.balanceUsd === 'number') {
+                st.balanceUsd = Number((st.balanceUsd + Number(p.amountUsd ?? p.amount ?? 0)).toFixed(2));
+              }
+            }
+            p.status = nextStatus;
+            p.processedAt = new Date().toISOString();
+            json({ id: p.id, status: p.status, processedAt: p.processedAt });
+          });
+          return;
+        }
         if ((path === '/wallets/payout' || path === '/wallets/payouts') && method === 'POST') {
           readBody().then((body) => {
             const targetStoreId = body.storeId || 'store-1';
@@ -3685,7 +3981,13 @@ function mockApiPlugin(): Plugin {
 
             const newPayout = {
               id: `pay-out-${Date.now()}`,
+              walletId: `wallet-${targetStore.id}`,
+              storeId: targetStore.id,
+              storeName: targetStore.storeName,
+              ownerName: currentUser.fullName,
+              ownerEmail: currentUser.email,
               amountUsd: amount,
+              currency: 'USD',
               method: body.method || 'Mobile Money',
               destination: body.destination || '+243820001122',
               status: immediateAuthorized ? 'PAID' : 'REQUESTED',
@@ -4912,7 +5214,16 @@ function mockApiPlugin(): Plugin {
 
         // --- CHAT + GOOGLE MAPS SHARING + DELIVERY NEGOTIATION ---
         if (path === '/chat/conversations' && method === 'GET') {
-          return json(conversations);
+          return json(
+            conversations.map((c) => {
+              const status = c.otherUserId ? getMockUserPresence(c.otherUserId) : undefined;
+              return {
+                ...c,
+                otherUserOnline: status?.isOnline ?? false,
+                otherUserLastSeenAt: status?.lastSeenAt ?? null,
+              };
+            }),
+          );
         }
         if (path === '/chat/conversations' && method === 'POST') {
           readBody().then((body) => {
@@ -4921,10 +5232,23 @@ function mockApiPlugin(): Plugin {
                 (body.orderId && c.orderId === body.orderId && c.type === (body.type || 'CUSTOMER_DELIVERY')) ||
                 (!body.orderId && c.storeId === body.storeId && c.productId === body.productId),
             );
-            if (existing) return json(existing);
+            if (existing) {
+              const status = existing.otherUserId ? getMockUserPresence(existing.otherUserId) : undefined;
+              return json({
+                ...existing,
+                otherUserOnline: status?.isOnline ?? false,
+                otherUserLastSeenAt: status?.lastSeenAt ?? null,
+              });
+            }
+            const matchedStore = stores.find((s) => s.id === (body.storeId || 'store-1'));
+            const otherUserId =
+              body.type === 'CUSTOMER_DELIVERY'
+                ? 'usr-driver-1'
+                : matchedStore?.ownerId || 'usr-vendor-1';
             const conv = {
               id: `conv-${Date.now()}`,
               type: body.type || 'CUSTOMER_VENDOR',
+              otherUserId,
               orderId: body.orderId,
               orderNumber: body.orderNumber,
               storeId: body.storeId || 'store-1',
@@ -5787,17 +6111,124 @@ function mockApiPlugin(): Plugin {
           });
           return;
         }
+        // --- VENDOR STAFF ---
+        const vendorStaffListMatch = path.match(/^\/vendors\/stores\/([^/]+)\/staff$/);
+        if (vendorStaffListMatch && method === 'GET') {
+          return json(storeStaffMap[vendorStaffListMatch[1]] || []);
+        }
+        if (vendorStaffListMatch && method === 'POST') {
+          readBody().then((body) => {
+            const sId = vendorStaffListMatch[1];
+            const clean = String(body.identifier || '').trim();
+            if (!clean) {
+              return json({ statusCode: 400, message: 'Email ou numéro de téléphone requis.' }, 400);
+            }
+            const list = (storeStaffMap[sId] = storeStaffMap[sId] || []);
+            const member = {
+              userId: `usr-staff-${Date.now()}`,
+              fullName: clean.includes('@') ? clean.split('@')[0] : `Collaborateur ${clean.slice(-4)}`,
+              email: clean.includes('@') ? clean : undefined,
+              phone: !clean.includes('@') ? clean : undefined,
+              role: 'VENDOR_STAFF',
+              status: 'ACTIVE',
+              createdAt: new Date().toISOString(),
+            };
+            list.push(member);
+            json(member, 201);
+          });
+          return;
+        }
+        const vendorStaffDeleteMatch = path.match(/^\/vendors\/stores\/([^/]+)\/staff\/([^/]+)$/);
+        if (vendorStaffDeleteMatch && method === 'DELETE') {
+          const [, sId, mId] = vendorStaffDeleteMatch;
+          storeStaffMap[sId] = (storeStaffMap[sId] || []).filter((m) => m.userId !== mId);
+          return json({ removed: true, memberUserId: mId });
+        }
+
+        // --- AD CAMPAIGNS ---
+        if (path === '/ads/campaigns/mine' && method === 'GET') {
+          return json(adCampaigns);
+        }
+        if (path === '/ads/campaigns' && method === 'POST') {
+          readBody().then((body) => {
+            const camp = {
+              id: `ad-${Date.now()}`,
+              advertiserId: currentUser.id,
+              productId: body.productId || null,
+              type: body.type || 'SPONSORED_PRODUCT',
+              costModel: body.costModel || 'CPC',
+              budgetAmount: Number(body.budgetAmount || 15),
+              currency: body.currency || 'USD',
+              startAt: body.startAt || new Date().toISOString(),
+              endAt: body.endAt || new Date(Date.now() + 7 * 86400_000).toISOString(),
+              status: 'DRAFT',
+              impressions: 0,
+              clicks: 0,
+              createdAt: new Date().toISOString(),
+            };
+            adCampaigns.unshift(camp);
+            json(camp, 201);
+          });
+          return;
+        }
+        const adPayMatch = path.match(/^\/ads\/campaigns\/([^/]+)\/pay$/);
+        if (adPayMatch && method === 'POST') {
+          readBody().then((body) => {
+            const camp = adCampaigns.find((c) => c.id === adPayMatch[1]);
+            if (!camp) return json({ statusCode: 404, message: 'Campagne introuvable.' }, 404);
+            camp.status = 'ACTIVE';
+            if (camp.productId) {
+              const p = products.find((item) => item.id === camp.productId);
+              if (p) {
+                p.isFeatured = true;
+                p.boostedUntil = camp.endAt;
+              }
+            }
+            json({
+              method: body.methodCode || 'MOBILE_MONEY_MPESA',
+              paymentRef: `ZG-AD-${Date.now().toString().slice(-6)}`,
+              status: 'ACTIVE',
+              campaignId: camp.id,
+            });
+          });
+          return;
+        }
+        const adStatsMatch = path.match(/^\/ads\/campaigns\/([^/]+)\/stats$/);
+        if (adStatsMatch && method === 'GET') {
+          const camp = adCampaigns.find((c) => c.id === adStatsMatch[1]);
+          if (!camp) return json({ statusCode: 404, message: 'Campagne introuvable.' }, 404);
+          const impressions = camp.impressions ?? 0;
+          const clicks = camp.clicks ?? 0;
+          return json({
+            campaign: camp,
+            impressions,
+            clicks,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+          });
+        }
+
         if (path === '/sms/bulk' && method === 'POST') {
           readBody().then((body) => {
             const requested: string[] = Array.isArray(body.phoneNumbers) ? body.phoneNumbers : [];
             const allowed = requested.filter((num) => !smsOptOuts.has(String(num).trim()));
             const skippedOptOutCount = requested.length - allowed.length;
+            allowed.forEach((num, idx) => {
+              smsCallbackLogs.unshift({
+                id: `sms-log-${Date.now()}-${idx}`,
+                eventType: 'BULK_OUTBOUND',
+                phoneNumber: num,
+                status: 'Success',
+                message: String(body.message || ''),
+                receivedAt: new Date().toISOString(),
+              });
+            });
             json({
               sent: allowed.length > 0,
               provider: 'AFRICASTALKING',
               totalRequested: requested.length,
               sentCount: allowed.length,
               skippedOptOutCount,
+              summary: `Sent to ${allowed.length}/${requested.length}`,
               summaryMessage: `Sent to ${allowed.length}/${requested.length}`,
               recipients: allowed.map((num, idx) => ({
                 number: num,
@@ -5810,11 +6241,141 @@ function mockApiPlugin(): Plugin {
           });
           return;
         }
+        if (path === '/sms/inbox' && method === 'GET') {
+          return json(smsInboxMessages);
+        }
         if (path === '/sms/opt-outs' && method === 'GET') {
           return json(Array.from(smsOptOuts));
         }
         if (path === '/sms/callbacks/logs' && method === 'GET') {
           return json(smsCallbackLogs.slice(0, 50));
+        }
+
+        // --- REAL-TIME PRESENCE & VISITORS ---
+        if (path === '/presence/heartbeat' && method === 'POST') {
+          readBody().then((body) => {
+            prunePresence();
+            const now = Date.now();
+            const visitorId = String(body?.visitorId || `vis-${now}`).trim().slice(0, 64);
+            const currentPath = sanitizeMockPath(body?.currentPath);
+            const authHeader = String(req.headers.authorization || '');
+            const isAuthenticated = authHeader.startsWith('Bearer ') && authHeader.length > 10;
+
+            if (isAuthenticated) {
+              presenceVisitors.delete(visitorId);
+              const roles = (currentUser.roles || []).map((r: any) => String(r.role || r));
+              const primaryRole = resolveMockPrimaryRole(roles);
+              const existing = presenceUsers.get(currentUser.id);
+              if (existing) {
+                existing.visitorIds.add(visitorId);
+                existing.currentPath = currentPath;
+                existing.lastSeenAt = now;
+                existing.fullName = currentUser.fullName;
+                existing.roles = roles;
+                existing.primaryRole = primaryRole;
+              } else {
+                presenceUsers.set(currentUser.id, {
+                  userId: currentUser.id,
+                  fullName: currentUser.fullName,
+                  email: currentUser.email || null,
+                  roles,
+                  primaryRole,
+                  visitorIds: new Set([visitorId]),
+                  currentPath,
+                  channel: 'HTTP',
+                  connectedSince: new Date(now).toISOString(),
+                  lastSeenAt: now,
+                });
+              }
+              presenceRecentlyOffline.delete(currentUser.id);
+              presenceLastSeen.set(currentUser.id, now);
+              return json({
+                userId: currentUser.id,
+                isOnline: true,
+                lastSeenAt: new Date(now).toISOString(),
+              });
+            }
+
+            const existingVisitor = presenceVisitors.get(visitorId);
+            const uaSummary = summarizeMockUa(String(req.headers['user-agent'] || ''));
+            if (existingVisitor) {
+              if (existingVisitor.currentPath !== currentPath) {
+                existingVisitor.pageViews += 1;
+              }
+              existingVisitor.currentPath = currentPath;
+              existingVisitor.lastSeenAt = now;
+              if (uaSummary !== 'Navigateur Web') existingVisitor.userAgentSummary = uaSummary;
+            } else {
+              presenceVisitors.set(visitorId, {
+                visitorId,
+                currentPath,
+                userAgentSummary: uaSummary,
+                startedAt: new Date(now).toISOString(),
+                lastSeenAt: now,
+                pageViews: 1,
+              });
+            }
+            return json({
+              isOnline: true,
+              lastSeenAt: new Date(now).toISOString(),
+            });
+          });
+          return;
+        }
+
+        if (path === '/presence/leave' && method === 'POST') {
+          readBody().then((body) => {
+            const visitorId = String(body?.visitorId || '').trim().slice(0, 64);
+            if (visitorId) {
+              presenceVisitors.delete(visitorId);
+            }
+            const authHeader = String(req.headers.authorization || '');
+            const isAuthenticated = authHeader.startsWith('Bearer ') && authHeader.length > 10;
+            const now = Date.now();
+            for (const [userId, session] of presenceUsers.entries()) {
+              const matchesUser = isAuthenticated && userId === currentUser.id;
+              const matchesVisitor = Boolean(visitorId && session.visitorIds.has(visitorId));
+              if (matchesUser || matchesVisitor) {
+                if (visitorId) session.visitorIds.delete(visitorId);
+                if (session.visitorIds.size === 0 || matchesUser) {
+                  presenceUsers.delete(userId);
+                  presenceLastSeen.set(userId, now);
+                  presenceRecentlyOffline.set(userId, {
+                    userId,
+                    fullName: session.fullName,
+                    primaryRole: session.primaryRole,
+                    lastSeenAt: now,
+                  });
+                }
+              }
+            }
+            return json({ ok: true });
+          });
+          return;
+        }
+
+        if (path === '/presence/users' && method === 'GET') {
+          const searchParams = new URL(url, 'http://localhost').searchParams;
+          const rawIds = (searchParams.get('ids') || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 50);
+          const users: Record<string, { isOnline: boolean; lastSeenAt: string | null }> = {};
+          for (const id of rawIds) {
+            users[id] = getMockUserPresence(id);
+          }
+          return json({ users });
+        }
+
+        if (path === '/presence/admin/live' && method === 'GET') {
+          const authHeader = String(req.headers.authorization || '');
+          const isAuthenticated = authHeader.startsWith('Bearer ') && authHeader.length > 10;
+          const userRoles = (currentUser.roles || []).map((r: any) => String(r.role || r));
+          if (!isAuthenticated || (!userRoles.includes('ADMIN') && !userRoles.includes('SUPER_ADMIN'))) {
+            return json({ statusCode: 403, message: 'Accès réservé aux administrateurs.' }, 403);
+          }
+          return json(getMockAdminPresenceSnapshot());
         }
 
         if (method === 'GET') {

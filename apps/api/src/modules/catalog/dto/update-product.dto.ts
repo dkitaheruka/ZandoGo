@@ -79,4 +79,33 @@ export class UpdateProductDto {
   @IsOptional()
   @IsBoolean()
   removeVideo?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  pricingUnit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  audience?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  lowStockThreshold?: number;
+
+  @IsOptional()
+  @IsArray()
+  priceTiers?: any[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  serviceDuration?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  fulfillmentDetails?: string;
 }

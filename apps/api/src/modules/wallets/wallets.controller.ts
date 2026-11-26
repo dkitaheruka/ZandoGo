@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { IsIn } from 'class-validator';
 import { RoleName } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -8,14 +9,19 @@ import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.
 import { RequestPayoutDto } from './dto/request-payout.dto';
 import { WalletsService } from './wallets.service';
 
+class AdminUpdatePayoutStatusDto {
+  @IsIn(['APPROVED', 'PAID', 'REJECTED'])
+  status: 'APPROVED' | 'PAID' | 'REJECTED';
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('wallets')
 export class WalletsController {
   constructor(private readonly wallets: WalletsService) {}
 
   @Get('mine')
-  getMine(@CurrentUser() user: AuthenticatedUser) {
-    return this.wallets.getMyWallets(user);
+  getMine(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId?: string) {
+    return this.wallets.getMyWallets(user, storeId);
   }
 
   @Get(':walletId/ledger')
@@ -33,6 +39,24 @@ export class WalletsController {
   @Post('payout')
   requestPayoutAlias(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
     return this.wallets.requestPayout(user, dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
+  @Get('admin/payouts')
+  listAllPayouts() {
+    return this.wallets.listAllPayoutsForAdmin();
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)
+  @Patch('admin/payouts/:id/status')
+  updatePayoutStatus(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: AdminUpdatePayoutStatusDto,
+  ) {
+    return this.wallets.updatePayoutStatusByAdmin(admin, id, dto.status);
   }
 
   @UseGuards(RolesGuard)

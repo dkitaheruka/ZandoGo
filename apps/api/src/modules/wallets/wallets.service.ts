@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Currency, PayoutStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { resolveVendorSettlementEligibility } from '../../common/commerce-rules';
@@ -326,11 +327,110 @@ export class WalletsService {
     });
   }
 
-  async getMyWallets(user: AuthenticatedUser) {
+  async getMyWallets(user: AuthenticatedUser, storeId?: string) {
+    if (storeId) {
+      const store = await this.prisma.vendorStore.findUnique({ where: { id: storeId } });
+      if (!store) throw new NotFoundException('Boutique introuvable');
+      const isAdmin = user.roles.some(
+        (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
+      );
+      const isStaff = user.roles.some(
+        (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === storeId,
+      );
+      if (store.ownerId !== user.id && !isStaff && !isAdmin) {
+        throw new ForbiddenException("Vous n'avez pas accès au portefeuille de cette boutique");
+      }
+
+      const wallet = await this.prisma.wallet.upsert({
+        where: {
+          ownerType_ownerId_currency: { ownerType: 'VENDOR', ownerId: storeId, currency: Currency.USD },
+        },
+        update: {},
+        create: { ownerType: 'VENDOR', ownerId: storeId, currency: Currency.USD, balance: 0 },
+      });
+
+      const [txs, payouts, pricing, immediateSetting, disputes] = await Promise.all([
+        this.prisma.walletTransaction.findMany({ where: { walletId: wallet.id } }),
+        this.prisma.payoutRequest.findMany({
+          where: { walletId: wallet.id },
+          orderBy: { createdAt: 'desc' },
+          take: 25,
+        }),
+        this.finance.getPlatformPricing(),
+        this.prisma.platformSetting.findUnique({
+          where: { key: `store_immediate_withdrawal:${storeId}` },
+        }),
+        this.prisma.dispute.findMany({
+          where: {
+            status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+            order: { subOrders: { some: { storeId } } },
+          },
+          include: { order: { select: { orderNumber: true } } },
+        }),
+      ]);
+
+      const now = Date.now();
+      let availableCredits = 0;
+      let availableDebits = 0;
+      let lockedEscrowUsd = 0;
+      let totalEarnedUsd = 0;
+
+      for (const tx of txs) {
+        const amt = Number(tx.amount);
+        if (tx.type === 'CREDIT') {
+          if (tx.referenceType === 'ORDER_PAYOUT') totalEarnedUsd += amt;
+          const matured = tx.availableAt && new Date(tx.availableAt).getTime() <= now;
+          if (tx.status === 'AVAILABLE' || (tx.status === 'LOCKED' && matured)) {
+            availableCredits += amt;
+          } else {
+            lockedEscrowUsd += amt;
+          }
+        } else {
+          availableDebits += amt;
+        }
+      }
+
+      const immediateWithdrawalAuthorized =
+        Boolean(pricing.allowImmediateVendorWithdrawal) ||
+        Boolean((immediateSetting?.value as { enabled?: boolean } | null)?.enabled);
+
+      return {
+        storeId,
+        walletId: wallet.id,
+        availableBalanceUsd: Math.max(0, Number((availableCredits - availableDebits).toFixed(2))),
+        lockedEscrowUsd: Math.max(0, Number(lockedEscrowUsd.toFixed(2))),
+        totalEarnedUsd: Number(totalEarnedUsd.toFixed(2)),
+        payoutBlocked: store.payoutBlocked,
+        payoutBlockReason: store.payoutBlockReason,
+        immediateWithdrawalAuthorized,
+        blockingDisputes: disputes
+          .filter((d) => d.payoutFrozen || store.payoutBlocked)
+          .map((d) => ({
+            id: d.id,
+            orderNumber: d.order.orderNumber,
+            reason: d.reasonCategory,
+          })),
+        payouts: payouts.map((p) => ({
+          id: p.id,
+          amountUsd: Number(p.amount),
+          method: p.method,
+          destination: p.destination || undefined,
+          status: p.status,
+          createdAt: p.createdAt.toISOString(),
+        })),
+      };
+    }
+
     const stores = await this.prisma.vendorStore.findMany({ where: { ownerId: user.id } });
     const storeIds = stores.map((s) => s.id);
+    const agent = await this.prisma.deliveryAgent.findUnique({ where: { userId: user.id } });
     return this.prisma.wallet.findMany({
-      where: { ownerType: 'VENDOR', ownerId: { in: storeIds } },
+      where: {
+        OR: [
+          { ownerType: 'VENDOR', ownerId: { in: storeIds } },
+          ...(agent ? [{ ownerType: 'DELIVERY_AGENT' as const, ownerId: agent.id }] : []),
+        ],
+      },
     });
   }
 
@@ -415,7 +515,29 @@ export class WalletsService {
    * activé le retrait immédiat globalement ou pour cette boutique, sans litige ouvert).
    */
   async requestPayout(user: AuthenticatedUser, dto: RequestPayoutDto) {
-    const wallet = await this.assertOwnership(user, dto.walletId);
+    const requestedAmount = Number(dto.amount ?? dto.amountUsd ?? 0);
+    if (!requestedAmount || requestedAmount < 0.01) {
+      throw new BadRequestException('Un montant valide supérieur à 0 est requis');
+    }
+
+    let targetWalletId = dto.walletId;
+    if (!targetWalletId && dto.storeId) {
+      const storeWallet = await this.prisma.wallet.upsert({
+        where: {
+          ownerType_ownerId_currency: { ownerType: 'VENDOR', ownerId: dto.storeId, currency: Currency.USD },
+        },
+        update: {},
+        create: { ownerType: 'VENDOR', ownerId: dto.storeId, currency: Currency.USD, balance: 0 },
+      });
+      targetWalletId = storeWallet.id;
+    }
+    if (!targetWalletId) {
+      throw new BadRequestException('Identifiant de portefeuille ou de boutique requis');
+    }
+
+    const wallet = await this.assertOwnership(user, targetWalletId);
+    const payoutAmount = requestedAmount;
+    const payoutDestination = dto.destination?.trim() || dto.phoneNumber?.trim() || undefined;
     const pricing = await this.finance.getPlatformPricing();
     let immediateAuthorized = Boolean(pricing.allowImmediateVendorWithdrawal);
 
@@ -483,7 +605,7 @@ export class WalletsService {
       ]);
 
       const balance = Number(creditsAgg._sum.amount ?? 0) - Number(debitsAgg._sum.amount ?? 0);
-      if (dto.amount > balance) {
+      if (payoutAmount > balance) {
         throw new BadRequestException(
           `Solde disponible insuffisant (disponible : ${balance.toFixed(2)} ${wallet.currency})`,
         );
@@ -492,8 +614,9 @@ export class WalletsService {
       const createdPayout = await tx.payoutRequest.create({
         data: {
           walletId: wallet.id,
-          amount: dto.amount,
+          amount: payoutAmount,
           method: dto.method,
+          destination: payoutDestination,
           status: immediateAuthorized ? 'APPROVED' : 'REQUESTED',
         },
       });
@@ -502,7 +625,7 @@ export class WalletsService {
         tx,
         wallet.id,
         'DEBIT',
-        dto.amount,
+        payoutAmount,
         'WITHDRAWAL',
         createdPayout.id,
         'AVAILABLE',
@@ -513,13 +636,18 @@ export class WalletsService {
     });
 
     const appUrl = this.config.get<string>('APP_URL') ?? '';
-    const b2cPhone = dto.phoneNumber || dto.method.match(/\+?\d{9,15}/)?.[0];
+    const b2cPhone =
+      dto.phoneNumber ||
+      (payoutDestination && /^\+?\d{9,15}$/.test(payoutDestination.replace(/\s+/g, ''))
+        ? payoutDestination.replace(/\s+/g, '')
+        : undefined) ||
+      dto.method.match(/\+?\d{9,15}/)?.[0];
     let paymentRef: string | undefined;
 
     if (b2cPhone) {
       try {
         const b2c = await this.maishaPay.initiateB2cTransfer({
-          amount: dto.amount,
+          amount: payoutAmount,
           currency: wallet.currency as 'USD' | 'CDF',
           recipientPhone: b2cPhone,
           operator: dto.operator || dto.method,
@@ -535,7 +663,6 @@ export class WalletsService {
           });
         }
       } catch (err) {
-        // Remboursement compensatoire atomique si l'appel de décaissement échoue
         await this.prisma.$transaction(async (tx) => {
           await tx.payoutRequest.update({
             where: { id: payout.id },
@@ -545,7 +672,7 @@ export class WalletsService {
             tx,
             wallet.id,
             'CREDIT',
-            dto.amount,
+            payoutAmount,
             'REFUND',
             payout.id,
             'AVAILABLE',
@@ -561,9 +688,108 @@ export class WalletsService {
       action: 'payout_request.create',
       entityType: 'PayoutRequest',
       entityId: payout.id,
-      afterState: { amount: dto.amount, method: dto.method, paymentRef, immediateAuthorized },
+      afterState: {
+        amount: payoutAmount,
+        method: dto.method,
+        destination: payoutDestination,
+        paymentRef,
+        immediateAuthorized,
+      },
     });
 
-    return { ...payout, paymentRef, immediateAuthorized };
+    return { ...payout, amountUsd: Number(payout.amount), paymentRef, immediateAuthorized };
+  }
+
+  async listAllPayoutsForAdmin() {
+    const payouts = await this.prisma.payoutRequest.findMany({
+      include: { wallet: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    const vendorStoreIds = payouts
+      .filter((p) => p.wallet.ownerType === 'VENDOR')
+      .map((p) => p.wallet.ownerId);
+    const stores = await this.prisma.vendorStore.findMany({
+      where: { id: { in: vendorStoreIds } },
+      include: { owner: { select: { fullName: true, email: true, phone: true } } },
+    });
+    const storeMap = new Map(stores.map((s) => [s.id, s]));
+
+    return payouts.map((p) => {
+      const store = p.wallet.ownerType === 'VENDOR' ? storeMap.get(p.wallet.ownerId) : undefined;
+      return {
+        id: p.id,
+        walletId: p.walletId,
+        storeId: store?.id,
+        storeName: store?.storeName || p.wallet.ownerType,
+        ownerName: store?.owner?.fullName || 'Marchand / Livreur',
+        ownerEmail: store?.owner?.email || store?.owner?.phone || '',
+        amount: Number(p.amount),
+        currency: p.wallet.currency,
+        method: p.method,
+        destination: p.destination || undefined,
+        status: p.status,
+        processedBy: p.processedBy || undefined,
+        processedAt: p.processedAt ? p.processedAt.toISOString() : undefined,
+        createdAt: p.createdAt.toISOString(),
+      };
+    });
+  }
+
+  async updatePayoutStatusByAdmin(
+    admin: AuthenticatedUser,
+    payoutId: string,
+    status: 'APPROVED' | 'PAID' | 'REJECTED',
+  ) {
+    const existing = await this.prisma.payoutRequest.findUnique({
+      where: { id: payoutId },
+      include: { wallet: true },
+    });
+    if (!existing) throw new NotFoundException('Demande de retrait introuvable');
+    if (existing.status === 'REJECTED' || existing.status === 'PAID') {
+      throw new BadRequestException(`Cette demande est déjà finalisée (${existing.status})`);
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.payoutRequest.update({
+        where: { id: payoutId },
+        data: {
+          status: status as PayoutStatus,
+          processedBy: admin.id,
+          processedAt: new Date(),
+        },
+      });
+
+      if (status === 'REJECTED') {
+        await this.writeLedgerEntry(
+          tx,
+          existing.walletId,
+          'CREDIT',
+          Number(existing.amount),
+          'REFUND',
+          payoutId,
+          'AVAILABLE',
+          null,
+        );
+      }
+
+      return row;
+    });
+
+    await this.audit.log({
+      actorUserId: admin.id,
+      action: `payout_request.${status.toLowerCase()}`,
+      entityType: 'PayoutRequest',
+      entityId: payoutId,
+      beforeState: { status: existing.status },
+      afterState: { status: updated.status },
+    });
+
+    return {
+      id: updated.id,
+      status: updated.status,
+      processedAt: updated.processedAt,
+    };
   }
 }

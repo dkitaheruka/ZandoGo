@@ -5,18 +5,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import { RoleName } from '@prisma/client';
+import { PaymentMethodCode, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { evaluateCustomerDisputeEligibility } from '../../common/commerce-rules';
+import { haversineDistanceKm } from '../../common/geo/haversine';
 import { CatalogService } from '../catalog/catalog.service';
+import { PaymentsService } from '../payments/payments.service';
+import { ChatService } from '../realtime/chat.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CheckoutDto } from './dto/checkout.dto';
 import { UpdateSubOrderStatusDto } from './dto/update-suborder-status.dto';
 import { buildOfficialInvoicePayload, OfficialInvoicePayload } from './invoice.helpers';
 
-// Sous-commande calculée avant écriture en base : un tableau non typé laissait TypeScript
-// deviner la forme, et plus rien ne garantissait que les montants calculés soient complets.
 interface SubOrderDraft {
   storeId: string;
   subtotal: number;
@@ -25,14 +26,14 @@ interface SubOrderDraft {
   items: { productVariantId: string; quantity: number; unitPrice: number; totalPrice: number }[];
 }
 
-// Champs de boutique visibles par un client : jamais commissionRate (négociée, confidentielle).
 const PUBLIC_STORE_SELECT = { select: { id: true, storeName: true, slug: true, city: true } } as const;
 
-/**
- * La commission prélevée par la plateforme n'est destinée ni au client ni à
- * l'acheteur d'un autre vendeur : seuls le vendeur concerné et les admins
- * la voient.
- */
+const DELIVERY_FEE_BY_OPTION: Record<string, number> = {
+  EXPRESS_MOTO: 3.5,
+  PARTNER_LOGISTICS: 8.0,
+  CLICK_AND_COLLECT: 0,
+};
+
 function withoutCommission<T extends object>(subOrder: T) {
   const { commissionAmount: _a, commissionRateApplied: _r, ...rest } = subOrder as T & {
     commissionAmount?: unknown;
@@ -53,25 +54,119 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly catalog: CatalogService,
+    private readonly payments: PaymentsService,
+    private readonly chat: ChatService,
   ) {}
 
-  /**
-   * Transforme le panier en commande. Une commande peut regrouper des
-   * produits de plusieurs vendeurs : on crée une sous-commande (`OrderSubOrder`)
-   * par vendeur, avec son propre taux de commission FIGÉ au moment T
-   * (jamais recalculé rétroactivement, même si le taux de la catégorie
-   * change ensuite — c'est le principe de traçabilité comptable).
-   */
-  async checkout(user: AuthenticatedUser, dto: CheckoutDto) {
-    const address = await this.prisma.address.findUnique({ where: { id: dto.deliveryAddressId } });
-    if (!address || address.userId !== user.id) {
-      throw new BadRequestException('Adresse de livraison invalide');
+  private isOrderPaid(order: {
+    status: string;
+    paidAt?: Date | null;
+    paymentTransactions?: { status: string }[];
+  }): boolean {
+    if (order.paidAt) return true;
+    if (order.paymentTransactions?.some((t) => t.status === 'SUCCESS')) return true;
+    return ['PAID', 'PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status) &&
+      order.status !== 'PROCESSING'
+      ? true
+      : Boolean(order.paymentTransactions?.some((t) => t.status === 'SUCCESS'));
+  }
+
+  private buildDigitalDownloadsForOrder(order: {
+    id: string;
+    status: string;
+    paidAt?: Date | null;
+    paymentTransactions?: { status: string }[];
+    subOrders?: {
+      items?: {
+        variant?: {
+          product?: {
+            id: string;
+            title: string;
+            productType?: string;
+            digitalFileName?: string | null;
+            digitalFileSize?: string | null;
+          };
+        };
+      }[];
+    }[];
+  }) {
+    const paid = this.isOrderPaid(order);
+    if (!paid) return [];
+
+    const seen = new Set<string>();
+    const downloads: {
+      productId: string;
+      title: string;
+      fileName: string;
+      fileSize?: string;
+      downloadUrl: string;
+    }[] = [];
+
+    for (const so of order.subOrders || []) {
+      for (const item of so.items || []) {
+        const prod = item.variant?.product;
+        if (!prod || prod.productType !== 'DIGITAL' || seen.has(prod.id)) continue;
+        seen.add(prod.id);
+        const token = this.catalog.signDigitalDownloadToken(prod.id, order.id);
+        downloads.push({
+          productId: prod.id,
+          title: prod.title,
+          fileName: prod.digitalFileName || `${prod.title.toLowerCase().replace(/[^a-z0-9]+/gi, '-')}.pdf`,
+          fileSize: prod.digitalFileSize || undefined,
+          downloadUrl: `/api/downloads/${prod.id}/${order.id}?token=${token}`,
+        });
+      }
     }
 
+    return downloads;
+  }
+
+  private formatOrderSummary(order: any) {
+    const paid = this.isOrderPaid(order);
+    const latestTx = order.paymentTransactions?.[0];
+    const allItems = (order.subOrders || []).flatMap((so: any) => so.items || []);
+    const noDeliveryNeeded =
+      allItems.length > 0 &&
+      allItems.every((it: any) => it.variant?.product?.productType === 'DIGITAL');
+
+    return {
+      ...order,
+      deliveryFee: Number(order.shippingFee ?? 0),
+      isPaid: paid,
+      paymentStatus: paid ? 'PAID' : latestTx?.status === 'PENDING' ? 'PENDING' : 'UNPAID',
+      paymentOperator: order.paymentMethodCode || latestTx?.methodCode || undefined,
+      paymentRef: order.paymentRef || latestTx?.providerReference || undefined,
+      noDeliveryNeeded,
+      digitalDownloads: this.buildDigitalDownloadsForOrder(order),
+      subOrders: (order.subOrders || []).map((so: any) => {
+        const mappedItems = (so.items || []).map((it: any) => ({
+          ...it,
+          productTitle: it.variant?.product?.title,
+          productType: it.variant?.product?.productType,
+          productImage: it.variant?.product?.images?.[0]?.url,
+        }));
+        return {
+          ...so,
+          items: mappedItems,
+          productTitle: mappedItems[0]?.productTitle,
+        };
+      }),
+    };
+  }
+
+  async checkout(user: AuthenticatedUser, dto: CheckoutDto) {
     const cart = await this.prisma.cart.findUnique({
       where: { customerId: user.id },
       include: {
-        items: { include: { variant: { include: { product: { include: { store: true } } } } } },
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: { include: { store: true, images: { orderBy: { position: 'asc' }, take: 1 } } },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -79,7 +174,26 @@ export class OrdersService {
       throw new BadRequestException('Le panier est vide');
     }
 
-    // Vérification du stock avant toute écriture
+    const onlyDigital = cart.items.every(
+      (item) => item.variant.product.productType === 'DIGITAL',
+    );
+
+    let address = null;
+    if (!onlyDigital) {
+      if (!dto.deliveryAddressId) {
+        throw new BadRequestException('Adresse de livraison requise pour une commande physique ou service');
+      }
+      address = await this.prisma.address.findUnique({ where: { id: dto.deliveryAddressId } });
+      if (!address || address.userId !== user.id) {
+        throw new BadRequestException('Adresse de livraison invalide');
+      }
+    } else if (dto.deliveryAddressId) {
+      address = await this.prisma.address.findUnique({ where: { id: dto.deliveryAddressId } });
+      if (!address || address.userId !== user.id) {
+        address = null;
+      }
+    }
+
     for (const item of cart.items) {
       if (item.variant.stockQty < item.quantity) {
         throw new BadRequestException(
@@ -91,7 +205,6 @@ export class OrdersService {
       }
     }
 
-    // Regroupement par boutique
     const itemsByStore = new Map<string, typeof cart.items>();
     for (const item of cart.items) {
       const storeId = item.variant.product.storeId;
@@ -143,8 +256,11 @@ export class OrdersService {
       });
     }
 
-    const shippingFee = 0; // calculé par le module delivery lors de l'assignation
-    const total = orderSubtotal + shippingFee;
+    const deliveryOptionCode = onlyDigital ? 'DIGITAL_INSTANT' : dto.deliveryOptionId || 'EXPRESS_MOTO';
+    const shippingFee = onlyDigital
+      ? 0
+      : DELIVERY_FEE_BY_OPTION[deliveryOptionCode] ?? 3.5;
+    const total = Number((orderSubtotal + shippingFee).toFixed(2));
 
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
@@ -157,7 +273,8 @@ export class OrdersService {
           shippingFee,
           platformFee: 0,
           total,
-          deliveryAddressId: dto.deliveryAddressId,
+          deliveryAddressId: address?.id ?? null,
+          deliveryOptionCode,
           subOrders: {
             create: subOrdersData.map((so) => ({
               storeId: so.storeId,
@@ -172,10 +289,9 @@ export class OrdersService {
             create: { toStatus: 'PENDING_PAYMENT', changedByUserId: user.id, note: 'Commande créée' },
           },
         },
-        include: { subOrders: { include: { items: true } } },
+        include: { subOrders: { include: { items: true, store: PUBLIC_STORE_SELECT } } },
       });
 
-      // Décrémente le stock de chaque variante
       for (const item of cart.items) {
         await tx.productVariant.update({
           where: { id: item.productVariantId },
@@ -183,7 +299,6 @@ export class OrdersService {
         });
       }
 
-      // Vide le panier
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
 
       return created;
@@ -197,7 +312,38 @@ export class OrdersService {
       afterState: { orderNumber, total, subOrdersCount: order.subOrders.length },
     });
 
-    return order;
+    let deliveryConversationId: string | undefined;
+    let distanceKm: number | undefined;
+    if (!onlyDigital) {
+      if (address?.latitude && address?.longitude) {
+        distanceKm = Number(
+          haversineDistanceKm(-1.6741, 29.2285, address.latitude, address.longitude).toFixed(1),
+        );
+      }
+      try {
+        const conv = await this.chat.startConversation(user, {
+          type: 'CUSTOMER_DELIVERY',
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          storeName: 'Livreur ZandoGo Express',
+          productTitle: `Livraison ${order.orderNumber}`,
+          productPriceUsd: shippingFee,
+        });
+        deliveryConversationId = conv.id;
+      } catch {
+        // Ne bloque jamais le checkout s'il n'y a pas encore de livreur disponible en base
+      }
+    }
+
+    return {
+      ...order,
+      orderId: order.id,
+      deliveryFee: shippingFee,
+      noDeliveryNeeded: onlyDigital,
+      deliveryConversationId,
+      distanceKm,
+      digitalDownloads: [],
+    };
   }
 
   async getMyOrders(user: AuthenticatedUser) {
@@ -205,9 +351,32 @@ export class OrdersService {
       where: { customerId: user.id },
       include: {
         deliveryAddress: true,
-        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        paymentTransactions: { orderBy: { createdAt: 'desc' }, take: 2 },
         statusHistory: { orderBy: { createdAt: 'desc' } },
-        subOrders: { include: { items: true, delivery: true, store: PUBLIC_STORE_SELECT } },
+        subOrders: {
+          include: {
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        title: true,
+                        productType: true,
+                        digitalFileName: true,
+                        digitalFileSize: true,
+                        images: { orderBy: { position: 'asc' }, take: 1 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            delivery: true,
+            store: PUBLIC_STORE_SELECT,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -216,7 +385,7 @@ export class OrdersService {
       const deliveredAt =
         order.subOrders.find((so) => so.delivery?.deliveredAt)?.delivery?.deliveredAt ??
         order.statusHistory.find((h) => h.toStatus === 'DELIVERED')?.createdAt ??
-        order.paymentTransactions[0]?.confirmedAt ??
+        order.paymentTransactions.find((t) => t.status === 'SUCCESS')?.confirmedAt ??
         order.createdAt;
       const disputeEligibility = evaluateCustomerDisputeEligibility({
         isCustomer: true,
@@ -225,10 +394,11 @@ export class OrdersService {
         referenceDate: deliveredAt,
       });
 
+      const formatted = this.formatOrderSummary(order);
       return {
-        ...order,
+        ...formatted,
         disputeEligibility,
-        subOrders: order.subOrders.map(withoutCommission),
+        subOrders: formatted.subOrders.map(withoutCommission),
       };
     });
   }
@@ -238,8 +408,31 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         deliveryAddress: true,
-        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
-        subOrders: { include: { items: true, delivery: true, store: PUBLIC_STORE_SELECT } },
+        paymentTransactions: { orderBy: { createdAt: 'desc' }, take: 2 },
+        subOrders: {
+          include: {
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        title: true,
+                        productType: true,
+                        digitalFileName: true,
+                        digitalFileSize: true,
+                        images: { orderBy: { position: 'asc' }, take: 1 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            delivery: true,
+            store: PUBLIC_STORE_SELECT,
+          },
+        },
         statusHistory: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -247,7 +440,11 @@ export class OrdersService {
 
     const isCustomer = order.customerId === user.id;
     const isVendorOfSubOrder = order.subOrders.some((so) =>
-      user.roles.some((r) => r.role === RoleName.VENDOR_OWNER && r.scopeId === so.storeId),
+      user.roles.some(
+        (r) =>
+          (r.role === RoleName.VENDOR_OWNER || r.role === RoleName.VENDOR_STAFF) &&
+          r.scopeId === so.storeId,
+      ),
     );
     const isAdmin = user.roles.some(
       (r) => r.role === RoleName.ADMIN || r.role === RoleName.SUPER_ADMIN,
@@ -260,7 +457,7 @@ export class OrdersService {
     const deliveredAt =
       order.subOrders.find((so) => so.delivery?.deliveredAt)?.delivery?.deliveredAt ??
       order.statusHistory.find((h) => h.toStatus === 'DELIVERED')?.createdAt ??
-      order.paymentTransactions[0]?.confirmedAt ??
+      order.paymentTransactions.find((t) => t.status === 'SUCCESS')?.confirmedAt ??
       order.createdAt;
     const disputeEligibility = evaluateCustomerDisputeEligibility({
       isCustomer: isCustomer && !isVendorOfSubOrder,
@@ -269,20 +466,18 @@ export class OrdersService {
       referenceDate: deliveredAt,
     });
 
-    // Ordre de priorité volontaire : admin > client > vendeur. Quelqu'un qui est à la
-    // fois client et vendeur de la même commande reçoit la vue la plus restrictive
-    // sur les commissions (celle du client).
-    if (isAdmin) return { ...order, disputeEligibility };
+    const formatted = this.formatOrderSummary(order);
+
+    if (isAdmin) return { ...formatted, disputeEligibility };
 
     if (isCustomer) {
-      return { ...order, disputeEligibility, subOrders: order.subOrders.map(withoutCommission) };
+      return { ...formatted, disputeEligibility, subOrders: formatted.subOrders.map(withoutCommission) };
     }
 
-    // Vendeur : uniquement SES sous-commandes. Il ne voit ni les articles et montants
-    // des autres vendeurs d'une commande multi-vendeur, ni le total global, ni
-    // l'historique (dont les notes citent les autres boutiques).
     const myStoreIds = new Set(
-      user.roles.filter((r) => r.role === RoleName.VENDOR_OWNER && r.scopeId).map((r) => r.scopeId),
+      user.roles
+        .filter((r) => (r.role === RoleName.VENDOR_OWNER || r.role === RoleName.VENDOR_STAFF) && r.scopeId)
+        .map((r) => r.scopeId),
     );
     return {
       id: order.id,
@@ -290,8 +485,113 @@ export class OrdersService {
       status: order.status,
       currency: order.currency,
       createdAt: order.createdAt,
-      subOrders: order.subOrders.filter((so) => myStoreIds.has(so.storeId)),
+      subOrders: formatted.subOrders.filter((so: any) => myStoreIds.has(so.storeId)),
     };
+  }
+
+  async payOrder(
+    user: AuthenticatedUser,
+    orderId: string,
+    dto: { methodCode: PaymentMethodCode; phoneNumber?: string },
+  ) {
+    const result = await this.payments.initiatePayment(user, {
+      orderId,
+      methodCode: dto.methodCode,
+      phoneNumber: dto.phoneNumber,
+    });
+
+    const refreshed = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        paymentTransactions: { where: { status: 'SUCCESS' }, orderBy: { createdAt: 'desc' }, take: 1 },
+        subOrders: {
+          include: {
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        title: true,
+                        productType: true,
+                        digitalFileName: true,
+                        digitalFileSize: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      ...result,
+      digitalDownloads: refreshed ? this.buildDigitalDownloadsForOrder(refreshed) : [],
+    };
+  }
+
+  async releaseEscrow(user: AuthenticatedUser, orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { subOrders: { include: { store: true } } },
+    });
+    if (!order) throw new NotFoundException('Commande introuvable');
+    if (order.customerId !== user.id) {
+      throw new ForbiddenException("Cette commande ne vous appartient pas");
+    }
+
+    const openDispute = await this.prisma.dispute.findFirst({
+      where: {
+        orderId,
+        status: { in: ['OPEN', 'AWAITING_VENDOR_RESPONSE', 'UNDER_ADMIN_REVIEW'] },
+      },
+    });
+    if (openDispute) {
+      throw new BadRequestException('Un litige est ouvert sur cette commande : libération impossible.');
+    }
+
+    const now = new Date();
+    const releasableSubOrderIds = order.subOrders
+      .filter((so) => !so.store.payoutBlocked)
+      .map((so) => so.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: orderId }, data: { status: 'DELIVERED' } });
+      await tx.orderSubOrder.updateMany({ where: { orderId }, data: { status: 'DELIVERED' } });
+      if (releasableSubOrderIds.length > 0) {
+        await tx.walletTransaction.updateMany({
+          where: {
+            referenceType: 'ORDER_PAYOUT',
+            referenceId: { in: releasableSubOrderIds },
+            status: 'LOCKED',
+          },
+          data: { status: 'AVAILABLE', availableAt: now },
+        });
+      }
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: order.status,
+          toStatus: 'DELIVERED',
+          changedByUserId: user.id,
+          note: 'Réception confirmée par l’acheteur — fonds séquestre libérés au vendeur',
+        },
+      });
+    });
+
+    await this.audit.log({
+      actorUserId: user.id,
+      action: 'order.release_escrow',
+      entityType: 'Order',
+      entityId: orderId,
+      afterState: { releasableSubOrderIds },
+    });
+
+    return { released: true, orderId };
   }
 
   async getOrderInvoice(user: AuthenticatedUser, orderId: string): Promise<OfficialInvoicePayload> {
@@ -308,7 +608,14 @@ export class OrdersService {
               include: {
                 variant: {
                   include: {
-                    product: { select: { title: true } },
+                    product: {
+                      select: {
+                        id: true,
+                        title: true,
+                        productType: true,
+                        digitalFileName: true,
+                      },
+                    },
                   },
                 },
               },
@@ -331,9 +638,9 @@ export class OrdersService {
       where: { fromCurrency: 'USD', toCurrency: 'CDF' },
       orderBy: { effectiveFrom: 'desc' },
     });
-    const pricingSetting = await this.prisma.platformSetting.findUnique({
-      where: { key: 'platform_pricing' },
-    });
+    const pricingSetting =
+      (await this.prisma.platformSetting.findUnique({ where: { key: 'vendor_pricing' } })) ??
+      (await this.prisma.platformSetting.findUnique({ where: { key: 'platform_pricing' } }));
     const configuredFeePct = Number(
       (pricingSetting?.value as { paymentTransactionFeePercent?: number } | null)
         ?.paymentTransactionFeePercent ?? 3.5,
@@ -343,7 +650,11 @@ export class OrdersService {
     const itemsSubtotalUsd = Number(order.subtotal ?? 0);
     const deliveryFeeUsd = Number(order.shippingFee ?? 0);
     const baseTotal = itemsSubtotalUsd + deliveryFeeUsd;
-    const txAmount = latestPayment ? Number(latestPayment.amount) : undefined;
+    const txAmount = latestPayment
+      ? Number(latestPayment.amount)
+      : order.chargedTotal
+      ? Number(order.chargedTotal)
+      : undefined;
     const txFeeAmount =
       txAmount !== undefined && txAmount > baseTotal ? Number((txAmount - baseTotal).toFixed(2)) : undefined;
 
@@ -359,6 +670,7 @@ export class OrdersService {
           title: item.variant.product.title,
           storeName: so.store.storeName,
           variantLabel: variantParts.length > 0 ? variantParts.join(' · ') : item.variant.sku,
+          productType: item.variant.product.productType,
           quantity: item.quantity,
           unitPriceUsd: Number(item.unitPrice),
           totalPriceUsd: Number(item.totalPrice),
@@ -366,9 +678,11 @@ export class OrdersService {
       }),
     );
 
-    const isPaid =
-      latestPayment?.status === 'SUCCESS' ||
-      ['PAID', 'PROCESSING', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status);
+    const isPaid = this.isOrderPaid(order);
+    const digitalDownloads = this.buildDigitalDownloadsForOrder(order).map((d) => ({
+      title: d.title,
+      fileName: d.fileName,
+    }));
 
     return buildOfficialInvoicePayload({
       orderId: order.id,
@@ -376,11 +690,15 @@ export class OrdersService {
       orderStatus: order.status,
       currency: order.currency,
       createdAt: order.createdAt,
-      paidAt: latestPayment?.confirmedAt ?? null,
+      paidAt: order.paidAt ?? latestPayment?.confirmedAt ?? null,
       subtotalUsd: itemsSubtotalUsd,
       deliveryFeeUsd,
       transactionFeePercent:
-        latestPayment?.methodCode === 'CASH_ON_DELIVERY' ? 0 : configuredFeePct,
+        (order.paymentMethodCode || latestPayment?.methodCode) === 'CASH_ON_DELIVERY'
+          ? 0
+          : order.transactionFeePercent !== null && order.transactionFeePercent !== undefined
+          ? Number(order.transactionFeePercent)
+          : configuredFeePct,
       transactionFeeAmountUsd: txFeeAmount,
       chargedTotalUsd: txAmount,
       exchangeRateUsdToCdf: latestPayment?.exchangeRateApplied
@@ -389,8 +707,8 @@ export class OrdersService {
         ? Number(latestRate.rate)
         : 2850,
       isPaid,
-      paymentMethodCode: latestPayment?.methodCode ?? null,
-      providerReference: latestPayment?.providerReference ?? null,
+      paymentMethodCode: order.paymentMethodCode || latestPayment?.methodCode || null,
+      providerReference: order.paymentRef || latestPayment?.providerReference || null,
       buyer: {
         id: order.customer.id,
         fullName: order.customer.fullName,
@@ -411,14 +729,10 @@ export class OrdersService {
         subtotalUsd: Number(so.subtotal),
       })),
       items,
+      digitalDownloads: digitalDownloads.length > 0 ? digitalDownloads : undefined,
     });
   }
 
-  /**
-   * Le vendeur ne peut faire progresser que PENDING → PROCESSING → SHIPPED.
-   * Le passage à DELIVERED est réservé au module delivery (preuve de
-   * livraison obligatoire), jamais déclaré manuellement par le vendeur.
-   */
   async updateSubOrderStatus(
     user: AuthenticatedUser,
     subOrderId: string,
@@ -435,8 +749,11 @@ export class OrdersService {
       include: { store: true, order: true },
     });
     if (!subOrder) throw new NotFoundException('Sous-commande introuvable');
-    if (subOrder.store.ownerId !== user.id) {
-      throw new ForbiddenException("Vous n'êtes pas propriétaire de cette boutique");
+    const isStaff = user.roles.some(
+      (r) => r.role === RoleName.VENDOR_STAFF && r.scopeId === subOrder.storeId,
+    );
+    if (subOrder.store.ownerId !== user.id && !isStaff) {
+      throw new ForbiddenException("Vous n'êtes pas membre autorisé de cette boutique");
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -449,7 +766,7 @@ export class OrdersService {
         data: {
           orderId: subOrder.orderId,
           fromStatus: subOrder.order.status,
-          toStatus: subOrder.order.status, // le statut global de la commande est recalculé séparément
+          toStatus: subOrder.order.status,
           changedByUserId: user.id,
           note: `Sous-commande ${subOrder.store.storeName} : ${dto.status}${dto.note ? ' — ' + dto.note : ''}`,
         },

@@ -102,6 +102,7 @@ export function CreateProductPage() {
   const [digitalFileName, setDigitalFileName] = useState('');
   const [digitalFileSize, setDigitalFileSize] = useState('15 Mo');
   const [digitalFileDataUrl, setDigitalFileDataUrl] = useState<string>('');
+  const [digitalFileObj, setDigitalFileObj] = useState<File | null>(null);
   const [digitalFileUrl, setDigitalFileUrl] = useState('');
   const [serviceDuration, setServiceDuration] = useState('');
   const [fulfillmentDetails, setFulfillmentDetails] = useState('');
@@ -257,6 +258,7 @@ export function CreateProductPage() {
   async function handlePdfSelect(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setDigitalFileObj(file);
     setDigitalFileName(file.name);
     const sizeMb = Math.max(0.1, file.size / (1024 * 1024));
     setDigitalFileSize(`${sizeMb.toFixed(1)} Mo`);
@@ -500,17 +502,31 @@ export function CreateProductPage() {
                 },
               ];
 
+        let digitalFileKey: string | undefined;
+        if (productType === 'DIGITAL' && digitalFileObj) {
+          digitalFileKey = await uploadFile(digitalFileObj, 'DIGITAL_DOCUMENT');
+        }
+
         await api.post(`/vendors/stores/${storeId}/products`, {
           title,
           slug,
           description,
           productType,
           categoryId,
+          pricingUnit,
+          audience,
           basePriceUsd: parsedPrice,
+          lowStockThreshold: Number(lowStockThreshold) || 5,
+          priceTiers: validTiers.length > 0 ? validTiers : undefined,
           imageKeys,
           imageAltTexts,
           videoKey,
           videoDurationSec: videoKey ? uploadedVideo?.durationSec ?? 10 : undefined,
+          digitalFileKey,
+          digitalFileName: productType === 'DIGITAL' ? digitalFileName || undefined : undefined,
+          digitalFileSize: productType === 'DIGITAL' ? digitalFileSize || undefined : undefined,
+          serviceDuration: productType === 'SERVICE' ? serviceDuration || undefined : undefined,
+          fulfillmentDetails: productType === 'SERVICE' ? fulfillmentDetails || undefined : undefined,
           variants: apiVariants,
         });
       } else {
