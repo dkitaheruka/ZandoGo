@@ -72,7 +72,59 @@ const COLOR_PRESETS = [
   { name: 'Blanc Pur', hex: '#F8FAFC' },
 ];
 
-const SIZE_QUICK_PICKS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Standard'];
+type VariantProfile = 'SIMPLE' | 'CLOTHING' | 'SHOES' | 'ELECTRONICS';
+
+const VARIANT_PROFILES: {
+  key: VariantProfile;
+  label: string;
+  hint: string;
+  sizeLabel: string;
+  sizePlaceholder: string;
+  quickPicks: string[];
+}[] = [
+  {
+    key: 'SIMPLE',
+    label: 'Sans taille (Appareils / Simple)',
+    hint: 'Électroménager, téléphones simples, beauté, alimentation, accessoires…',
+    sizeLabel: 'Taille (non requise)',
+    sizePlaceholder: 'Laissez vide si non applicable',
+    quickPicks: [],
+  },
+  {
+    key: 'CLOTHING',
+    label: 'Vêtements (XS → 3XL)',
+    hint: 'Habits, pagnes, chemises, robes, vestes…',
+    sizeLabel: 'Taille vêtement',
+    sizePlaceholder: 'ex: M, XL, Unique',
+    quickPicks: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', 'Unique'],
+  },
+  {
+    key: 'SHOES',
+    label: 'Chaussures (Pointures 28 → 46)',
+    hint: 'Baskets, souliers, sandales, bottes (pointures EU)',
+    sizeLabel: 'Pointure (EU)',
+    sizePlaceholder: 'ex: 41, 42, 38',
+    quickPicks: ['28', '30', '32', '34', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'],
+  },
+  {
+    key: 'ELECTRONICS',
+    label: 'Appareils & Tech (Go, Pouces…)',
+    hint: 'Smartphones, PC, TV, groupes, frigos (capacité optionnelle)',
+    sizeLabel: 'Capacité / Format (optionnel)',
+    sizePlaceholder: 'ex: 128 Go, 43", 200L (ou vide)',
+    quickPicks: ['64 Go', '128 Go', '256 Go', '512 Go', '1 To', '32"', '43"', '55"'],
+  },
+];
+
+function detectVariantProfileFromCategory(categoryName?: string): VariantProfile {
+  const n = (categoryName || '').toLowerCase();
+  if (/chaussure|soulier|basket|sandale|botte|shoe/.test(n)) return 'SHOES';
+  if (/électron|electron|appareil|téléphone|telephone|informatique|tech|tv|audio|ménager|menager/.test(n)) {
+    return 'SIMPLE';
+  }
+  if (/mode|vêtement|vetement|habit|pagne|textile|fashion|couture/.test(n)) return 'CLOTHING';
+  return 'SIMPLE';
+}
 
 export function CreateProductPage() {
   const { storeId = 'store-1' } = useParams<{ storeId: string }>();
@@ -117,8 +169,11 @@ export function CreateProductPage() {
   } | null>(null);
   const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
 
+  const [variantProfile, setVariantProfile] = useState<VariantProfile>('SIMPLE');
+  const [profileManuallyChosen, setProfileManuallyChosen] = useState(false);
+
   const [variants, setVariants] = useState<VariantDraft[]>([
-    { id: 'v-1', size: 'M', color: 'Vert Sève', colorHex: '#26735B', sku: '', stockQty: '10', priceOverride: '' },
+    { id: 'v-1', size: '', color: '', colorHex: '', sku: '', stockQty: '10', priceOverride: '' },
   ]);
 
   const [priceTiers, setPriceTiers] = useState<PriceTierDraft[]>([
@@ -169,7 +224,16 @@ export function CreateProductPage() {
   useEffect(() => {
     api.get<Category[]>('/categories').then(({ data }) => {
       setCategories(data || []);
-      if (data && data[0]) setCategoryId(data[0].id);
+      if (data && data[0]) {
+        setCategoryId(data[0].id);
+        const detected = detectVariantProfileFromCategory(data[0].name);
+        setVariantProfile(detected);
+        if (detected === 'CLOTHING') {
+          setVariants([{ id: 'v-1', size: 'M', color: '', colorHex: '', sku: '', stockQty: '10', priceOverride: '' }]);
+        } else if (detected === 'SHOES') {
+          setVariants([{ id: 'v-1', size: '41', color: '', colorHex: '', sku: '', stockQty: '10', priceOverride: '' }]);
+        }
+      }
     });
     api
       .get<VendorStore>(`/vendors/stores/${storeId}`)
@@ -353,19 +417,52 @@ export function CreateProductPage() {
     }
   }
 
-  function addVariant() {
-    setVariants((prev) => [
-      ...prev,
-      {
-        id: `v-${Date.now()}-${prev.length}`,
-        size: 'L',
-        color: 'Noir Ébène',
-        colorHex: '#172320',
-        sku: '',
-        stockQty: '10',
-        priceOverride: basePriceUsd,
-      },
-    ]);
+  function handleChangeVariantProfile(nextProfile: VariantProfile, isManual = true) {
+    if (isManual) setProfileManuallyChosen(true);
+    setVariantProfile(nextProfile);
+    setVariants((prev) => {
+      if (nextProfile === 'SIMPLE') {
+        return prev.map((v) => ({ ...v, size: '' }));
+      }
+      if (prev.length === 1) {
+        const only = prev[0];
+        const isGenericDefault = ['', 'M', '41', '128 Go'].includes(only.size.trim());
+        if (isGenericDefault) {
+          const suggestedSize =
+            nextProfile === 'SHOES' ? '41' : nextProfile === 'CLOTHING' ? 'M' : '';
+          return [{ ...only, size: suggestedSize }];
+        }
+      }
+      return prev;
+    });
+  }
+
+  function addVariant(presetSize?: string) {
+    setVariants((prev) => {
+      const nextShoeIdx = prev.length;
+      const defaultShoes = ['39', '40', '41', '42', '43', '44', '45'];
+      const defaultClothing = ['S', 'M', 'L', 'XL', 'XXL'];
+      const autoSize =
+        presetSize !== undefined
+          ? presetSize
+          : variantProfile === 'SHOES'
+          ? defaultShoes[nextShoeIdx % defaultShoes.length]
+          : variantProfile === 'CLOTHING'
+          ? defaultClothing[nextShoeIdx % defaultClothing.length]
+          : '';
+      return [
+        ...prev,
+        {
+          id: `v-${Date.now()}-${prev.length}`,
+          size: autoSize,
+          color: '',
+          colorHex: '',
+          sku: '',
+          stockQty: stockQty || '10',
+          priceOverride: basePriceUsd,
+        },
+      ];
+    });
   }
 
   function updateVariant(id: string, patch: Partial<VariantDraft>) {
@@ -429,9 +526,9 @@ export function CreateProductPage() {
       const formattedVariants =
         productType === 'PHYSICAL'
           ? variants.map((v) => ({
-              size: v.size.trim() || undefined,
+              size: variantProfile === 'SIMPLE' ? undefined : v.size.trim() || undefined,
               color: v.color.trim() || undefined,
-              colorHex: v.colorHex || undefined,
+              colorHex: v.color.trim() && v.colorHex ? v.colorHex : undefined,
               sku: v.sku.trim() || undefined,
               stockQty: Number(v.stockQty || stockQty || 0),
               priceOverride: Number(v.priceOverride || parsedPrice),
@@ -486,9 +583,9 @@ export function CreateProductPage() {
                   v.sku.trim() ||
                   `${slug.slice(0, 12).toUpperCase()}-${idx + 1}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
                 attributes: {
-                  ...(v.size.trim() ? { size: v.size.trim() } : {}),
+                  ...(variantProfile !== 'SIMPLE' && v.size.trim() ? { size: v.size.trim() } : {}),
                   ...(v.color.trim() ? { color: v.color.trim() } : {}),
-                  ...(v.colorHex ? { colorHex: v.colorHex } : {}),
+                  ...(v.color.trim() && v.colorHex ? { colorHex: v.colorHex } : {}),
                 },
                 priceOverride: Number(v.priceOverride || parsedPrice),
                 stockQty: Number(v.stockQty || stockQty || 0),
@@ -585,7 +682,7 @@ export function CreateProductPage() {
             Publier une Offre au Catalogue ZandoGo
           </h1>
           <p className="mt-1 text-xs text-encre/70">
-            Téléversez les photos réelles du catalogue, définissez le public ciblé (Femme, Homme, Électronique, Pro), la facturation au kilomètre pour le transport, les variantes (tailles & couleurs) et les paliers de prix par quantité.
+            Téléversez les photos réelles du catalogue, définissez le public ciblé (Femme, Homme, Électronique, Pro), la facturation au kilomètre pour le transport, et choisissez selon votre produit : article simple sans taille (appareils), pointures de chaussures ou tailles de vêtements.
           </p>
         </div>
 
@@ -595,7 +692,7 @@ export function CreateProductPage() {
             [
               {
                 key: 'PHYSICAL' as const,
-                label: 'Bien Physique (Tailles / Couleurs)',
+                label: 'Bien Physique (Simple, Tailles, Pointures…)',
                 icon: Package,
                 iconClass: 'text-seve',
               },
@@ -861,7 +958,14 @@ export function CreateProductPage() {
               <select
                 required
                 value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  setCategoryId(nextId);
+                  if (!profileManuallyChosen) {
+                    const cat = categories.find((c) => c.id === nextId);
+                    handleChangeVariantProfile(detectVariantProfileFromCategory(cat?.name), false);
+                  }
+                }}
                 className="w-full rounded-card border border-encre/20 bg-brume/30 px-4 py-2.5 text-xs font-medium text-encre outline-none focus:border-seve"
               >
                 {categories.map((c) => (
@@ -913,181 +1017,271 @@ export function CreateProductPage() {
             </div>
           </div>
 
-          {/* Contextual Fields: Physical Inventory + Sizes & Colors Variants */}
+          {/* Contextual Fields: Physical Inventory + Optional Sizes / Shoe Pointures / Electronics */}
           {productType === 'PHYSICAL' && (
             <div className="space-y-4">
               <div className="p-4 rounded-card bg-brume/60 border border-encre/10 space-y-4">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider flex items-center gap-1.5">
-                    <Palette className="w-4 h-4 text-seve" />
-                    <span>Variantes : Tailles, Couleurs, Stock & Prix spécifiques</span>
-                  </h3>
+                  <div>
+                    <h3 className="text-xs font-display font-bold text-nuit uppercase tracking-wider flex items-center gap-1.5">
+                      <Palette className="w-4 h-4 text-seve" />
+                      <span>Options du produit (Tailles, Pointures, Couleurs & Stock)</span>
+                    </h3>
+                    <p className="text-[11px] text-encre/65 mt-0.5">
+                      Tout est facultatif : choisissez « Sans taille » pour les appareils/objets, « Chaussures » pour les pointures ou « Vêtements » pour les tailles textiles.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={addVariant}
+                    onClick={() => addVariant()}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-card bg-nuit text-brume text-[11px] font-display font-bold hover:bg-nuit/90 transition"
                   >
                     <Plus className="w-3.5 h-3.5 text-safran" />
-                    <span>Ajouter une variante</span>
+                    <span>{variantProfile === 'SIMPLE' ? 'Ajouter une couleur / version' : 'Ajouter une variante'}</span>
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  {variants.map((v, idx) => (
-                    <div key={v.id} className="p-3 rounded-card bg-white border border-encre/10 space-y-3">
-                      <div className="flex items-center justify-between text-[11px] font-bold text-nuit">
-                        <span>Variante #{idx + 1}</span>
-                        {variants.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeVariant(v.id)}
-                            className="text-wax hover:underline flex items-center gap-1 font-semibold"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Supprimer</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                        <div>
-                          <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Taille / Capacité
-                          </label>
-                          <input
-                            type="text"
-                            value={v.size}
-                            onChange={(e) => updateVariant(v.id, { size: e.target.value })}
-                            placeholder="ex: M, 42, 256 Go"
-                            className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
-                          />
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {SIZE_QUICK_PICKS.map((sz) => (
-                              <button
-                                key={sz}
-                                type="button"
-                                onClick={() => updateVariant(v.id, { size: sz })}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
-                                  v.size === sz
-                                    ? 'bg-nuit text-safran border-nuit'
-                                    : 'bg-brume text-encre/70 border-encre/15'
-                                }`}
-                              >
-                                {sz}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Couleur (prédéfinie ou personnalisée)
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="w-5 h-5 rounded-full border border-encre/25 shrink-0"
-                              style={{ backgroundColor: v.colorHex || '#172320' }}
-                              title={v.colorHex}
-                            />
-                            <input
-                              type="text"
-                              value={v.color}
-                              onChange={(e) => updateVariant(v.id, { color: e.target.value })}
-                              placeholder="Nom ex: Vert Kivu"
-                              className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
-                            />
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                            {COLOR_PRESETS.map((cp) => (
-                              <button
-                                key={cp.hex}
-                                type="button"
-                                title={cp.name}
-                                onClick={() => updateVariant(v.id, { color: cp.name, colorHex: cp.hex })}
-                                className={`w-4 h-4 rounded-full border ${
-                                  v.colorHex?.toLowerCase() === cp.hex.toLowerCase()
-                                    ? 'ring-2 ring-seve ring-offset-1 border-nuit'
-                                    : 'border-encre/25'
-                                }`}
-                                style={{ backgroundColor: cp.hex }}
-                              />
-                            ))}
-                          </div>
-                          {/* Couleur personnalisée libre */}
-                          <div className="mt-2 pt-1.5 border-t border-encre/10 flex items-center gap-2">
-                            <label
-                              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-seve cursor-pointer"
-                              title="Choisir une couleur personnalisée"
-                            >
-                              <input
-                                type="color"
-                                value={/^#[0-9A-Fa-f]{6}$/.test(v.colorHex) ? v.colorHex : '#26735B'}
-                                onChange={(e) => {
-                                  const pickedHex = e.target.value.toUpperCase();
-                                  const isPresetName = COLOR_PRESETS.some((cp) => cp.name === v.color);
-                                  updateVariant(v.id, {
-                                    colorHex: pickedHex,
-                                    color: !v.color.trim() || isPresetName ? `Personnalisée (${pickedHex})` : v.color,
-                                  });
-                                }}
-                                className="w-6 h-5 p-0 border border-encre/20 rounded cursor-pointer bg-transparent"
-                              />
-                              <span>Couleur perso</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={v.colorHex}
-                              onChange={(e) => updateVariant(v.id, { colorHex: e.target.value })}
-                              placeholder="#RRGGBB"
-                              className="w-20 rounded border border-encre/20 px-1.5 py-0.5 text-[10px] font-mono text-nuit outline-none focus:border-seve"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Code SKU (optionnel)
-                          </label>
-                          <input
-                            type="text"
-                            value={v.sku}
-                            onChange={(e) => updateVariant(v.id, { sku: e.target.value })}
-                            placeholder="ex: ROB-WAX-M"
-                            className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-mono outline-none focus:border-seve"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Stock disponible *
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={v.stockQty}
-                            onChange={(e) => updateVariant(v.id, { stockQty: e.target.value })}
-                            className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-display font-bold outline-none focus:border-seve"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
-                            Prix variante ($ USD)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min={0.2}
-                            value={v.priceOverride}
-                            onChange={(e) => updateVariant(v.id, { priceOverride: e.target.value })}
-                            placeholder={basePriceUsd || 'Prix de base'}
-                            className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-display font-bold text-seve outline-none focus:border-seve"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                {/* Product Type Variant Profile Selector */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                  {VARIANT_PROFILES.map((prof) => {
+                    const active = variantProfile === prof.key;
+                    return (
+                      <button
+                        key={prof.key}
+                        type="button"
+                        onClick={() => handleChangeVariantProfile(prof.key, true)}
+                        className={`p-2.5 rounded-card border text-left transition ${
+                          active
+                            ? 'bg-nuit text-brume border-nuit shadow-xs'
+                            : 'bg-white text-encre border-encre/15 hover:border-seve'
+                        }`}
+                      >
+                        <span className={`block text-[11px] font-display font-bold ${active ? 'text-safran' : 'text-nuit'}`}>
+                          {prof.label}
+                        </span>
+                        <span className={`block text-[10px] mt-0.5 leading-snug ${active ? 'text-brume/75' : 'text-encre/60'}`}>
+                          {prof.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                {(() => {
+                  const activeProfile =
+                    VARIANT_PROFILES.find((p) => p.key === variantProfile) || VARIANT_PROFILES[0];
+                  return (
+                    <div className="space-y-3">
+                      {variants.map((v, idx) => (
+                        <div key={v.id} className="p-3 rounded-card bg-white border border-encre/10 space-y-3">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-nuit">
+                            <span>
+                              {variantProfile === 'SIMPLE' && variants.length === 1
+                                ? 'Stock & tarif du produit (sans taille requise)'
+                                : `Variante #${idx + 1}`}
+                            </span>
+                            {variants.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeVariant(v.id)}
+                                className="text-wax hover:underline flex items-center gap-1 font-semibold"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Supprimer</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div
+                            className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${
+                              variantProfile === 'SIMPLE' ? 'lg:grid-cols-4' : 'lg:grid-cols-5'
+                            }`}
+                          >
+                            {variantProfile !== 'SIMPLE' && (
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-[10px] font-semibold uppercase text-encre/60">
+                                    {activeProfile.sizeLabel}
+                                  </label>
+                                  {v.size && (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateVariant(v.id, { size: '' })}
+                                      className="text-[10px] font-semibold text-wax hover:underline"
+                                    >
+                                      Aucune
+                                    </button>
+                                  )}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={v.size}
+                                  onChange={(e) => updateVariant(v.id, { size: e.target.value })}
+                                  placeholder={activeProfile.sizePlaceholder}
+                                  className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                                />
+                                {activeProfile.quickPicks.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {activeProfile.quickPicks.map((sz) => (
+                                      <button
+                                        key={sz}
+                                        type="button"
+                                        onClick={() => updateVariant(v.id, { size: v.size === sz ? '' : sz })}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                          v.size === sz
+                                            ? 'bg-nuit text-safran border-nuit'
+                                            : 'bg-brume text-encre/70 border-encre/15 hover:border-seve'
+                                        }`}
+                                      >
+                                        {sz}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[10px] font-semibold uppercase text-encre/60">
+                                  Couleur (optionnelle)
+                                </label>
+                                {(v.color || v.colorHex) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => updateVariant(v.id, { color: '', colorHex: '' })}
+                                    className="text-[10px] font-semibold text-wax hover:underline"
+                                  >
+                                    Aucune couleur
+                                  </button>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {v.colorHex ? (
+                                  <span
+                                    className="w-5 h-5 rounded-full border border-encre/25 shrink-0"
+                                    style={{ backgroundColor: v.colorHex }}
+                                    title={v.colorHex}
+                                  />
+                                ) : (
+                                  <span
+                                    className="w-5 h-5 rounded-full border border-dashed border-encre/30 bg-brume/60 shrink-0"
+                                    title="Aucune couleur sélectionnée"
+                                  />
+                                )}
+                                <input
+                                  type="text"
+                                  value={v.color}
+                                  onChange={(e) =>
+                                    updateVariant(v.id, {
+                                      color: e.target.value,
+                                      colorHex: e.target.value.trim() ? v.colorHex || '#172320' : '',
+                                    })
+                                  }
+                                  placeholder="Optionnel (ex: Noir, Argent)"
+                                  className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs outline-none focus:border-seve"
+                                />
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {COLOR_PRESETS.map((cp) => (
+                                  <button
+                                    key={cp.hex}
+                                    type="button"
+                                    title={cp.name}
+                                    onClick={() =>
+                                      updateVariant(
+                                        v.id,
+                                        v.colorHex?.toLowerCase() === cp.hex.toLowerCase()
+                                          ? { color: '', colorHex: '' }
+                                          : { color: cp.name, colorHex: cp.hex },
+                                      )
+                                    }
+                                    className={`w-4 h-4 rounded-full border ${
+                                      v.colorHex?.toLowerCase() === cp.hex.toLowerCase()
+                                        ? 'ring-2 ring-seve ring-offset-1 border-nuit'
+                                        : 'border-encre/25'
+                                    }`}
+                                    style={{ backgroundColor: cp.hex }}
+                                  />
+                                ))}
+                              </div>
+                              {/* Couleur personnalisée libre */}
+                              <div className="mt-2 pt-1.5 border-t border-encre/10 flex items-center gap-2">
+                                <label
+                                  className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-seve cursor-pointer"
+                                  title="Choisir une couleur personnalisée"
+                                >
+                                  <input
+                                    type="color"
+                                    value={/^#[0-9A-Fa-f]{6}$/.test(v.colorHex) ? v.colorHex : '#26735B'}
+                                    onChange={(e) => {
+                                      const pickedHex = e.target.value.toUpperCase();
+                                      const isPresetName = COLOR_PRESETS.some((cp) => cp.name === v.color);
+                                      updateVariant(v.id, {
+                                        colorHex: pickedHex,
+                                        color: !v.color.trim() || isPresetName ? `Personnalisée (${pickedHex})` : v.color,
+                                      });
+                                    }}
+                                    className="w-6 h-5 p-0 border border-encre/20 rounded cursor-pointer bg-transparent"
+                                  />
+                                  <span>Couleur perso</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={v.colorHex}
+                                  onChange={(e) => updateVariant(v.id, { colorHex: e.target.value })}
+                                  placeholder="#RRGGBB"
+                                  className="w-20 rounded border border-encre/20 px-1.5 py-0.5 text-[10px] font-mono text-nuit outline-none focus:border-seve"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
+                                Code SKU (optionnel)
+                              </label>
+                              <input
+                                type="text"
+                                value={v.sku}
+                                onChange={(e) => updateVariant(v.id, { sku: e.target.value })}
+                                placeholder="ex: TV-SAMSUNG-43"
+                                className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-mono outline-none focus:border-seve"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
+                                Stock disponible *
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={v.stockQty}
+                                onChange={(e) => updateVariant(v.id, { stockQty: e.target.value })}
+                                className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-display font-bold outline-none focus:border-seve"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-semibold uppercase text-encre/60 mb-1">
+                                Prix variante ($ USD)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min={0.2}
+                                value={v.priceOverride}
+                                onChange={(e) => updateVariant(v.id, { priceOverride: e.target.value })}
+                                placeholder={basePriceUsd || 'Prix de base'}
+                                className="w-full rounded-card border border-encre/20 px-2.5 py-1.5 text-xs font-display font-bold text-seve outline-none focus:border-seve"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-encre/10">
                   <div>

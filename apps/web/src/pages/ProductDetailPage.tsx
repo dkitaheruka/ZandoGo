@@ -824,11 +824,25 @@ export function ProductDetailPage() {
                 </div>
               )}
 
-              {distinctSizes.length > 0 && (
+              {distinctSizes.length > 0 && (() => {
+                const isShoeSizes = distinctSizes.every((s) =>
+                  /^(2[0-9]|3[0-9]|4[0-9]|5[0-2])(\.5)?$/.test(s.trim()),
+                );
+                const isSpecSizes =
+                  !isShoeSizes &&
+                  distinctSizes.every((s) =>
+                    /(go|to|gb|tb|mo|mb|w|kw|v|hz|mah|l|kg|cm|mm|"|pouces)$/i.test(s.trim()),
+                  );
+                const sizeLabel = isShoeSizes
+                  ? 'Pointure'
+                  : isSpecSizes
+                  ? 'Capacité / Format'
+                  : 'Taille / Format';
+                return (
                 <div>
                   <div className="flex items-center justify-between text-xs mb-2">
                     <span className="font-display font-semibold uppercase tracking-wider text-encre/60">
-                      Taille / Format
+                      {sizeLabel}
                     </span>
                     <span className="font-semibold text-nuit">{selectedSize}</span>
                   </div>
@@ -852,7 +866,8 @@ export function ProductDetailPage() {
                     })}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {distinctColors.length === 0 && distinctSizes.length === 0 && product.variants.length > 1 && (
                 <div>
