@@ -43,6 +43,7 @@ export function ProductCard({ product }: { product: Product }) {
   const [failedIdxMap, setFailedIdxMap] = useState<Record<number, boolean>>({});
   const [cartBusy, setCartBusy] = useState(false);
   const [addedFeedback, setAddedFeedback] = useState(false);
+  const [cartError, setCartError] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveIdx(0);
@@ -110,16 +111,29 @@ export function ProductCard({ product }: { product: Product }) {
       navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
     }
+    const productVariantId = product.variants?.[0]?.id;
+    if (!productVariantId) {
+      setCartError('Aucune variante disponible pour cet article.');
+      return;
+    }
+
+    setCartError(null);
     setCartBusy(true);
     try {
       await api.post('/cart/items', {
-        productVariantId: product.variants?.[0]?.id || product.id,
-        productId: product.id,
+        productVariantId,
         quantity: product.minOrderQty || 1,
       });
       await refreshCart();
       setAddedFeedback(true);
       setTimeout(() => setAddedFeedback(false), 2000);
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      setCartError(
+        Array.isArray(message)
+          ? message.join(' ')
+          : (message ?? "Impossible d'ajouter cet article au panier. Réessayez."),
+      );
     } finally {
       setCartBusy(false);
     }
@@ -376,33 +390,41 @@ export function ProductCard({ product }: { product: Product }) {
               </div>
             </div>
           </div>
-
-          <button
-            type="button"
-            disabled={isOutOfStock || cartBusy}
-            onClick={handleQuickAddToCart}
-            className={`mt-auto w-full inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-card text-[11px] font-display font-bold transition shadow-2xs ${
-              isOutOfStock
-                ? 'bg-encre/10 text-encre/40 cursor-not-allowed'
-                : addedFeedback
-                ? 'bg-seve text-brume'
-                : 'bg-nuit hover:bg-seve text-brume'
-            }`}
-          >
-            {addedFeedback ? (
-              <>
-                <Check className="w-3 h-3 text-safran" />
-                <span>Ajouté ✓</span>
-              </>
-            ) : (
-              <>
-                <ShoppingCart className="w-3 h-3 text-safran" />
-                <span>{cartBusy ? 'Ajout…' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}</span>
-              </>
-            )}
-          </button>
         </div>
       </Link>
+
+      <div className="p-2 pt-0">
+        <button
+          type="button"
+          disabled={isOutOfStock || cartBusy}
+          aria-busy={cartBusy}
+          onClick={handleQuickAddToCart}
+          className={`mt-auto w-full inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-card text-[11px] font-display font-bold transition shadow-2xs ${
+            isOutOfStock
+              ? 'bg-encre/10 text-encre/40 cursor-not-allowed'
+              : addedFeedback
+              ? 'bg-seve text-brume'
+              : 'bg-nuit hover:bg-seve text-brume'
+          }`}
+        >
+          {addedFeedback ? (
+            <>
+              <Check className="w-3 h-3 text-safran" />
+              <span>Ajouté ✓</span>
+            </>
+          ) : (
+            <>
+              <ShoppingCart className="w-3 h-3 text-safran" />
+              <span>{cartBusy ? 'Ajout…' : isOutOfStock ? 'Épuisé' : 'Ajouter au panier'}</span>
+            </>
+          )}
+        </button>
+        {cartError && (
+          <p role="alert" className="mt-1 text-xs leading-4 text-wax">
+            {cartError}
+          </p>
+        )}
+      </div>
     </article>
   );
 }

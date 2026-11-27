@@ -36,10 +36,16 @@ La liste d'avancement plus bas décrit la conception prévue; elle ne signifie p
 
 ## Démarrage local
 
+### Lancement en un clic sous Windows
+
+Après avoir configuré `.env`, installé les dépendances et démarré PostgreSQL, double-cliquez sur [`Lancer-ZandoGo.bat`](./Lancer-ZandoGo.bat). Le lanceur vérifie la connexion à PostgreSQL, démarre l'API et le frontend s'ils ne tournent pas déjà, puis ouvre `http://localhost:3002`. Il ne lance ni migration ni seed. Les fenêtres de l'API et de Vite restent ouvertes pendant l'utilisation.
+
+### Installation et lancement manuel
+
 ```bash
 # 1. Préparer l'environnement (à faire une seule fois)
-cp apps/api/.env.example apps/api/.env
-# → éditer les secrets (JWT, MaishaPay, Stripe, Gemini) avant d'aller plus loin
+cp .env.example .env
+# → renseigner DATABASE_URL et remplacer les secrets JWT d'exemple
 
 # 2. Installer les dépendances de toutes les applications (à faire une seule fois)
 npm ci
@@ -49,19 +55,26 @@ cd ../..
 ```
 
 ```bash
-# 3. Appliquer les migrations sur une base PostgreSQL existante
-cd apps/api
-npm run prisma:deploy
-cd ../..
+# 3. Démarrer PostgreSQL et appliquer les migrations
+docker compose up -d postgres redis
+npm run prisma:deploy --workspace=@ecommerce/api
 ```
 
-Une fois cette préparation terminée et PostgreSQL démarré, lancer depuis la racine du dépôt `npm run dev` pour démarrer l'API et le frontend ensemble. Arrêter les applications avec `Ctrl+C`.
+Dans un premier terminal, lancer l'API avec `npm run dev:api`. Dans un terminal PowerShell séparé, lancer le frontend avec le proxy vers l'API :
 
-Pour lancer les services de base avec Docker Compose à la place du PostgreSQL local, exécuter d'abord `docker compose up -d postgres redis`. Le mode local fonctionne sans Redis pour une seule instance de l'API ; les notifications temps réel entre plusieurs instances nécessitent Redis. En production, `REDIS_URL` est obligatoire. Le mot de passe PostgreSQL Compose par défaut est `postgres`; si `POSTGRES_PASSWORD` est défini, utiliser la même valeur dans `DATABASE_URL` de `apps/api/.env`. Le frontend utilise `VITE_API_PROXY_TARGET` (par défaut `http://localhost:3000`) pour joindre l'API. Si nécessaire, copier `apps/web/.env.example` vers `apps/web/.env.local` et configurer `VITE_STRIPE_PUBLISHABLE_KEY`.
+```powershell
+$env:VITE_API_URL = "/api"
+$env:VITE_API_PROXY_TARGET = "http://localhost:3001"
+npm run dev --workspace=@ecommerce/web -- --port 3002 --strictPort
+```
 
-Pour les essais locaux sans stockage S3, régler `UPLOADS_DRIVER=local` dans `apps/api/.env`. Les documents KYC sont alors conservés dans `apps/api/uploads/` et ne sont pas publiés par le serveur web. Ce mode est réservé au développement; en production, utiliser un stockage S3 privé.
+Ouvrir `http://localhost:3002`. `npm run build` compile l'API et le frontend.
 
-Pour préparer les fichiers statiques utilisés par Caddy dans Compose, exécuter `npm run build` depuis `apps/web`.
+Compose utilise PostgreSQL sur `localhost:5432`, base `ecommerce`, utilisateur `ecommerce` et mot de passe `postgres` par défaut. Si `POSTGRES_PASSWORD` est défini, synchroniser cette valeur avec `DATABASE_URL`. Pour un PostgreSQL local différent, adapter `DATABASE_URL` dans `.env`. Le mode local fonctionne sans Redis pour une seule instance; Redis est obligatoire en production. N'exécuter le seed que sur une base de développement, jamais sur une base de production.
+
+Pour les essais locaux sans stockage S3, régler `UPLOADS_DRIVER=local` dans le `.env` racine. Les documents KYC sont alors conservés dans `apps/api/uploads/` et ne sont pas publiés par le serveur web. Ce mode est réservé au développement; en production, utiliser un stockage S3 privé.
+
+Pour préparer les fichiers statiques utilisés par Caddy dans Compose, exécuter `npm run build` depuis la racine.
 
 ## Avancement
 

@@ -74,6 +74,7 @@ export function ProductDetailPage() {
   const [variantId, setVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<'idle' | 'adding' | 'added' | 'error'>('idle');
+  const [cartError, setCartError] = useState<string | null>(null);
   const [contactError, setContactError] = useState<string | null>(null);
   const [activeMediaIdx, setActiveMediaIdx] = useState(0);
 
@@ -222,12 +223,26 @@ export function ProductDetailPage() {
       navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`);
       return;
     }
+    const productVariantId = variantId || product?.variants[0]?.id;
+    if (!productVariantId) {
+      setCartError('Aucune variante disponible pour cet article.');
+      setStatus('error');
+      return;
+    }
+
+    setCartError(null);
     setStatus('adding');
     try {
-      await api.post('/cart/items', { productVariantId: variantId || product?.id, productId: product?.id, quantity });
+      await api.post('/cart/items', { productVariantId, quantity });
       await refreshCart();
       setStatus('added');
-    } catch {
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      setCartError(
+        Array.isArray(message)
+          ? message.join(' ')
+          : (message ?? "Impossible d'ajouter cet article au panier. Réessayez."),
+      );
       setStatus('error');
     }
   }
@@ -1033,6 +1048,12 @@ export function ProductDetailPage() {
                 <span>Discuter & Négocier (Prix & Transport)</span>
               </button>
             </div>
+
+            {status === 'error' && (
+              <p role="alert" className="rounded-card border border-wax/25 bg-wax/10 p-3 text-xs text-wax">
+                {cartError || "Impossible d'ajouter cet article au panier. Réessayez."}
+              </p>
+            )}
 
             {status === 'added' && (
               <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-card bg-seve/10 border border-seve/30 text-xs">

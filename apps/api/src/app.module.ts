@@ -24,7 +24,10 @@ import { NegotiationsModule } from './modules/negotiations/negotiations.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['../../.env', '.env'],
+    }),
     // Plafond global appliqué à toutes les routes via APP_GUARD (surchargeable par @Throttle / @SkipThrottle)
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,

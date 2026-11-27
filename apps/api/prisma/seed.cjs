@@ -4,7 +4,7 @@ const { PrismaPg } = require('@prisma/adapter-pg');
 const bcrypt = require('bcrypt');
 
 const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/zandogo?schema=public',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/zandogo?schema=public',
 });
 const prisma = new PrismaClient({ adapter });
 
@@ -71,34 +71,34 @@ async function main() {
 
   // 2. Comptes de test & administration (idempotent)
   const adminUser = await upsertUserWithRole({
-    email: process.env.SEED_ADMIN_EMAIL || 'admin@zandogo.cd',
-    phone: process.env.SEED_ADMIN_PHONE || '+243810000001',
-    password: process.env.SEED_ADMIN_PASSWORD || 'ZandoGoAdmin2026!',
-    fullName: 'Super Admin ZandoGo',
+    email: process.env.SEED_ADMIN_EMAIL || 'dkitaheruka@gmail.com',
+    phone: process.env.SEED_ADMIN_PHONE || '+243987489410',
+    password: process.env.SEED_ADMIN_PASSWORD || 'Kit@heruka2006',
+    fullName: 'David Kitaheruka (Super Admin)',
     role: 'SUPER_ADMIN',
   });
 
   const vendorUser = await upsertUserWithRole({
-    email: 'vendeur@zandogo.cd',
-    phone: '+243820001122',
-    password: 'ZandoGoUser2026!',
-    fullName: 'Espérance Kavira (Vendeur)',
+    email: 'sabuni@gmail.com',
+    phone: '+243972343390',
+    password: 'sabuni1234',
+    fullName: 'Aristote SABUNI (Vendeur)',
     role: 'VENDOR_OWNER',
   });
 
   const buyerUser = await upsertUserWithRole({
-    email: 'acheteur@zandogo.cd',
-    phone: '+243970002233',
-    password: 'ZandoGoUser2026!',
-    fullName: 'Jean-Baptiste Kambale',
+    email: 'fidel@gmail.com',
+    phone: '+243878410936',
+    password: 'fidel1234',
+    fullName: 'Fidel MUHAMIRIZA (Acheteur)',
     role: 'CUSTOMER',
   });
 
   const driverUser = await upsertUserWithRole({
-    email: 'livreur@zandogo.cd',
-    phone: '+243890003344',
-    password: 'ZandoGoUser2026!',
-    fullName: 'Patrick Muhindo (Coursier Moto)',
+    email: 'david@gmail.com',
+    phone: '+243899999999',
+    password: 'david1234',
+    fullName: 'David (Coursier Moto)',
     role: 'DELIVERY_AGENT',
   });
 

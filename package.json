@@ -6,16 +6,27 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@ecommerce/web",
-    "build": "npm run build --workspace=@ecommerce/web && rm -rf dist && cp -r apps/web/dist dist",
+    "dev:api": "npm run start:dev --workspace=@ecommerce/api",
+    "build": "npm run build --workspace=@ecommerce/api && npm run build --workspace=@ecommerce/web && node -e \"const fs=require('node:fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('apps/web/dist','dist',{recursive:true})\"",
     "preview": "npm run preview --workspace=@ecommerce/web",
-    "lint": "npm run typecheck --workspace=@ecommerce/web"
+    "lint": "npm run typecheck --workspace=@ecommerce/web && npm run typecheck --workspace=@ecommerce/api"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
+    "@nestjs/common": "^12.6.0",
+    "@nestjs/core": "^12.6.0",
+    "@nestjs/platform-express": "^12.6.0",
     "lucide-react": "^1.79.0"
   },
   "devDependencies": {
     "vite-plugin-pwa": "^2.0.0",
     "workbox-window": "^7.4.1"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.1": true,
+    "bcrypt@6.0.0": true,
+    "esbuild@0.25.12": true,
+    "prisma@7.10.1": true,
+    "protobufjs@7.6.6": true
   }
 }

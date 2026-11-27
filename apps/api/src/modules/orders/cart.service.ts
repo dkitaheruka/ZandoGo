@@ -48,16 +48,16 @@ export class CartService {
     if (!variant || variant.product.status !== 'ACTIVE') {
       throw new NotFoundException('Article introuvable ou indisponible');
     }
-    if (variant.stockQty < dto.quantity) {
-      throw new BadRequestException('Stock insuffisant pour la quantité demandée');
-    }
-
     const cart = await this.getOrCreateCart(user.id);
     const unitPrice = variant.priceOverride ?? variant.product.basePriceUsd;
 
     const existing = await this.prisma.cartItem.findFirst({
       where: { cartId: cart.id, productVariantId: dto.productVariantId },
     });
+    const requestedQuantity = (existing?.quantity ?? 0) + dto.quantity;
+    if (variant.stockQty < requestedQuantity) {
+      throw new BadRequestException('Stock insuffisant pour la quantité demandée');
+    }
 
     if (existing) {
       return this.prisma.cartItem.update({

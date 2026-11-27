@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ecommerce
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ecommerce
+      POSTGRES_DB: zandogo
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5433"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecommerce -d ecommerce"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zandogo"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,10 +32,11 @@ services:
       context: ./apps/api
     restart: unless-stopped
     env_file:
-      - ./apps/api/.env
+      - ./.env
     environment:
-      DATABASE_URL: postgresql://ecommerce:${POSTGRES_PASSWORD:-change-me}@postgres:5432/ecommerce?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5433/zandogo?schema=public
       REDIS_URL: redis://redis:6379
+      PORT: 3000
     depends_on:
       postgres:
         condition: service_healthy

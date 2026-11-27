@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -6471,11 +6473,44 @@ self.addEventListener('activate', (event) => {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  const configDir = dirname(fileURLToPath(import.meta.url));
+  const envDir = command === 'serve' ? resolve(configDir, '../..') : configDir;
+  const env = loadEnv(mode, envDir, '');
+
+  return {
+  envDir,
+  resolve: {
+    dedupe: [
+      'react',
+      'react-dom',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-router',
+      'react-router-dom',
+      'lucide-react',
+      '@stripe/react-stripe-js',
+    ],
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-router-dom',
+      'lucide-react',
+      'axios',
+      'socket.io-client',
+      '@stripe/stripe-js',
+      '@stripe/react-stripe-js',
+    ],
+  },
   plugins: [
     tailwindcss(),
     react(),
-    mockApiPlugin(),
+    ...(!env.VITE_API_URL ? [mockApiPlugin()] : []),
     devManifestPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -6528,5 +6563,20 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: env.VITE_API_PROXY_TARGET || 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: env.VITE_API_PROXY_TARGET || 'http://localhost:3001',
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+    headers: {
+      'Cache-Control': 'no-store',
+    },
   },
+  };
 });
