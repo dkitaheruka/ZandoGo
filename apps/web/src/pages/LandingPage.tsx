@@ -111,8 +111,8 @@ export function LandingPage() {
       {/* Hero Section — Vert clair & léger */}
       <section className="bg-gradient-to-br from-[#ECF5F0] via-[#F3F8F5] to-[#E1EFE7] text-nuit relative overflow-hidden border-b border-seve/15">
         <div className="mx-auto max-w-7xl px-6 py-7 lg:py-9">
-          <div className="grid lg:grid-cols-[1.15fr_1fr] gap-6 lg:gap-8 items-center">
-            <div>
+          <div className="grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.8fr)] gap-6 lg:gap-8 items-center">
+            <div className="min-w-0">
               <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/85 text-nuit text-xs font-mono mb-3.5 border border-seve/20 shadow-xs">
                 <Globe className="w-3.5 h-3.5 text-seve" />
                 <span>Siège Goma (Nord-Kivu) · Détail, Gros B2B dans toute la RDC & environs</span>
@@ -197,7 +197,7 @@ export function LandingPage() {
             <div
               onMouseEnter={() => setCarouselPaused(true)}
               onMouseLeave={() => setCarouselPaused(false)}
-              className="bg-white/95 border border-seve/20 rounded-card p-5 lg:p-6 shadow-xl space-y-4 backdrop-blur-sm"
+              className="w-full min-w-0 lg:max-w-md lg:justify-self-end bg-white/95 border border-seve/20 rounded-card p-4 shadow-xl space-y-2.5 backdrop-blur-sm"
             >
               {/* Carousel Header */}
               <div className="flex items-center justify-between gap-2 pb-3 border-b border-encre/10 text-xs">
@@ -235,7 +235,7 @@ export function LandingPage() {
               {/* Active Sponsored Product Slide */}
               {loadingOffers ? (
                 <div className="rounded-xl bg-brume/60 border border-encre/10 overflow-hidden animate-pulse">
-                  <div className="aspect-[16/10] bg-seve/10" />
+                  <div className="aspect-[16/8] bg-seve/10" />
                   <div className="p-4 space-y-3">
                     <div className="h-3 w-1/2 bg-encre/10 rounded" />
                     <div className="h-4 w-3/4 bg-encre/10 rounded" />
@@ -247,7 +247,7 @@ export function LandingPage() {
                   <div className="rounded-xl bg-brume/40 border border-encre/10 overflow-hidden">
                     <Link
                       to={`/products/${currentSlide.id}`}
-                      className="block relative aspect-[16/10] bg-brume overflow-hidden group"
+                      className="block relative aspect-[16/8] bg-brume overflow-hidden group"
                     >
                       {currentSlide.images?.[0]?.url ? (
                         <img
@@ -282,7 +282,7 @@ export function LandingPage() {
                       </span>
                     </Link>
 
-                    <div className="p-4 space-y-3 bg-white">
+                    <div className="p-2.5 space-y-2 bg-white">
                       <div className="flex items-center justify-between gap-2 text-[11px] text-encre/70">
                         <span className="font-semibold text-nuit flex items-center gap-1.5 truncate">
                           <span>{currentSlide.store?.storeName}</span>
@@ -302,7 +302,7 @@ export function LandingPage() {
                         >
                           {currentSlide.title}
                         </Link>
-                        <p className="text-[11px] text-encre/70 mt-1 line-clamp-2 leading-relaxed">
+                        <p className="text-[11px] text-encre/70 mt-1 line-clamp-1 leading-relaxed">
                           {currentSlide.description}
                         </p>
                       </div>
@@ -310,7 +310,7 @@ export function LandingPage() {
                       <div className="pt-2 border-t border-encre/10 flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <div className="flex items-baseline gap-1.5">
-                            <span className="font-display text-xl font-extrabold text-nuit tabular-nums">
+                            <span className="font-display text-lg font-extrabold text-nuit tabular-nums">
                               {formatPrimaryPrice(Number(currentSlide.basePriceUsd))}
                             </span>
                             {currentIsKm && <span className="text-xs text-encre/75 font-semibold">/ km</span>}
@@ -328,7 +328,7 @@ export function LandingPage() {
 
                         <Link
                           to={`/products/${currentSlide.id}`}
-                          className="rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold px-4 py-2 text-xs transition inline-flex items-center gap-1.5 shadow-xs"
+                          className="rounded-card bg-seve hover:bg-seve/90 text-brume font-display font-bold px-3 py-1.5 text-xs transition inline-flex items-center gap-1.5 shadow-xs"
                         >
                           <span>Voir l’offre</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -339,13 +339,13 @@ export function LandingPage() {
 
                   {/* Slide Progress Dots & Thumbnails */}
                   <div className="flex items-center justify-between gap-3 pt-1">
-                    <div className="flex items-center gap-1.5 overflow-x-auto">
+                    <div className="min-w-0 flex items-center gap-1.5 overflow-x-auto">
                       {sponsoredProducts.map((sp, idx) => (
                         <button
                           key={sp.id}
                           type="button"
                           onClick={() => setActiveSlide(idx)}
-                          className={`h-9 w-12 rounded-lg overflow-hidden border transition shrink-0 bg-brume flex items-center justify-center ${
+                          className={`h-6 w-9 rounded-lg overflow-hidden border transition shrink-0 bg-brume flex items-center justify-center ${
                             idx === activeSlide % sponsoredProducts.length
                               ? 'border-seve ring-2 ring-seve/35 opacity-100'
                               : 'border-encre/15 opacity-60 hover:opacity-95'

@@ -36,10 +36,6 @@ La liste d'avancement plus bas décrit la conception prévue; elle ne signifie p
 
 ## Démarrage local
 
-### Lancement en un clic sous Windows
-
-Après avoir configuré `.env`, installé les dépendances et démarré PostgreSQL, double-cliquez sur [`Lancer-ZandoGo.bat`](./Lancer-ZandoGo.bat). Le lanceur vérifie la connexion à PostgreSQL, démarre l'API et le frontend s'ils ne tournent pas déjà, puis ouvre `http://localhost:3002`. Il ne lance ni migration ni seed. Les fenêtres de l'API et de Vite restent ouvertes pendant l'utilisation.
-
 ### Installation et lancement manuel
 
 ```bash
@@ -70,7 +66,7 @@ npm run dev --workspace=@ecommerce/web -- --port 3002 --strictPort
 
 Ouvrir `http://localhost:3002`. `npm run build` compile l'API et le frontend.
 
-Compose utilise PostgreSQL sur `localhost:5432`, base `ecommerce`, utilisateur `ecommerce` et mot de passe `postgres` par défaut. Si `POSTGRES_PASSWORD` est défini, synchroniser cette valeur avec `DATABASE_URL`. Pour un PostgreSQL local différent, adapter `DATABASE_URL` dans `.env`. Le mode local fonctionne sans Redis pour une seule instance; Redis est obligatoire en production. N'exécuter le seed que sur une base de développement, jamais sur une base de production.
+Compose publie PostgreSQL sur `localhost:5433` (port conteneur `5432`), base `zandogo`, utilisateur `postgres` et mot de passe `postgres` par défaut. Si `POSTGRES_PASSWORD` est défini dans `.env`, le même mot de passe est utilisé par l'API du conteneur. Pour un PostgreSQL local différent, adapter `DATABASE_URL` dans `.env`. Le mode local fonctionne sans Redis pour une seule instance; Redis est obligatoire en production. N'exécuter le seed que sur une base de développement, jamais sur une base de production.
 
 Pour les essais locaux sans stockage S3, régler `UPLOADS_DRIVER=local` dans le `.env` racine. Les documents KYC sont alors conservés dans `apps/api/uploads/` et ne sont pas publiés par le serveur web. Ce mode est réservé au développement; en production, utiliser un stockage S3 privé.
 

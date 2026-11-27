@@ -37,9 +37,9 @@ npm run dev
 
 Cette méthode utilise la vraie base de données PostgreSQL, les migrations Prisma et le serveur NestJS complet.
 
-### Démarrage en un clic sous Windows
+### Démarrage sous Windows
 
-Après avoir installé les dépendances, configuré `.env` et démarré PostgreSQL, double-cliquez sur `Lancer-ZandoGo.bat`. Le script vérifie les services, démarre ceux qui manquent et ouvre **`http://localhost:3002`**. Il ne lance pas les migrations ni le seed. Pour initialiser une nouvelle base, suivez d'abord les étapes ci-dessous.
+Les scripts de lancement rapide ne sont pas présents dans cette copie de travail. Utilisez les commandes manuelles ci-dessous; elles ne lancent ni migrations ni seed automatiquement.
 
 ### 1. Préparer les variables d’environnement
 À la racine du projet, créez le fichier `.env` à partir de `.env.example` si nécessaire :
@@ -51,7 +51,7 @@ Pour PostgreSQL lancé avec Compose, vérifiez ces valeurs dans `.env` :
 ```env
 PORT=3001
 APP_URL=http://localhost:3000,http://localhost:3002,http://localhost
-DATABASE_URL=postgresql://ecommerce:postgres@localhost:5432/ecommerce?schema=public
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/zandogo?schema=public
 JWT_ACCESS_SECRET=une-cle-locale-longue-et-unique-pour-access
 JWT_REFRESH_SECRET=une-autre-cle-locale-longue-et-unique-pour-refresh
 UPLOADS_DRIVER=local
@@ -95,7 +95,20 @@ Le seed crée des comptes de démonstration. Ne l’exécutez que sur une base d
 
 ### 5. Comptes de test créés par le seed (`prisma:seed`)
 
-Les comptes et leurs mots de passe sont définis dans [`apps/api/prisma/seed.cjs`](./apps/api/prisma/seed.cjs). Les emails par défaut sont `dkitaheruka@gmail.com` (Super Admin), `sabuni@gmail.com` (Vendeur), `fidel@gmail.com` (Acheteur) et `david@gmail.com` (Livreur). Pour le Super Admin, `SEED_ADMIN_EMAIL` et `SEED_ADMIN_PASSWORD` dans `.env` remplacent les valeurs par défaut.
+Le seed crée des comptes de démonstration avec le mot de passe `DemoZandoGo2026!` :
+
+| Espace | Identifiant |
+|---|---|
+| Super Admin | `admin@demo.zandogo.local` |
+| Vendeur Virunga Wax | `vendeur@demo.zandogo.local` |
+| Vendeur Marché Kivu Nature | `terroir@demo.zandogo.local` |
+| Vendeur Goma Tech & Énergie | `tech@demo.zandogo.local` |
+| Vendeur Atelier Umoja Bukavu | `atelier@demo.zandogo.local` |
+| Vendeur Kivu Express | `transport@demo.zandogo.local` |
+| Client | `client@demo.zandogo.local` |
+| Livreur | `livreur@demo.zandogo.local` |
+
+Le seed peuple également les catégories, cinq boutiques dans plusieurs villes, un catalogue d’environ 23 offres physiques et de services, des variantes et des stocks de démonstration. Les entrées supplémentaires sont ajoutées une seule fois par slug : relancer le seed complète les données sans dupliquer ces offres. Les comptes, boutiques, produits et textes sont fictifs; aucune commande payée ni transaction de paiement n'est créée par ce jeu de données. Le Super Admin peut être personnalisé avec `SEED_ADMIN_EMAIL` et `SEED_ADMIN_PASSWORD` dans `.env`. Ces identifiants sont réservés aux bases locales de démonstration; n'exécutez jamais le seed en production.
 
 Après connexion, chaque compte dispose du rôle indiqué dans le seed. Réservez ces comptes de démonstration à une base locale de développement; n’exécutez pas le seed en production.
 

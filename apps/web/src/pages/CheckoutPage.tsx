@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import {
   CheckCircle2,
   Clock,
@@ -67,6 +68,7 @@ export function CheckoutPage() {
   const [step, setStep] = useState<'address' | 'payment' | 'done'>('address');
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paymentPending, setPaymentPending] = useState(false);
   const [addressesLoading, setAddressesLoading] = useState(true);
 
   const [deliveryOptions, setDeliveryOptions] = useState<any[]>([]);
@@ -323,9 +325,33 @@ export function CheckoutPage() {
       return;
     }
     setLoading(true);
+    setPaymentPending(false);
     setMessage(null);
     try {
-      const { data } = await api.post('/payments/initiate', {
+      const { data } = await api.post<{
+        method?: string;
+        status?: string;
+        paymentStatus?: string;
+        paymentRef?: string;
+        paymentOperator?: string;
+        operator?: string;
+        ussdCode?: string;
+        expiresAt?: string;
+        smsRecipient?: string;
+        transactionFeePercent?: number;
+        transactionFeeAmount?: number;
+        chargedTotal?: number;
+        digitalDownloads?: {
+          productId: string;
+          title: string;
+          downloadUrl: string;
+          fileName: string;
+          autoDispatched?: boolean;
+        }[];
+        paymentUrl?: string;
+        clientSecret?: string;
+        message?: string;
+      }>('/payments/initiate', {
         orderId,
         methodCode: method,
         phoneNumber: phoneNumber || '+243820001122',
@@ -343,18 +369,34 @@ export function CheckoutPage() {
         setDigitalDownloads(data.digitalDownloads);
       }
 
-      if (data.method === 'cash_on_delivery' || data.status === 'SUCCESS') {
+      const status = (data.status || data.paymentStatus || '').toUpperCase();
+      if (data.method === 'cash_on_delivery' || status === 'SUCCESS') {
         setStep('done');
       } else if (data.paymentUrl) {
         window.location.href = data.paymentUrl;
       } else if (data.clientSecret) {
         setClientSecret(data.clientSecret);
+      } else if (status === 'PENDING' || status === 'PROCESSING') {
+        const ussdNote = data.ussdCode
+          ? ` Composez ${data.ussdCode} sur votre téléphone pour confirmer.`
+          : '';
+        setPaymentPending(true);
+        setMessage(
+          data.message ||
+            `Demande envoyée. La commande reste en attente jusqu’à confirmation du paiement.${ussdNote}`,
+        );
       } else {
-        setStep('done');
+        setMessage(data.message || 'Le fournisseur n’a pas confirmé le paiement. La commande reste impayée.');
       }
-    } catch (err: any) {
-      setMessage(err?.response?.data?.message ?? 'Le paiement a été confirmé avec succès.');
-      setStep('done');
+    } catch (error: unknown) {
+      const apiMessage = isAxiosError<{ message?: string | string[] }>(error)
+        ? error.response?.data?.message
+        : undefined;
+      setMessage(
+        Array.isArray(apiMessage)
+          ? apiMessage.join(' ')
+          : apiMessage || 'Erreur lors du règlement de la commande.',
+      );
     } finally {
       setLoading(false);
     }
@@ -1053,10 +1095,12 @@ export function CheckoutPage() {
           ) : (
             <button
               onClick={handlePay}
-              disabled={loading}
+              disabled={loading || paymentPending}
               className="w-full rounded-card bg-seve text-brume font-display font-bold py-3.5 text-sm hover:bg-seve/90 transition-colors disabled:opacity-60 shadow-xs"
             >
-              {loading
+              {paymentPending
+                ? 'Demande envoyée — attente de confirmation'
+                : loading
                 ? `Traitement ${OPERATOR_META[method]?.shortLabel || 'paiement'} & envoi SMS…`
                 : `Payer ${formatPrimaryPrice(exactDebitedTotal)} avec ${OPERATOR_META[method]?.shortLabel || 'Mobile Money'}`}
             </button>

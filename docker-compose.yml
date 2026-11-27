@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5433:5433"
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d zandogo"]
       interval: 5s
@@ -34,7 +34,7 @@ services:
     env_file:
       - ./.env
     environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5433/zandogo?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/zandogo?schema=public
       REDIS_URL: redis://redis:6379
       PORT: 3000
     depends_on:

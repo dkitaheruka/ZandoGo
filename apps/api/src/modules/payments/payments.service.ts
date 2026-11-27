@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  BadGatewayException,
   ForbiddenException,
   forwardRef,
   Inject,
@@ -17,10 +18,14 @@ import { FinanceService } from '../finance/finance.service';
 import { AfricasTalkingSmsService } from '../realtime/africastalking-sms.service';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
 import { WalletsService } from '../wallets/wallets.service';
-import { MaishaPayMobileOperator, MaishaPayService } from './maishapay.service';
+import {
+  MaishaPayMobileOperator,
+  MaishaPayService,
+  type MaishaPayNormalizedResult,
+} from './maishapay.service';
 import { StripeService } from './stripe.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
-import { shouldConfirmGatewayPayment } from '../../common/security-rules';
+import { getPrimaryAppUrl, shouldConfirmGatewayPayment } from '../../common/security-rules';
 
 const OPERATOR_LABELS: Record<string, string> = {
   MOBILE_MONEY_MPESA: 'M-Pesa Vodacom',
@@ -146,7 +151,7 @@ export class PaymentsService {
       };
     }
 
-    const appUrl = this.config.get<string>('APP_URL') ?? '';
+    const appUrl = getPrimaryAppUrl(this.config.get<string>('APP_URL'));
     const operatorLabel = OPERATOR_LABELS[dto.methodCode] || 'Mobile Money';
 
     // --- Mobile Money RDC (M-Pesa Vodacom, Airtel Money, Orange Money, MTN MoMo) via MaishaPay ---
@@ -169,26 +174,40 @@ export class PaymentsService {
           ? 'MTN'
           : 'MPESA';
 
-      const mpRes = await this.maishapay.initiateMobileMoneyPayment({
-        transactionReference: transaction.id,
-        amount: chargedTotal,
-        currency: order.currency as 'USD' | 'CDF',
-        provider,
-        customerPhone: dto.phoneNumber,
-        customerName: user.email || 'Client ZandoGo',
-        customerEmail: user.email || 'client@zandogo.cd',
-        description: `Commande ZandoGo ${order.orderNumber} (Total ${chargedTotal} ${order.currency})`,
-        callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
-        metadata: {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          operator: dto.methodCode,
-          baseTotal,
-          transactionFeePercent,
-          transactionFeeAmount,
-          chargedTotal,
-        },
-      });
+      let mpRes: MaishaPayNormalizedResult;
+      try {
+        mpRes = await this.maishapay.initiateMobileMoneyPayment({
+          transactionReference: transaction.id,
+          amount: chargedTotal,
+          currency: order.currency as 'USD' | 'CDF',
+          provider,
+          customerPhone: dto.phoneNumber,
+          customerName: user.email || 'Client ZandoGo',
+          customerEmail: user.email || 'client@zandogo.cd',
+          description: `Commande ZandoGo ${order.orderNumber} (Total ${chargedTotal} ${order.currency})`,
+          callbackUrl: `${appUrl}/api/payments/callbacks/gateway`,
+          metadata: {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            operator: dto.methodCode,
+            baseTotal,
+            transactionFeePercent,
+            transactionFeeAmount,
+            chargedTotal,
+          },
+        });
+      } catch (error) {
+        if (error instanceof BadGatewayException) {
+          await this.prisma.paymentTransaction.update({
+            where: { id: transaction.id },
+            data: {
+              status: 'FAILED',
+              rawProviderPayload: { error: error.message },
+            },
+          });
+        }
+        throw error;
+      }
 
       await this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
@@ -767,7 +786,16 @@ export class PaymentsService {
           requiredTokens: [paidOrder.orderNumber, amountLabel, paymentRef],
           fallbackText: smsFallback,
         });
-        await this.sms.sendSms(paidOrder.customer.phone, smsMsg.text).catch(() => {});
+        const smsResult = await this.sms.sendSms(paidOrder.customer.phone, smsMsg.text);
+        if (smsResult.sent) {
+          this.logger.log(
+            `SMS de confirmation accepté par Africa's Talking (HTTP ${smsResult.statusCode ?? 'inconnu'}).`,
+          );
+        } else {
+          this.logger.warn(
+            `SMS de confirmation non accepté par Africa's Talking (${smsResult.status || 'statut inconnu'}).`,
+          );
+        }
       }
     }
   }

@@ -4,6 +4,7 @@ import { Currency, PayoutStatus, RoleName } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { resolveVendorSettlementEligibility } from '../../common/commerce-rules';
+import { getPrimaryAppUrl } from '../../common/security-rules';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { FinanceService } from '../finance/finance.service';
 import { MaishaPayService } from '../payments/maishapay.service';
@@ -635,7 +636,7 @@ export class WalletsService {
       return createdPayout;
     });
 
-    const appUrl = this.config.get<string>('APP_URL') ?? '';
+    const appUrl = getPrimaryAppUrl(this.config.get<string>('APP_URL'));
     const b2cPhone =
       dto.phoneNumber ||
       (payoutDestination && /^\+?\d{9,15}$/.test(payoutDestination.replace(/\s+/g, ''))

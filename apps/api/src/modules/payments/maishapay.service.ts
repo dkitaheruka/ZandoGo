@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { isSafePaymentRedirectUrl } from '../../common/security-rules';
+import { getPrimaryAppUrl, isSafePaymentRedirectUrl } from '../../common/security-rules';
 
 export type MaishaPayMobileOperator =
   | 'AIRTEL'
@@ -22,7 +22,7 @@ export type MaishaPayTransactionStatus =
 export interface MaishaPayInitResponse {
   status_code?: number;
   status?: string;
-  transactionId?: string;
+  transactionId?: string | number;
   originatingTransactionId?: string;
   paymentPageUrl?: string;
   ussdCode?: string;
@@ -30,9 +30,13 @@ export interface MaishaPayInitResponse {
   paymentStatus?: MaishaPayTransactionStatus;
   operator?: string;
   message?: string;
+  errors?: {
+    details?: string;
+    message?: string;
+  };
   data?: {
     status_code?: number;
-    transaction_id?: string;
+    transaction_id?: string | number;
     transactionId?: string | number;
     originatingTransactionId?: string;
     reference?: string;
@@ -114,7 +118,7 @@ export class MaishaPayService {
   }
 
   private get webhookSecret(): string {
-    return this.config.get<string>('MAISHAPAY_WEBHOOK_SECRET') ?? '';
+    return this.config.get<string>('MAISHAPAY_WEBHOOK_SECRET') || this.secretKey;
   }
 
   get isProduction(): boolean {
@@ -134,12 +138,8 @@ export class MaishaPayService {
       'Content-Type': 'application/json',
       'X-MaishaPay-Version': this.apiVersion,
     };
-    const explicitBearer = this.config.get<string>('MAISHAPAY_BEARER_TOKEN');
-    if (explicitBearer) {
-      headers['Authorization'] = `Bearer ${explicitBearer}`;
-    } else if (this.publicKey.startsWith('mp_')) {
-      headers['Authorization'] = `Bearer ${this.publicKey}`;
-    }
+    const bearer = this.config.get<string>('MAISHAPAY_BEARER_TOKEN') || this.publicKey;
+    if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
     return headers;
   }
 
@@ -231,12 +231,21 @@ export class MaishaPayService {
         headers: this.buildHeaders(),
         body: JSON.stringify(payload),
       });
-      const raw = (await response.json()) as MaishaPayInitResponse;
+      const raw = (await response.json().catch(() => ({}))) as MaishaPayInitResponse;
+      if (!response.ok) {
+        const providerMessage =
+          raw.errors?.message ||
+          raw.message ||
+          `MaishaPay a rejeté la demande (HTTP ${response.status}).`;
+        this.logger.warn(`MaishaPay Mobile Money HTTP ${response.status}: ${providerMessage}`);
+        throw new BadGatewayException(providerMessage);
+      }
+
       const d = raw.data;
       const txId =
-        d?.transaction_id ||
+        (d?.transaction_id !== undefined ? String(d.transaction_id) : undefined) ||
         (d?.transactionId !== undefined ? String(d.transactionId) : undefined) ||
-        raw.transactionId ||
+        (raw.transactionId !== undefined ? String(raw.transactionId) : undefined) ||
         `ZG-PAY-${params.transactionReference.slice(-10)}`;
 
       const rawRedirect = d?.paymentPage || d?.payment_url || raw.paymentPageUrl;
@@ -253,6 +262,7 @@ export class MaishaPayService {
         raw,
       };
     } catch (err) {
+      if (err instanceof BadGatewayException) throw err;
       this.logger.warn(`Passerelle Mobile Money indisponible : ${String(err)}`);
       const fallbackId = `ZG-PAY-${params.transactionReference.slice(-10)}`;
       return {
@@ -344,8 +354,8 @@ export class MaishaPayService {
       const d = raw.data;
       const txId =
         (d?.transactionId !== undefined ? String(d.transactionId) : undefined) ||
-        d?.transaction_id ||
-        raw.transactionId ||
+        (d?.transaction_id !== undefined ? String(d.transaction_id) : undefined) ||
+        (raw.transactionId !== undefined ? String(raw.transactionId) : undefined) ||
         `ZG-CARD-${params.transactionReference.slice(-10)}`;
 
       const rawRedirect = d?.paymentPage || d?.payment_url || raw.paymentPageUrl;
@@ -426,8 +436,7 @@ export class MaishaPayService {
         statusRaw === 'SUCCESS' ||
         statusRaw === 'APPROVED' ||
         statusRaw === 'COMPLETED' ||
-        statusRaw === 'ACCEPTED' ||
-        raw?.status_code === 200
+        statusRaw === 'ACCEPTED'
       ) {
         paymentStatus = 'SUCCESS';
       } else if (statusRaw === 'FAILED' || statusRaw === 'DECLINED') {
@@ -608,7 +617,7 @@ export class MaishaPayService {
     customerEmail?: string;
     description?: string;
   }): Promise<{ providerReference: string; paymentPageUrl?: string; ussdCode?: string; expiresAt?: string }> {
-    const appUrl = this.config.get<string>('APP_URL') ?? '';
+    const appUrl = getPrimaryAppUrl(this.config.get<string>('APP_URL'));
     const code = (params.methodCode || '').toUpperCase();
 
     if (code === 'CARD' || code === 'CARD_STRIPE' || code === 'VISA' || code === 'MASTERCARD') {

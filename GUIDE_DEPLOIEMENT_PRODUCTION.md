@@ -93,7 +93,7 @@ Idéal pour tester les vraies écritures en base de données, l'authentification
    PORT=3001
    APP_URL=http://localhost:3000
 
-   DATABASE_URL=postgresql://ecommerce:postgres@127.0.0.1:5432/ecommerce?schema=public
+   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/zandogo?schema=public
    REDIS_URL=redis://127.0.0.1:6379
 
    JWT_ACCESS_SECRET=cle_locale_access_distincte_de_32_caracteres_minimum_01
@@ -104,10 +104,8 @@ Idéal pour tester les vraies écritures en base de données, l'authentification
    # Clés de test Mobile Money (Sandbox)
    MAISHAPAY_GATEWAY_MODE=sandbox
    MAISHAPAY_API_KEY=votre_cle_publique_test
-   MAISHAPAY_BEARER_TOKEN=
    MAISHAPAY_SECRET_KEY=votre_cle_secrete_test
-   # En local sans clés live, peut rester vide ; obligatoire dès que des clés live ou NODE_ENV=production sont actifs
-   MAISHAPAY_WEBHOOK_SECRET=
+   # Les deux clés suffisent. Si MaishaPay fournit un secret webhook distinct, il peut être ajouté en MAISHAPAY_WEBHOOK_SECRET.
 
    # Stripe (optionnel : gère les cartes Visa / Mastercard via Stripe Elements)
    STRIPE_SECRET_KEY=sk_test_votre_cle_secrete_stripe
@@ -132,9 +130,10 @@ Idéal pour tester les vraies écritures en base de données, l'authentification
    UPLOADS_DRIVER=local
    UPLOADS_LOCAL_DIR=./uploads
    ```
-3. **Créer `apps/web/.env.local`** pour relier l'interface à la vraie API locale :
+3. **Créer `.env.local` à la racine du dépôt** pour relier Vite à la vraie API locale. Le serveur Vite lit les variables depuis la racine du dépôt en mode développement :
    ```env
-   VITE_API_URL=http://localhost:3001/api
+   VITE_API_URL=/api
+   VITE_API_PROXY_TARGET=http://localhost:3001
    VITE_STRIPE_PUBLISHABLE_KEY=pk_test_votre_cle_publique_stripe
    ```
 4. **Installer les dépendances et créer les tables PostgreSQL** :
@@ -206,7 +205,7 @@ PORT=3000
 APP_URL=https://votredomaine.cd
 
 # Base de données & Cache temps réel (doit correspondre à POSTGRES_PASSWORD)
-DATABASE_URL=postgresql://ecommerce:ChoisissezUnMotDePasseTresRobuste123!@postgres:5432/ecommerce?schema=public
+DATABASE_URL=postgresql://postgres:ChoisissezUnMotDePasseTresRobuste123!@postgres:5432/zandogo?schema=public
 REDIS_URL=redis://redis:6379
 
 # Sécurité Authentification JWT (collez 2 secrets distincts >= 32 caractères, sans mots faibles)
@@ -215,13 +214,12 @@ JWT_REFRESH_SECRET=collez_votre_deuxieme_secret_64_caracteres
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 
-# Agrégateur Mobile Money RDC (commencez en sandbox pour valider, puis passez à production)
-MAISHAPAY_GATEWAY_MODE=sandbox
+# Agrégateur Mobile Money RDC (clés live)
+MAISHAPAY_GATEWAY_MODE=production
 MAISHAPAY_API_KEY=votre_cle_publique
-MAISHAPAY_BEARER_TOKEN=votre_bearer_token_si_different_de_la_cle_publique
 MAISHAPAY_SECRET_KEY=votre_cle_secrete
-# OBLIGATOIRE en production (vérification HMAC-SHA256 fail-closed sur X-MaishaPay-Signature)
-MAISHAPAY_WEBHOOK_SECRET=collez_le_secret_webhook_marchand
+# Facultatif : seulement si MaishaPay vous fournit un secret webhook distinct.
+# Sans lui, la signature HMAC est vérifiée avec MAISHAPAY_SECRET_KEY.
 
 # Stripe (Cartes Visa / Mastercard internationales — utilisez sk_live_ / rk_live_ en production)
 STRIPE_SECRET_KEY=votre_cle_secrete_stripe
@@ -258,7 +256,7 @@ S3_SECRET_KEY=votre_s3_secret_key
 
 > **Important Sécurité (Comportement *Fail-Closed*)** :
 > - L'API refuse de démarrer en production si `REDIS_URL` est absent, si les secrets JWT sont faibles/identiques (< 32 caractères), ou si `UPLOADS_DRIVER` vaut `local`.
-> - Tout webhook Mobile Money arrivant sans signature HMAC-SHA256 valide (`MAISHAPAY_WEBHOOK_SECRET`) est rejeté en production, et toute transaction est contre-vérifiée auprès de l'API avant validation de commande.
+> - Tout webhook Mobile Money arrivant sans signature HMAC-SHA256 valide (secret webhook distinct s'il est fourni, sinon `MAISHAPAY_SECRET_KEY`) est rejeté en production; toute transaction est aussi contre-vérifiée auprès de l'API avant validation de commande.
 > - Si vous placez un second proxy (ex. **Cloudflare**) devant Caddy, pensez à régler `app.set('trust proxy', 2)` dans `apps/api/src/main.ts` afin que la limitation de débit par IP reste exacte.
 
 ### C. Fichier `apps/web/.env.production` (pour compiler Stripe Elements dans le frontend)
@@ -269,7 +267,7 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_live_votre_cle_publique_stripe
 
 ---
 
-## 4. Démarrer PostgreSQL + Redis & Synchroniser le Schéma Prisma
+## 4. Démarrer PostgreSQL + Redis & Appliquer les Migrations
 
 Depuis la racine du projet sur le serveur :
 
@@ -277,16 +275,15 @@ Depuis la racine du projet sur le serveur :
 # 1. Démarrer PostgreSQL 16 et Redis 7
 docker compose up -d postgres redis
 
-# 2. Installer les dépendances et synchroniser toutes les tables en base
+# 2. Installer les dépendances et appliquer les migrations versionnées
 npm install
 cd apps/api
 npx prisma generate
-DATABASE_URL="postgresql://ecommerce:ChoisissezUnMotDePasseTresRobuste123!@127.0.0.1:5432/ecommerce?schema=public" npx prisma db push
-DATABASE_URL="postgresql://ecommerce:ChoisissezUnMotDePasseTresRobuste123!@127.0.0.1:5432/ecommerce?schema=public" npx prisma db seed
+DATABASE_URL="postgresql://postgres:ChoisissezUnMotDePasseTresRobuste123!@127.0.0.1:5433/zandogo?schema=public" npx prisma migrate deploy
 cd ../..
 ```
 
-> `prisma db push` synchronise l'ensemble du schéma relationnel (utilisateurs, rôles, boutiques, catalogue, agences de transport, commandes multi-vendeurs, grand livre `WalletTransaction`, décompte 48h, paramètres dynamiques des frais et retraits immédiats, journal `AuditLog`).
+> Ne lancez pas `prisma db seed` en production : il crée les comptes, la boutique et les offres de démonstration. Le seed est réservé aux bases de développement locales.
 
 ---
 
@@ -318,7 +315,7 @@ docker compose logs -f api
 2. Exécutez cette commande sur le serveur (en remplaçant `votre_email@exemple.com` par votre e-mail) pour lui attribuer le rôle `SUPER_ADMIN` :
 
 ```bash
-docker compose exec postgres psql -U ecommerce -d ecommerce -c "
+docker compose exec postgres psql -U postgres -d zandogo -c "
 INSERT INTO user_roles (id, \"userId\", role, \"createdAt\")
 SELECT gen_random_uuid()::text, id, 'SUPER_ADMIN', NOW()
 FROM users
@@ -388,7 +385,7 @@ Effectuez ces tests dans l'ordre avant d'annoncer le lancement :
 
 ```bash
 mkdir -p backups
-docker compose exec -T postgres pg_dump -U ecommerce ecommerce > backups/zandogo_$(date +%F_%H%M).sql
+docker compose exec -T postgres pg_dump -U postgres zandogo > backups/zandogo_$(date +%F_%H%M).sql
 ```
 
 ### Vérification des tests automatisés et de la qualité du code

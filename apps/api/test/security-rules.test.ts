@@ -5,6 +5,7 @@ import {
   isSafeChatAttachmentUrl,
   isSafeMediaReference,
   isSafePaymentRedirectUrl,
+  getPrimaryAppUrl,
   parseAllowedCorsOrigins,
   shouldConfirmGatewayPayment,
   validateJwtSecretsConfig,
@@ -50,6 +51,15 @@ describe('validateJwtSecretsConfig', () => {
         isProduction: true,
       }),
     ).not.toThrow();
+  });
+});
+
+describe('getPrimaryAppUrl', () => {
+  it('uses the first configured origin as the external callback base URL', () => {
+    expect(getPrimaryAppUrl('https://public.example, http://localhost:3000/')).toBe(
+      'https://public.example',
+    );
+    expect(getPrimaryAppUrl('')).toBe('');
   });
 });
 

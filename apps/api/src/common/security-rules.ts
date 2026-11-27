@@ -72,6 +72,13 @@ export function parseAllowedCorsOrigins(rawAppUrl?: string, isProduction = false
   return ['http://localhost:5173', 'http://localhost:3000'];
 }
 
+export function getPrimaryAppUrl(rawAppUrl?: string): string {
+  return (rawAppUrl ?? '')
+    .split(',')
+    .map((url) => url.trim().replace(/\/+$/, ''))
+    .find(Boolean) ?? '';
+}
+
 export function shouldConfirmGatewayPayment(params: {
   isProduction: boolean;
   hasLiveCredentials: boolean;

@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
-import { getAccessToken, onAccessTokenChanged } from './api';
+import { getAccessToken, isRealApiMode, onAccessTokenChanged } from './api';
 
 const sockets: Partial<Record<'/notifications' | '/chat' | '/tracking', Socket>> = {};
 
@@ -16,7 +16,7 @@ export function getSocket(namespace: '/notifications' | '/chat' | '/tracking'): 
   const socket = io(namespace, {
     auth: { token: getAccessToken() },
     withCredentials: true,
-    autoConnect: true,
+    autoConnect: isRealApiMode,
   });
 
   sockets[namespace] = socket;
@@ -24,6 +24,7 @@ export function getSocket(namespace: '/notifications' | '/chat' | '/tracking'): 
 }
 
 export function reconnectSocket(namespace: '/notifications' | '/chat' | '/tracking') {
+  if (!isRealApiMode) return;
   const socket = sockets[namespace];
   if (!socket) return;
   socket.auth = { token: getAccessToken() };

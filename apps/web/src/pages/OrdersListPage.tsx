@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import {
   Package,
   CreditCard,
@@ -157,18 +158,40 @@ export function OrdersListPage() {
     setPayingOrderId(orderId);
     setActionMessage(null);
     try {
-      const { data } = await api.post(`/orders/${orderId}/pay`, {
+      const { data } = await api.post<{
+        status?: string;
+        paymentStatus?: string;
+        operatorLabel?: string;
+        message?: string;
+        ussdCode?: string;
+      }>(`/orders/${orderId}/pay`, {
         methodCode: selectedMethod,
         phoneNumber: payPhone || '+243820001122',
       });
       setExpandedPayOrderId(null);
-      setActionMessage(
-        data?.message ||
-          `Paiement validé via ${OPERATOR_META[selectedMethod]?.label || 'Mobile Money'} ! Notification SMS Africa’s Talking envoyée et séquestre activé.`,
-      );
+      const status = (data.status || data.paymentStatus || '').toUpperCase();
+      const operatorLabel = data.operatorLabel || OPERATOR_META[selectedMethod]?.label || 'Mobile Money';
+      if (status === 'SUCCESS') {
+        setActionMessage(data.message || `Paiement validé via ${operatorLabel}.`);
+      } else if (status === 'PENDING' || status === 'PROCESSING') {
+        const ussdNote = data.ussdCode ? ` Code USSD : ${data.ussdCode}.` : '';
+        setActionMessage(
+          data.message ||
+            `Demande envoyée via ${operatorLabel}, en attente de confirmation sur le téléphone.${ussdNote} La commande reste impayée jusque-là.`,
+        );
+      } else {
+        setActionMessage(data.message || 'Le fournisseur n’a pas confirmé le paiement.');
+      }
       load();
-    } catch {
-      setActionMessage('Erreur lors du règlement de la commande.');
+    } catch (error: unknown) {
+      const apiMessage = isAxiosError<{ message?: string | string[] }>(error)
+        ? error.response?.data?.message
+        : undefined;
+      setActionMessage(
+        Array.isArray(apiMessage)
+          ? apiMessage.join(' ')
+          : apiMessage || 'Erreur lors du règlement de la commande.',
+      );
     } finally {
       setPayingOrderId(null);
     }
@@ -665,7 +688,7 @@ export function OrdersListPage() {
                 {(order.paymentRef || order.paymentOperator) && (
                   <div className="text-[11px] font-mono text-encre/60 flex flex-wrap items-center gap-3 pb-2">
                     <PaymentOperatorBadge operator={order.paymentOperator} refCode={order.paymentRef} />
-                    <span className="text-seve">SMS Africa’s Talking envoyé ✓</span>
+                    <span>Notifications SMS via Africa’s Talking</span>
                   </div>
                 )}
 
